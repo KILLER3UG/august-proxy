@@ -30,9 +30,9 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { QueryErrorState } from '@/components/QueryErrorState';
+import { SectionHeader } from '@/components/SectionHeader';
 import { SettingsTabs } from '@/components/settings/SettingsTabs';
 import { settingsTabPanelId } from '@/components/settings/settingsTabIds';
 import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect';
@@ -40,6 +40,7 @@ import { LearningPanel } from '@/sections/settings/LearningPanel';
 import { SkillPacksPanel } from '@/sections/settings/SkillPacksPanel';
 import { SkillVersionsPanel } from '@/sections/settings/SkillVersionsPanel';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
+import { inboxRoute, type LearningHost } from '@/sections/learning/host';
 import { cn } from '@/lib/utils';
 
 interface SkillSummary {
@@ -93,7 +94,17 @@ type Mode = 'list' | 'detail' | 'create' | 'edit';
 
 const EMPTY_FORM = { name: '', description: '', body: '', trigger: '', category: 'uncategorized' };
 
-export function SkillsSection() {
+/** The catalogue renders in TWO hosts — the Settings panel and the Learning
+ *  hub's Skills tab — and it renders the SAME shape in both: the same
+ *  `SectionHeader`, the same toolbar, the same grid. The nav in front of it
+ *  carries the icon and the name in both hosts, so a host-specific variant
+ *  would only ever be a way for the same page to look like two pages.
+ *
+ *  The ONE thing that differs is a link that LEAVES the surface: the skill
+ *  detail's "Review inbox" has to land on the inbox in the host the reader
+ *  is in, or the Learning hub throws you into the Settings overlay. That is
+ *  `inboxRoute(host)` and it is the whole of the difference. */
+export function SkillsSection({ host = 'settings' }: { host?: LearningHost } = {}) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [mode, setMode] = useState<Mode>('list');
@@ -448,9 +459,61 @@ export function SkillsSection() {
   return (
     <div className="px-8 py-6 space-y-5 h-full flex flex-col overflow-hidden">
       {/* ── Header ──────────────────────────────────────────────────── */}
-      <header className="shrink-0 flex items-center justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-2">
-          {(mode === 'detail' || isFormMode) && (
+      {mode === 'list' ? (
+        /* The panel-section header — NO icon, because the nav in front of it
+         * already carries the icon and the name (the settings rail and the
+         * hub's own rail are the same instrument). See the header grammar in
+         * sections/learning/LearningHub.tsx.
+         * ONE header for BOTH hosts: the same page must not look like two
+         * different pages depending on how you got here. */
+        <SectionHeader
+          title="Skills"
+          className="mb-0 shrink-0"
+          subtitle={
+            listFailed
+              ? "Couldn't load skills"
+              : `${skills.length} skill${skills.length === 1 ? '' : 's'} · loaded progressively into chat when relevant`
+          }
+          actions={
+            <>
+              {/* Search is a PILL with a border — the reference's own search
+                  affordance, not a bare magnifier that hides one on click. */}
+              <div className="relative w-56">
+                <Search className="absolute left-3 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search skills…"
+                  aria-label="Search skills"
+                  className="h-8 w-full rounded-full border border-border/60 bg-card/60 pl-9 pr-3 text-xs placeholder:text-muted-foreground/70 focus:border-primary/40 focus:outline-none"
+                />
+              </div>
+              <select
+                value={sort}
+                onChange={(e) => setSort(e.target.value as typeof sort)}
+                aria-label="Sort skills"
+                className="h-8 rounded-lg border border-border/60 bg-card/60 px-2 text-xs text-foreground/90 outline-none focus:border-primary/40"
+                data-testid="skills-sort"
+              >
+                <option value="name">Name</option>
+                <option value="recent">Recently used</option>
+                <option value="usage">Most used</option>
+                <option value="effect">Measured effect</option>
+              </select>
+              {/* The ONE primary action on this surface. */}
+              <Button onClick={startCreate}>
+                <Plus className="size-4" /> New
+              </Button>
+            </>
+          }
+        />
+      ) : (
+        /* The detail / form header is a DIFFERENT thing — the reference's
+         * detail-view grammar: a back link at the left, the name beside it,
+         * the actions at the right. */
+        <header className="shrink-0 flex items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-2">
             <button
               type="button"
               onClick={() =>
@@ -463,117 +526,52 @@ export function SkillsSection() {
             >
               {isFormMode ? <ChevronLeft className="size-4" /> : <ArrowLeft className="size-4" />}
             </button>
-          )}
-          <div className="min-w-0">
-            <h2 className="truncate text-xl font-semibold tracking-tight text-foreground">{headerLabel}</h2>
-            {mode === 'list' && (
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {listFailed
-                  ? "Couldn't load skills"
-                  : `${skills.length} skill${skills.length === 1 ? '' : 's'} · loaded progressively into chat when relevant`}
-              </p>
-            )}
+            <div className="min-w-0">
+              <h2 className="truncate text-xl font-semibold tracking-tight text-foreground">{headerLabel}</h2>
+            </div>
           </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {mode === 'list' && (
-            <>
-              <div className="relative w-56">
-                <Search className="absolute left-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search…"
-                  aria-label="Search skills"
-                  className="h-8 w-full rounded-lg border border-border/60 bg-muted/40 pl-8 pr-3 text-xs placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none"
-                />
-              </div>
-              <select
-                value={sort}
-                onChange={(e) => setSort(e.target.value as typeof sort)}
-                aria-label="Sort skills"
-                className="h-8 rounded-lg border border-border/60 bg-muted/40 px-2 text-xs text-foreground/90 outline-none focus:border-primary/40"
-                data-testid="skills-sort"
-              >
-                <option value="name">Name</option>
-                <option value="recent">Recently used</option>
-                <option value="usage">Most used</option>
-                <option value="effect">Measured effect</option>
-              </select>
-              <Button onClick={startCreate}>
-                <Plus className="size-4" /> New
-              </Button>
-            </>
-          )}
-          {mode === 'detail' && selected && (
-            <>
-              <Button variant="outline" onClick={startEdit}>
-                <Pencil className="size-3" /> Edit
-              </Button>
-              {/* M6 item 7: deletable only when authored (non-bundled) origin.
-                  Bundled skills carry an empty createdBy; also treat explicit
-                  'builtin'/'bundled' markers as non-deletable. A project
-                  override (scope=project) is always deletable — removing it
-                  only restores the global copy it shadows. */}
-              {(selected.scope === 'project' ||
-                (selected.createdBy &&
-                  selected.createdBy !== 'builtin' &&
-                  selected.createdBy !== 'bundled')) && (
+          <div className="flex shrink-0 items-center gap-2">
+            {mode === 'detail' && selected && (
+              <>
+                <Button variant="outline" onClick={startEdit}>
+                  <Pencil className="size-3" /> Edit
+                </Button>
+                {/* M6 item 7: deletable only when authored (non-bundled) origin.
+                    Bundled skills carry an empty createdBy; also treat explicit
+                    'builtin'/'bundled' markers as non-deletable. A project
+                    override (scope=project) is always deletable — removing it
+                    only restores the global copy it shadows. */}
+                {(selected.scope === 'project' ||
+                  (selected.createdBy &&
+                    selected.createdBy !== 'builtin' &&
+                    selected.createdBy !== 'bundled')) && (
+                  <Button
+                    variant="outline"
+                    className="border-destructive/40 text-destructive hover:bg-destructive/10"
+                    onClick={() => setConfirmDelete(selected.name)}
+                  >
+                    <Trash2 className="size-3" /> Delete
+                  </Button>
+                )}
+              </>
+            )}
+            {isFormMode && (
+              <>
+                <Button onClick={() => void handleSave()} disabled={saving}>
+                  {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                  Save
+                </Button>
                 <Button
                   variant="outline"
-                  className="border-destructive/40 text-destructive hover:bg-destructive/10"
-                  onClick={() => setConfirmDelete(selected.name)}
+                  onClick={() => (selected ? setMode('detail') : setMode('list'))}
                 >
-                  <Trash2 className="size-3" /> Delete
+                  <X className="size-4" /> Cancel
                 </Button>
-              )}
-            </>
-          )}
-          {isFormMode && (
-            <>
-              <Button onClick={() => void handleSave()} disabled={saving}>
-                {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-                Save
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => (selected ? setMode('detail') : setMode('list'))}
-              >
-                <X className="size-4" /> Cancel
-              </Button>
-            </>
-          )}
-        </div>
-      </header>
-
-      {/* ── C-1: scope selector ─────────────────────────────────────── */}
-      {mode === 'list' && (
-        <div className="flex shrink-0 items-center gap-2" data-testid="skills-scope-row">
-          <FolderTree className="size-3 text-muted-foreground/70" />
-          <span className="text-2xs font-medium uppercase tracking-wide text-muted-foreground/70">Scope</span>
-          <div className="max-w-xs flex-1">
-            <WorkspaceSelect
-              value={wsScope}
-              onChange={(e) => setWsScope(e.target.value)}
-              options={scopeOptions}
-              data-testid="skills-scope-select"
-              aria-label="Skills scope"
-            />
+              </>
+            )}
           </div>
-          {wsScope && (
-            <span className="text-[0.65625rem] text-muted-foreground/70">
-              Project skills shadow same-named global ones
-            </span>
-          )}
-        </div>
+        </header>
       )}
-
-      {/* ── Skill packs: install-from-remote ───────────────────────── */}
-      {mode === 'list' && <SkillPacksPanel />}
-
-      {/* ── Part 16 Phase E: Learning (curator report + drafts) ─────── */}
-      {mode === 'list' && <LearningPanel />}
 
       {/* ── List ────────────────────────────────────────────────────── */}
       {mode === 'list' && (
@@ -591,11 +589,10 @@ export function SkillsSection() {
               note="Your skills may still exist — the catalogue request failed, so this is not an empty list."
             />
           ) : skills.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/60 bg-card/40 px-6 py-12 text-center">
-              <BookOpen className="mb-3 size-9 rounded-full bg-muted/50 p-1.5 text-muted-foreground" />
-              <p className="text-sm font-medium text-foreground">No skills yet</p>
-              <p className="mt-1 max-w-sm text-xs text-muted-foreground">
-                Click New to author your first skill.
+            <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
+              <BookOpen className="mb-3 size-8 text-muted-foreground/50" />
+              <p className="text-sm text-muted-foreground">
+                No skills yet — click New to author your first skill.
               </p>
             </div>
           ) : (
@@ -603,8 +600,54 @@ export function SkillsSection() {
              * whether it shadows another — the card grid buried the only
              * distinction that matters when a catalogue grows. */
             <div className="space-y-2" data-testid="skill-rows">
+              {/* ONE filter band. The page used to stack four bands above
+                  the list — a scope row with its own label and select, a
+                  packs card, a learning card, and a bulk row — before a
+                  single skill was visible. */}
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Scope pills (Claude-style), not per-scope sections. The
+                    component auto-flips to a vertical rail at 5+ items, so
+                    orientation is pinned: four scopes plus "All" would
+                    silently become a left rail. */}
+                <SettingsTabs
+                  value={scopeTab}
+                  onChange={(k) => setScopeTab(k as SkillScopeKey | 'all')}
+                  orientation="horizontal"
+                  label="Skill scope"
+                  panelIdPrefix="skill-scope"
+                  items={[
+                    { key: 'all', label: 'All', count: skills.length },
+                    ...SKILL_SCOPE_GROUPS.map(({ key, label }) => ({
+                      key,
+                      label,
+                      count: grouped[key]?.length ?? 0,
+                    })),
+                  ]}
+                />
+                {/* C-1: the project scope. It was a band of its own with an
+                    uppercase label; it is a filter, so it sits with the
+                    other filters. */}
+                <div className="ml-auto flex min-w-0 items-center gap-2" data-testid="skills-scope-row">
+                  <FolderTree className="size-3 shrink-0 text-muted-foreground/70" aria-hidden="true" />
+                  <div className="w-56 shrink-0">
+                    <WorkspaceSelect
+                      value={wsScope}
+                      onChange={(e) => setWsScope(e.target.value)}
+                      options={scopeOptions}
+                      data-testid="skills-scope-select"
+                      aria-label="Skills scope"
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+              {wsScope && (
+                <p className="px-1 text-2xs text-muted-foreground/70">
+                  Project skills shadow same-named global ones
+                </p>
+              )}
               {/* Bulk actions — select-all plus the two state switches. */}
-              <div className="flex items-center gap-2 px-1 pb-1" data-testid="skills-bulk">
+              <div className="flex items-center gap-2 px-1" data-testid="skills-bulk">
                 <label className="flex items-center gap-1.5 text-2xs text-muted-foreground/70">
                   <input
                     type="checkbox"
@@ -643,25 +686,6 @@ export function SkillsSection() {
                   </div>
                 )}
               </div>
-              {/* Scope pills (Claude-style), not per-scope sections. The
-                  component auto-flips to a vertical rail at 5+ items, so
-                  orientation is pinned: four scopes plus "All" would silently
-                  become a left rail. */}
-              <SettingsTabs
-                value={scopeTab}
-                onChange={(k) => setScopeTab(k as SkillScopeKey | 'all')}
-                orientation="horizontal"
-                label="Skill scope"
-                panelIdPrefix="skill-scope"
-                items={[
-                  { key: 'all', label: 'All', count: skills.length },
-                  ...SKILL_SCOPE_GROUPS.map(({ key, label }) => ({
-                    key,
-                    label,
-                    count: grouped[key]?.length ?? 0,
-                  })),
-                ]}
-              />
               <div
                 role="tabpanel"
                 id={settingsTabPanelId('skill-scope', scopeTab) ?? undefined}
@@ -683,14 +707,18 @@ export function SkillsSection() {
                       return (
                         <section key={key} data-testid={`skill-group-${key}`}>
                           {scopeTab === 'all' && (
-                            <h3 className="flex items-baseline gap-2 pb-0.5 text-[0.65625rem] font-semibold uppercase tracking-widest text-muted-foreground/55">
+                            /* The reference's section label: bold, sentence
+                               case, with the hairline rule running to the
+                               right edge. The old label was a tiny uppercase
+                               tracked-out string. */
+                            <h3 className="flex items-baseline gap-2 border-b border-border/60 pb-1.5 text-sm font-semibold text-foreground">
                               {label}
-                              <span className="text-2xs font-normal normal-case tracking-normal text-muted-foreground/60">
+                              <span className="text-2xs font-normal text-muted-foreground/60">
                                 {group.length}
                               </span>
                             </h3>
                           )}
-                          <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="grid gap-2 sm:grid-cols-2">
                             {group.map((s) => (
                               <SkillCard
                                 key={s.name}
@@ -713,6 +741,15 @@ export function SkillsSection() {
               </div>
             </div>
           )}
+
+          {/* The secondary surfaces sit BELOW the catalogue now. The list is
+              what this page is for, and a packs form used to sit above it. */}
+          <div className="mt-4 space-y-3">
+            {/* Part 16 Phase E: Learning (curator report + drafts). */}
+            <LearningPanel />
+            {/* Skill packs: install-from-remote. */}
+            <SkillPacksPanel />
+          </div>
         </div>
       )}
 
@@ -742,34 +779,39 @@ export function SkillsSection() {
             <div className="mx-auto max-w-3xl space-y-4" data-testid="skill-detail">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
+                  {/* The facts are metadata now, not badges: who wrote it,
+                      what category it is in, which scope it came from and
+                      what it shadows — one muted line, the way the reference
+                      says a detail header does it. */}
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span className="text-[0.9375rem] font-semibold text-foreground">{selected.name}</span>
                     <span className="inline-flex cursor-default items-center gap-1 text-2xs text-muted-foreground">
                       <Info className="size-3" />
                       {selected.createdBy ? `by ${selected.createdBy}` : 'bundled'}
                     </span>
-                    <Badge variant="outline" className="text-2xs capitalize">{selected.category}</Badge>
-                    {/* C-2: scope + overrides badges */}
+                    {selected.category && selected.category !== 'uncategorized' && (
+                      <>
+                        <span aria-hidden="true" className="text-muted-foreground/40">·</span>
+                        <span className="text-2xs capitalize text-muted-foreground/80" data-testid="skill-category-note">
+                          {selected.category}
+                        </span>
+                      </>
+                    )}
                     {selected.scope && (
-                      <span
-                        className={cn(
-                          'rounded-md border px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide',
-                          selected.scope === 'project'
-                            ? 'border-success/30 bg-success/10 text-success-fg'
-                            : 'border-border/50 bg-muted/30 text-muted-foreground',
-                        )}
-                        data-testid="skill-scope-badge"
-                      >
-                        {selected.scope}
-                      </span>
+                      <>
+                        <span aria-hidden="true" className="text-muted-foreground/40">·</span>
+                        <span className="text-2xs text-muted-foreground/80" data-testid="skill-scope-badge">
+                          {selected.scope}
+                        </span>
+                      </>
                     )}
                     {selected.overrides && (
-                      <span
-                        className="rounded-md border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide text-sky-400"
-                        data-testid="skill-overrides-badge"
-                      >
-                        overrides {selected.overrides}
-                      </span>
+                      <>
+                        <span aria-hidden="true" className="text-muted-foreground/40">·</span>
+                        <span className="text-2xs text-muted-foreground/80" data-testid="skill-overrides-badge">
+                          overrides {selected.overrides}
+                        </span>
+                      </>
                     )}
                   </div>
                   <p className={cn('mt-1 text-[0.78125rem] leading-relaxed text-muted-foreground', !seeMore && 'line-clamp-2')}>
@@ -827,7 +869,7 @@ export function SkillsSection() {
                   it, who wrote it, which behaviour it replaced, and what the
                   learning loop is waiting on. Hairlines, because this is
                   metadata rather than content. */}
-              <div className="divide-y divide-white/[0.06] border-y border-white/[0.06]" data-testid="skill-facts">
+              <div className="divide-y divide-border/60 border-y border-border/60" data-testid="skill-facts">
                 <SkillFact label="Usage">{usageLine(selected)}</SkillFact>
                 {liftFact && <SkillFact label="Measured effect">{liftFact}</SkillFact>}
                 {selected.trigger && <SkillFact label="Trigger">{selected.trigger}</SkillFact>}
@@ -861,7 +903,11 @@ export function SkillsSection() {
                     <button
                       type="button"
                       data-testid="skill-open-inbox"
-                      onClick={() => void navigate('/settings/harness-improve')}
+                      /* The inbox lives in BOTH hosts. A link that leaves
+                         the surface has to land in the host the reader is
+                         in — from the Learning hub, linking to the Settings
+                         overlay threw the hub context away. */
+                      onClick={() => void navigate(inboxRoute(host))}
                       className="font-medium text-primary hover:underline"
                     >
                       Review inbox
@@ -1006,16 +1052,17 @@ export function SkillsSection() {
 }
 
 /** Trigger hits, read from the per-skill usage sidecar. A zero count renders
- *  no chip on purpose: most of a catalogue is never-triggered skills, so a
- *  "0 uses" tag on every card would state nothing and bury the scope and
- *  overrides chips that do carry information. */
+ *  no line at all on purpose: most of a catalogue is never-triggered skills,
+ *  so a "0 uses" note on every cell would state nothing and bury the facts
+ *  that do carry information. It is metadata, not a badge — the reference's
+ *  catalogue cells carry a muted line, not a chip. */
 function UsageChip({ skill }: { skill: SkillSummary }) {
   const count = skill.usageCount ?? 0;
   if (!count) return null;
   const lastMs = skill.lastUsed ? Date.parse(skill.lastUsed) : NaN;
   return (
     <span
-      className="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide text-muted-foreground"
+      className="text-2xs text-muted-foreground/70"
       data-testid="skill-usage-badge"
       title={
         Number.isFinite(lastMs)
@@ -1101,11 +1148,16 @@ function skillScopeKey(s: SkillSummary): SkillScopeKey {
       : 'bundled';
 }
 
-/* One card per skill in the 2-column grid: name, what it does, and the two
- * facts that say whether it is live and whether anyone uses it. The card
+/* One cell per skill in the 2-column grid: name, what it does, and the two
+ * facts that say whether it is live and whether anyone uses it. The cell
  * opens the detail pane; the enable control is a REAL toggle that calls the
  * existing patch endpoint, not a status glyph — the whole point of a catalogue
  * is being able to curate it from the grid.
+ *
+ * The cell is BORDERLESS: the reference's catalogue grid is a two-column
+ * grid of cells where "spacing does the work" (docs/plans/2026-10-11-ui-
+ * reference-capture.md §2), and a border round every cell made a grid of
+ * cards out of a list. The hover fill is what says "this is a cell".
  *
  * The enable control keeps visible "Disabled" text so the state is never
  * colour-only. The bulk checkbox stays a separate element outside the open
@@ -1126,13 +1178,13 @@ function SkillCard({
   const enabled = skill.enabled !== false;
   return (
     <div
-      // The testid is on the OUTERMOST card element so everything the row
-      // says about a skill — name, badges, usage chip, enable control — is
-      // inside it. Putting it on the inner button leaves the usage footer a
-      // sibling, and `within(row).getByTestId('skill-usage-badge')` then finds
-      // nothing even though the badge is on screen.
+      // The testid is on the OUTERMOST cell element so everything the row
+      // says about a skill — name, state, usage — is inside it. Putting it
+      // on the inner button leaves the usage footer a sibling, and
+      // `within(row).getByTestId('skill-usage-badge')` then finds nothing
+      // even though the badge is on screen.
       //
-      // The card itself is the open target, as the row was before: clicking
+      // The cell itself is the open target, as the row was before: clicking
       // anywhere on it except the checkbox or the enable toggle opens detail.
       // Those two stopPropagation so a bulk check or a flip does not also
       // navigate away from the grid.
@@ -1142,8 +1194,8 @@ function SkillCard({
       onClick={onOpen}
       onKeyDown={(e) => {
         // The checkbox and enable button are native keyboard controls nested
-        // in the clickable card. Let Space/Enter reach their own behavior;
-        // only the card itself treats those keys as "open details".
+        // in the clickable cell. Let Space/Enter reach their own behavior;
+        // only the cell itself treats those keys as "open details".
         if (e.target !== e.currentTarget) return;
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
@@ -1151,9 +1203,9 @@ function SkillCard({
         }
       }}
       className={cn(
-        'flex cursor-pointer flex-col gap-1.5 rounded-lg border p-2.5 text-left transition hover:bg-white/[0.03]',
+        'flex cursor-pointer flex-col gap-1 rounded-lg p-2.5 text-left transition hover:bg-muted/40',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
-        enabled ? 'border-white/[0.06]' : 'border-warning/20 bg-warning/[0.03]',
+        !enabled && 'bg-warning/[0.04]',
       )}
     >
       <div className="flex items-start gap-2">
@@ -1171,14 +1223,17 @@ function SkillCard({
             <span className="truncate text-[0.8125rem] font-medium text-foreground/90">
               {skill.name}
             </span>
+            {/* State and lineage as WORDS, not chips. The state is never
+                carried by the icon alone — the amber "Disabled" word is
+                still here, it just stopped being a badge. */}
             {!enabled && (
-              <span className="shrink-0 rounded border border-warning/30 bg-warning/10 px-1 py-0.5 text-2xs uppercase tracking-wide text-warning-fg">
+              <span className="shrink-0 text-2xs text-warning-fg" data-testid="skill-disabled-note">
                 Disabled
               </span>
             )}
             {skill.overrides && (
               <span
-                className="shrink-0 rounded border border-sky-500/30 bg-sky-500/10 px-1 py-0.5 text-2xs uppercase tracking-wide text-sky-400"
+                className="shrink-0 text-2xs text-muted-foreground/80"
                 data-testid="skill-row-overrides"
               >
                 overrides {skill.overrides}
@@ -1189,13 +1244,12 @@ function SkillCard({
             {skill.description || 'No description'}
           </span>
         </div>
-        {/* Icon-only, not a bordered "On" pill. The reference card is a calm tile with
-            a check at the right; twenty outlined buttons in a grid was the
-            loudest thing on the page and said nothing. The CONTROL stays in
-            both states — disabling from the grid is a real capability the tests
-            guard — it just stops shouting when the skill is already on. The
-            disabled state still shows the amber "Disabled" pill above, so the
-            state is never carried by an icon alone. */}
+        {/* Icon-only, not a bordered "On" pill. The reference cell is a calm
+            tile with a check at the right; twenty outlined buttons in a grid
+            was the loudest thing on the page and said nothing. The CONTROL
+            stays in both states — disabling from the grid is a real capability
+            the tests guard — it just stops shouting when the skill is
+            already on. */}
         <Button
           type="button"
           variant="ghost"
@@ -1221,10 +1275,8 @@ function SkillCard({
           )}
         </Button>
       </div>
-      <div className="flex items-center justify-between pl-5 text-2xs text-muted-foreground/50">
-        {skill.createdBy && (
-          <span className="uppercase tracking-wide">{skill.createdBy}</span>
-        )}
+      <div className="flex items-center gap-1.5 pl-5 text-2xs text-muted-foreground/60">
+        {skill.createdBy && <span>{skill.createdBy}</span>}
         <UsageChip skill={skill} />
       </div>
     </div>

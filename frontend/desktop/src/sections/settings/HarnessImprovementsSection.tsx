@@ -15,9 +15,6 @@ import {
   Check,
   CircleCheck,
   CircleX,
-  Clock,
-  Database,
-  HeartPulse,
   Loader2,
   RefreshCw,
   Undo2,
@@ -27,7 +24,10 @@ import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 import { getAutoApplyHistory } from '@/api/api-client/skills-versions';
-import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { SectionHeader } from '@/components/SectionHeader';
+import { SettingsTabs } from '@/components/settings/SettingsTabs';
+import { settingsTabPanelId, settingsTabTriggerId } from '@/components/settings/settingsTabIds';
 import { qk } from '@/lib/query-keys';
 import { invalidateReviewInboxCount } from '@/lib/useReviewInboxCount';
 import { cn, formatTimeAgo } from '@/lib/utils';
@@ -82,13 +82,23 @@ interface MemoryProposalRow {
 
 type Filter = 'open' | 'all';
 
-const STATUS_META: Record<Proposal['status'], { label: string; className: string }> = {
-  open: { label: 'Open', className: 'border-warning/30 bg-warning/10 text-warning-fg' },
-  applied: { label: 'Applied', className: 'border-success/30 bg-success/10 text-success-fg' },
-  apply_failed: { label: 'Apply failed', className: 'border-danger/30 bg-danger/10 text-danger-fg' },
-  rejected: { label: 'Rejected', className: 'border-border bg-muted/40 text-muted-foreground' },
-  dismissed: { label: 'Dismissed', className: 'border-border bg-muted/40 text-muted-foreground' },
+/* The state of a proposal, said ONCE and in one place. The list row shows it
+ * as a DOT beside its name — the reference's list rows carry a status dot,
+ * not a filled pill — and the detail view shows the same word. The old code
+ * had a badge STACK per row (status + kind + queue + a regression tag), four
+ * chips of chrome over a one-line summary; the facts are metadata now, in one
+ * muted line at the right of the row. */
+const STATUS_META: Record<Proposal['status'], { label: string; dot: string }> = {
+  open: { label: 'Open', dot: 'bg-warning' },
+  applied: { label: 'Applied', dot: 'bg-success' },
+  apply_failed: { label: 'Apply failed', dot: 'bg-danger' },
+  rejected: { label: 'Rejected', dot: 'bg-muted-foreground/40' },
+  dismissed: { label: 'Dismissed', dot: 'bg-muted-foreground/40' },
 };
+
+/** The tablist's own id prefix, so the filter tabs can name the region they
+ * drive (`aria-controls`) and the region can name them back. */
+const FILTER_TABS = 'inbox-filter';
 
 /** The kinds the backend can APPLY on approval — the same list the
  *  `_APPROVERS` registry carries. `archive` is the second half of the skill
@@ -422,13 +432,18 @@ export function HarnessImprovementsSection() {
 
   return (
     <div className="px-8 py-6 space-y-5 h-full flex flex-col overflow-hidden">
-      <header className="shrink-0 flex items-end justify-between gap-4">
-        <div>
-          <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
-            <HeartPulse className="size-6 text-primary" />
-            Review Inbox
-          </h2>
-          <p data-testid="inbox-header-note" className="mt-1 max-w-xl text-sm text-muted-foreground">
+      {/* The panel-section header — NO icon, because the nav in front of it
+          already carries the icon and the name (the settings rail and the
+          hub's own rail are the same instrument). See the header grammar in
+          sections/learning/LearningHub.tsx.
+          ONE header for BOTH hosts: this section renders in the settings
+          panel and in the Learning hub's Inbox tab, and the same page must
+          not look like two different pages depending on how you got here. */}
+      <SectionHeader
+        title="Review Inbox"
+        className="mb-0 shrink-0"
+        subtitle={
+          <span data-testid="inbox-header-note">
             Everything August wants a human to decide: harness improvement proposals
             (self-improvement, distiller drafts, cross-project promotions) and memory
             retirements.{' '}
@@ -438,45 +453,46 @@ export function HarnessImprovementsSection() {
             {autonomyOn
               ? 'Autonomous apply is on: the rails apply qualifying skill changes on their own, and every one of them is listed below and undoable.'
               : 'Nothing applies until you approve it — approvable kinds run a deterministic applier, the rest are recorded for manual implementation.'}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-lg border border-border/60 p-0.5" role="tablist">
-            {(['open', 'all'] as Filter[]).map((f) => (
-              <button
-                key={f}
-                role="tab"
-                aria-selected={filter === f}
-                onClick={() => {
-                  setFilter(f);
-                  setSelectedId(null);
-                  setChecked(new Set());
-                }}
-                className={cn(
-                  'rounded-md px-2.5 py-1 text-xs font-medium capitalize transition',
-                  filter === f
-                    ? 'bg-foreground text-background'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {f}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              void harnessQ.refetch();
-              void memoryQ.refetch();
-            }}
-            className="rounded-lg border border-border/60 p-2 text-muted-foreground transition hover:text-foreground"
-            title="Refresh"
-            aria-label="Refresh proposals"
-          >
-            <RefreshCw className={cn('size-3', fetching && 'animate-spin')} />
-          </button>
-        </div>
-      </header>
+          </span>
+        }
+        actions={
+          <>
+            {/* The filter is a TABLIST, so it is ONE: roving tabindex,
+                Arrow/Home/End with automatic activation, and `aria-controls`
+                naming the region it drives. The old markup declared
+                `role="tablist"` and `role="tab"` with no `aria-controls` and
+                no roving tabIndex — two "tabs" with nothing behind them, and
+                no way to reach the second one from the keyboard. */}
+            <SettingsTabs
+              value={filter}
+              onChange={(k) => {
+                setFilter(k as Filter);
+                setSelectedId(null);
+                setChecked(new Set());
+              }}
+              items={[
+                { key: 'open', label: 'Open', count: openRows.length },
+                { key: 'all', label: 'All', count: rows.length },
+              ]}
+              label="Proposal filter"
+              panelIdPrefix={FILTER_TABS}
+            />
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => {
+                void harnessQ.refetch();
+                void memoryQ.refetch();
+              }}
+              title="Refresh"
+              aria-label="Refresh proposals"
+              data-testid="inbox-refresh"
+            >
+              <RefreshCw className={cn('size-3', fetching && 'animate-spin')} />
+            </Button>
+          </>
+        }
+      />
 
       <AutoChangeHistory />
 
@@ -508,9 +524,17 @@ export function HarnessImprovementsSection() {
         </div>
       )}
 
+      {/* ── The region the filter tabs drive ──────────────────────────── */}
+      <div
+        role="tabpanel"
+        id={settingsTabPanelId(FILTER_TABS, filter) ?? undefined}
+        aria-labelledby={settingsTabTriggerId(FILTER_TABS, filter)}
+        className="min-h-0 flex-1 overflow-y-auto pr-1"
+        data-testid="inbox-panel"
+      >
       {/* ── Detail view ─────────────────────────────────────────────── */}
       {selected ? (
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+        <div className="space-y-4">
           <button
             type="button"
             onClick={() => setSelectedId(null)}
@@ -522,38 +546,25 @@ export function HarnessImprovementsSection() {
           <div className="max-w-3xl space-y-3 rounded-xl border border-border/60 bg-card/60 p-5">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="font-mono text-2xs text-muted-foreground">{selected.id}</span>
-                  <Badge variant="outline" className="text-2xs uppercase">{selected.kind}</Badge>
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      'flex items-center gap-1 text-2xs',
-                      selected.queue === 'memory' ? 'text-violet-400 border-violet-500/30' : 'text-muted-foreground',
-                    )}
-                  >
-                    {selected.queue === 'memory' ? <Database className="size-3" /> : <HeartPulse className="size-3" />}
-                    {selected.queue}
-                  </Badge>
-                  <Badge className={cn('border text-2xs', STATUS_META[selected.status].className)}>
-                    {STATUS_META[selected.status].label}
-                  </Badge>
-                  {selected.queue === 'harness' && !APPROVABLE.has(selected.kind) && selected.status === 'open' && (
-                    <Badge
-                      data-testid="measured-regression-tag"
-                      className={cn(
-                        'border text-2xs',
-                        selected.kind === 'revert'
-                          ? 'border-danger/30 bg-danger/10 text-danger-fg'
-                          : 'border-sky-500/30 bg-sky-500/10 text-sky-400',
-                      )}
-                    >
-                      {selected.kind === 'revert'
-                        ? 'measured regression — the rollback below is yours to run'
-                        : 'human-only — records findings'}
-                    </Badge>
-                  )}
-                </div>
+                {/* One muted metadata line instead of a STACK of badges
+                    (kind + queue + status + a regression tag). The facts do
+                    not disappear — they stop being four chips of chrome over
+                    a sentence. */}
+                <p className="text-2xs uppercase tracking-wide text-muted-foreground/70">
+                  {selected.kind}
+                  <span className="mx-1.5 normal-case tracking-normal text-muted-foreground/50">·</span>
+                  {selected.queue === 'memory' ? 'memory' : 'harness'}
+                  {selected.queue === 'harness' && !APPROVABLE.has(selected.kind) && selected.status === 'open' ? (
+                    <>
+                      <span className="mx-1.5 normal-case tracking-normal text-muted-foreground/50">·</span>
+                      <span data-testid="measured-regression-tag">
+                        {selected.kind === 'revert'
+                          ? 'measured regression — the rollback below is yours to run'
+                          : 'human-only — records findings'}
+                      </span>
+                    </>
+                  ) : null}
+                </p>
                 {selectedReviewerLine && (
                   <p data-testid="reviewer-line" className="mt-1.5 text-xs text-muted-foreground">
                     {selectedReviewerLine}
@@ -561,11 +572,16 @@ export function HarnessImprovementsSection() {
                 )}
                 <p className="mt-2 text-[0.8125rem] leading-relaxed text-foreground">{selected.problem}</p>
               </div>
-              {selected.decidedAt && (
-                <span className="shrink-0 text-2xs text-muted-foreground">
-                  {formatTimeAgo(selected.decidedAt)}
+              <div className="shrink-0 text-right">
+                <span className="block text-2xs text-muted-foreground">
+                  {STATUS_META[selected.status].label}
                 </span>
-              )}
+                {selected.decidedAt && (
+                  <span className="block text-2xs text-muted-foreground/70">
+                    {formatTimeAgo(selected.decidedAt)}
+                  </span>
+                )}
+              </div>
             </div>
 
             <EvidenceRow label="Evidence" body={selected.evidence} />
@@ -703,14 +719,14 @@ export function HarnessImprovementsSection() {
         </div>
       ) : (
         /* ── Inbox list ─────────────────────────────────────────────── */
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1" data-testid="proposal-queue">
+        <div className="space-y-2" data-testid="proposal-queue">
           {(harnessQ.isLoading || memoryQ.isLoading) && (
             <div className="flex h-32 items-center justify-center text-muted-foreground">
               <Loader2 className="size-5 animate-spin" />
             </div>
           )}
           {!fetching && !harnessQ.isLoading && rows.length === 0 && (
-            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/60 bg-card/40 px-6 py-12 text-center">
+            <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
               <CircleCheck className="mb-3 size-8 text-success-fg" />
               <p className="text-sm font-medium text-foreground">
                 {filter === 'open' ? 'Nothing waiting for you' : 'No proposals yet'}
@@ -735,76 +751,78 @@ export function HarnessImprovementsSection() {
               Select all open ({openRows.length})
             </label>
           )}
-          {rows.map((p) => (
-            <div
-              key={rowKey(p)}
-              data-testid={`proposal-row-${p.id}`}
-              className="group w-full rounded-xl border border-border/50 bg-card/50 p-4 text-left transition hover:border-border hover:bg-card/80"
-            >
-              <div className="flex items-start gap-3">
-                <span className="mt-0.5 shrink-0">
-                  {p.status === 'open' ? (
-                    <button
-                      type="button"
-                      onClick={() => toggleCheck(p)}
+          {/* Borderless hairline rows, the reference's list grammar: a status
+              DOT, the sentence that says what is proposed, the evidence under
+              it, and ONE muted metadata line at the right. The old row was a
+              bordered card per proposal carrying a STACK of badges (status +
+              kind + queue + a regression chip) over the same two lines — four
+              pieces of chrome saying "this is a proposal" once each. */}
+          <ul className="divide-y divide-border/60">
+            {rows.map((p) => (
+              <li
+                key={rowKey(p)}
+                data-testid={`proposal-row-${p.id}`}
+                className="group flex items-center gap-3 px-2 py-2 transition-colors hover:bg-muted/40"
+              >
+                {p.status === 'open' ? (
+                  <span className="w-3.5 shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={checked.has(rowKey(p))}
+                      onChange={() => toggleCheck(p)}
                       aria-label={`Select ${p.problem}`}
-                      className="flex items-center"
-                    >
-                      <input
-                        type="checkbox"
-                        readOnly
-                        checked={checked.has(rowKey(p))}
-                        className="size-3 accent-primary"
-                        tabIndex={-1}
-                      />
-                    </button>
-                  ) : p.status === 'applied' ? (
-                    <CircleCheck className="size-4 text-success-fg" />
-                  ) : p.status === 'apply_failed' ? (
-                    <CircleX className="size-4 text-danger-fg" />
-                  ) : (
-                    <Clock className="size-4 text-muted-foreground" />
-                  )}
+                      data-testid={`proposal-select-${p.id}`}
+                      className="size-3 accent-primary"
+                    />
+                  </span>
+                ) : (
+                  <span className="w-3.5 shrink-0" aria-hidden="true" />
+                )}
+                {/* The state is a DOT plus its word — never the colour alone.
+                    The row used to carry a filled status PILL per proposal. */}
+                <span className="flex w-20 shrink-0 items-center gap-1.5 text-2xs text-muted-foreground">
+                  <span
+                    className={cn('size-1.5 shrink-0 rounded-full', STATUS_META[p.status].dot)}
+                    aria-hidden="true"
+                  />
+                  {STATUS_META[p.status].label}
                 </span>
                 <button
                   type="button"
                   onClick={() => setSelectedId(rowKey(p))}
                   className="min-w-0 flex-1 text-left"
+                  data-testid={`proposal-open-${p.id}`}
                 >
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <Badge className={cn('border text-2xs uppercase', STATUS_META[p.status].className)}>
-                      {STATUS_META[p.status].label}
-                    </Badge>
-                    <Badge variant="outline" className="text-2xs uppercase">{p.kind}</Badge>
-                    {p.kind === 'revert' && (
-                      <Badge
-                        data-testid="measured-regression-tag"
-                        className="border border-danger/30 bg-danger/10 text-2xs text-danger-fg"
-                      >
-                        measured regression
-                      </Badge>
-                    )}
-                    <span
-                      className={cn(
-                        'text-2xs uppercase tracking-wide',
-                        p.queue === 'memory' ? 'text-violet-400/80' : 'text-muted-foreground/70',
-                      )}
-                    >
-                      {p.queue === 'memory' ? <Database className="mr-0.5 inline size-2.5" /> : null}
-                      {p.queue}
+                  <span className="block truncate text-sm text-foreground">{p.problem}</span>
+                  {p.evidence && (
+                    <span className="block truncate text-2xs text-muted-foreground/80">
+                      {p.evidence}
                     </span>
-                    <span className="text-2xs text-muted-foreground">
-                      {p.createdAt ? formatTimeAgo(p.createdAt) : ''}
-                    </span>
-                  </div>
-                  <p className="mt-1 line-clamp-1 text-[0.8125rem] font-medium text-foreground">{p.problem}</p>
-                  <p className="mt-0.5 line-clamp-1 text-2xs text-muted-foreground">{p.evidence}</p>
+                  )}
                 </button>
-              </div>
-            </div>
-          ))}
+                <span
+                  className="hidden shrink-0 items-center gap-1.5 text-2xs text-muted-foreground/70 sm:inline-flex"
+                  title={`${p.kind} · ${p.queue}`}
+                >
+                  {p.kind === 'revert' && (
+                    <span data-testid="measured-regression-tag" className="text-danger-fg">
+                      regression
+                    </span>
+                  )}
+                  <span className="font-mono">{p.kind}</span>
+                  <span aria-hidden="true">·</span>
+                  <span>{p.queue}</span>
+                  <span aria-hidden="true">·</span>
+                  <span className="tabular-nums">
+                    {p.createdAt ? formatTimeAgo(p.createdAt) : '—'}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
+      </div>
     </div>
   );
 }

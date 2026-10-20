@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Brain, Check, ChevronDown, ChevronRight, Loader2, RotateCcw, Asterisk, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
+import { Button } from '@/components/ui/button';
 import { useModels } from '@/hooks/useModels';
 import { qk } from '@/lib/query-keys';
 import { invalidateReviewInboxCount } from '@/lib/useReviewInboxCount';
@@ -523,32 +524,37 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
 
       {expanded && (
         <div className="space-y-4 border-t border-border/60 px-4 py-3">
-          {/* Raw telemetry behind an explicit expand (D3). */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground/70">
+          {/* Raw telemetry behind an explicit expand (D3). ONE muted line —
+              the six chips said "there are numbers here" six times; the
+              reference's rule is that metadata is muted and de-emphasised,
+              not that every fact gets its own border. */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-2xs text-muted-foreground/70">
+            <span className="font-semibold uppercase tracking-wider text-muted-foreground/50">
               Details
             </span>
-            {metrics.map(([label, value]) => (
-              <span
-                key={label}
-                data-testid={`learning-metric-${label.toLowerCase()}`}
-                className="rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-2xs text-muted-foreground"
-              >
+            {metrics.map(([label, value], i) => (
+              <span key={label} data-testid={`learning-metric-${label.toLowerCase()}`}>
+                {i > 0 && (
+                  <span aria-hidden="true" className="mr-2 text-muted-foreground/40">
+                    ·
+                  </span>
+                )}
                 {label} {value ?? '—'}
               </span>
             ))}
           </div>
-          <div className="flex items-center gap-2">
-            <button
+          <div className="flex flex-wrap items-center gap-2">
+            {/* The ONE primary action on this surface. */}
+            <Button
               type="button"
+              size="sm"
               onClick={runPass}
               disabled={running || reportQ.data?.mode === 'off'}
               data-testid="learning-run-pass"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted/30 px-2.5 py-1 text-2xs text-foreground transition hover:border-primary/40 disabled:opacity-50"
             >
               {running ? <Loader2 className="size-3 animate-spin" /> : null}
               Run learning pass
-            </button>
+            </Button>
             <CuratorSuggestionBar />
             {reportQ.data?.mode === 'off' && (
               <span className="text-[0.65625rem] text-muted-foreground">
@@ -584,14 +590,14 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
               </p>
             ) : (
               <>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {(verdicts.reasons ?? []).map((r) => (
-                    <span
-                      key={r.reason}
-                      data-testid={`learning-verdict-${r.reason}`}
-                      title={`end_reason = ${r.reason}`}
-                      className="rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-2xs text-muted-foreground"
-                    >
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-2xs text-muted-foreground/70">
+                  {(verdicts.reasons ?? []).map((r, i) => (
+                    <span key={r.reason} data-testid={`learning-verdict-${r.reason}`} title={`end_reason = ${r.reason}`}>
+                      {i > 0 && (
+                        <span aria-hidden="true" className="mr-2 text-muted-foreground/40">
+                          ·
+                        </span>
+                      )}
                       {turnEndPhrase(r.reason)} {r.turns}
                     </span>
                   ))}
@@ -599,8 +605,10 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
                     <span
                       data-testid="learning-verdict-unrecorded"
                       title="Rows written before the verdict was recorded, or turns whose reason never reached the ledger — not a reason of their own"
-                      className="rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-2xs text-muted-foreground/80"
                     >
+                      <span aria-hidden="true" className="mr-2 text-muted-foreground/40">
+                        ·
+                      </span>
                       {verdicts.reasonUnrecorded} turn(s) not recorded
                     </span>
                   )}
@@ -639,17 +647,19 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
                 failure patterns.
               </p>
             ) : (
-              <ul className="space-y-1.5">
+              /* Borderless hairline rows — the reference's list grammar. Each
+                 episode used to be a bordered card of its own. */
+              <ul className="divide-y divide-border/60">
                 {episodesQ.data.episodes.map((ep) => (
                   <li
                     key={ep.id}
                     data-testid="learning-episode"
-                    className="flex items-center justify-between gap-3 rounded-lg border border-border/50 bg-card/60 px-3 py-1.5 text-xs"
+                    className="flex items-center justify-between gap-3 px-2 py-2 text-xs transition-colors hover:bg-muted/40"
                   >
                     <span className="min-w-0 truncate text-foreground/90" title={ep.fingerprint}>
                       {describeEpisode(ep)}
                     </span>
-                    <span className="shrink-0 rounded-full bg-muted/40 px-2 py-0.5 text-2xs text-muted-foreground">
+                    <span className="shrink-0 text-2xs text-muted-foreground/70">
                       confidence {typeof ep.rubric?.score === 'number' ? ep.rubric.score.toFixed(2) : '—'}
                     </span>
                   </li>
@@ -668,41 +678,59 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
                 No open drafts. The judge only drafts after human review gates pass.
               </p>
             ) : (
-              <ul className="space-y-1.5">
+              /* The SAME treatment the Review Inbox gives a proposal:
+                 kicker (what kind of proposal it is) · title (what it is
+                 called) · evidence (what it proposes) · action row. These two
+                 surfaces show the same proposals — one is the queue, one is
+                 the shortcut — and they used to read as two different
+                 products: a bordered card with two bare icon buttons here,
+                 a badge-stacked card there. */
+              <ul className="divide-y divide-border/60">
                 {draftsQ.data.proposals.map((p) => (
                   <li
                     key={p.id}
                     data-testid="learning-draft"
-                    className="rounded-lg border border-border/50 bg-card/60 px-3 py-2 text-xs"
+                    className="group flex items-start gap-3 px-2 py-2 transition-colors hover:bg-muted/40"
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="min-w-0 truncate font-medium text-foreground">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-2xs uppercase tracking-wide text-muted-foreground/70">
+                        {p.kind}
+                      </p>
+                      <p className="truncate text-sm text-foreground">
                         {p.payload?.name || p.problem}
-                      </span>
-                      <span className="flex shrink-0 items-center gap-1">
-                        <button
-                          type="button"
-                          data-testid={`learning-approve-${p.id}`}
-                          onClick={() => decide.mutate({ id: p.id, decision: 'approve' })}
-                          disabled={decide.isPending}
-                          className="rounded p-1 text-success hover:bg-success/10"
-                          aria-label="Approve draft"
-                        >
-                          <Check className="size-3" />
-                        </button>
-                        <button
-                          type="button"
-                          data-testid={`learning-reject-${p.id}`}
-                          onClick={() => decide.mutate({ id: p.id, decision: 'reject' })}
-                          disabled={decide.isPending}
-                          className="rounded p-1 text-destructive hover:bg-destructive/10"
-                          aria-label="Reject draft"
-                        >
-                          <X className="size-3" />
-                        </button>
-                      </span>
+                      </p>
+                      {p.proposal && (
+                        <p className="mt-0.5 line-clamp-2 text-2xs text-muted-foreground/80">
+                          {p.proposal}
+                        </p>
+                      )}
                     </div>
-                    <p className="mt-0.5 line-clamp-2 text-muted-foreground">{p.proposal}</p>
+                    <div className="flex shrink-0 items-center gap-0.5">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        data-testid={`learning-approve-${p.id}`}
+                        onClick={() => decide.mutate({ id: p.id, decision: 'approve' })}
+                        disabled={decide.isPending}
+                        aria-label="Approve draft"
+                        className="text-success hover:bg-success/10"
+                      >
+                        <Check className="size-3" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        data-testid={`learning-reject-${p.id}`}
+                        onClick={() => decide.mutate({ id: p.id, decision: 'reject' })}
+                        disabled={decide.isPending}
+                        aria-label="Reject draft"
+                        className="text-destructive hover:bg-destructive/10"
+                      >
+                        <X className="size-3" />
+                      </Button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -726,32 +754,36 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
                 Scheduler status unavailable — the learning loop runs on its cadence anyway.
               </p>
             ) : (
-              <ul className="space-y-1.5">
+              /* Borderless hairline rows — one bordered card per job used to
+                 turn a ledger into a stack of tiles. */
+              <ul className="divide-y divide-border/60">
                 {schedulerQ.data.jobs.map((j) => {
                   const outcome = jobOutcomeLine(j) || (j.summary?.error ? String(j.summary.error).slice(0, 80) : '');
                   return (
                     <li
                       key={j.job}
                       data-testid={`learning-scheduler-job-${j.job}`}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-border/50 bg-card/60 px-3 py-1.5 text-xs"
+                      className="flex items-center justify-between gap-3 px-2 py-2 text-xs transition-colors hover:bg-muted/40"
                     >
                       <span className="min-w-0">
                         <span className="font-medium text-foreground/90">{j.job}</span>
-                        <span className="ml-2 text-[0.65625rem] text-muted-foreground" title={j.lastRunAt ?? undefined}>
+                        <span className="ml-2 text-2xs text-muted-foreground" title={j.lastRunAt ?? undefined}>
                           every {j.intervalHours}h · last {agoLabel(j.lastRunAt)}
                           {j.lastStatus === 'error' ? ' · errored' : ''}
                           {outcome ? ` · ${outcome}` : ''}
                         </span>
                       </span>
-                      <button
+                      <Button
                         type="button"
+                        variant="ghost"
+                        size="sm"
                         data-testid={`learning-scheduler-run-${j.job}`}
                         onClick={() => runJobNow.mutate(j.job)}
                         disabled={runJobNow.isPending}
-                        className="shrink-0 rounded-lg border border-border/60 bg-muted/30 px-2 py-0.5 text-[0.65625rem] text-muted-foreground transition hover:border-primary/40 hover:text-foreground disabled:opacity-50"
+                        className="shrink-0 text-2xs text-muted-foreground hover:text-foreground"
                       >
                         {runJobNow.isPending && runJobNow.variables === j.job ? 'running…' : 'run now'}
-                      </button>
+                      </Button>
                     </li>
                   );
                 })}
@@ -838,37 +870,39 @@ export function LearningPanel({ defaultExpanded = false }: { defaultExpanded?: b
                   : 'Empty. Enable auto-refine to let gated passes (producer + a different-model reviewer, rollback on reject) write durable notes here — or leave it off and nothing injects.'}
               </p>
             ) : (
-              <ul className="space-y-1.5">
+              <ul className="divide-y divide-border/60">
                 {refineQ.data.entries.map((en) => (
                   <li
                     key={en.id}
                     data-testid="learning-refine-entry"
-                    className="flex items-start justify-between gap-2 rounded-lg border border-border/50 bg-card/60 px-3 py-1.5 text-xs"
+                    className="flex items-start justify-between gap-2 px-2 py-2 text-xs transition-colors hover:bg-muted/40"
                   >
                     <span className="min-w-0">
-                      <span className="mr-1.5 inline-block rounded-full border border-border/60 bg-muted/30 px-1.5 py-px text-2xs uppercase text-muted-foreground">
+                      <span className="mr-1.5 text-2xs uppercase text-muted-foreground/70">
                         {en.kind} · {en.scope} · v{en.version}
                       </span>
                       <span className="text-foreground/90">
                         {en.content?.text || en.content?.name || en.id}
                       </span>
                       {en.rationale ? (
-                        <span className="mt-0.5 block truncate text-[0.65625rem] text-muted-foreground" title={en.rationale}>
+                        <span className="mt-0.5 block truncate text-2xs text-muted-foreground" title={en.rationale}>
                           why: {en.rationale}
                         </span>
                       ) : null}
                     </span>
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="icon-sm"
                       data-testid={`learning-refine-rollback-${en.id}`}
                       onClick={() => rollbackRefine.mutate(en.id)}
                       disabled={rollbackRefine.isPending}
                       title="Roll back the newest version (undo is itself versioned)"
                       aria-label={`Roll back refine entry ${en.id}`}
-                      className="shrink-0 rounded p-1 text-muted-foreground transition hover:bg-muted/50 hover:text-foreground"
+                      className="shrink-0 text-muted-foreground transition hover:bg-muted/50 hover:text-foreground"
                     >
                       <RotateCcw className="size-3" />
-                    </button>
+                    </Button>
                   </li>
                 ))}
               </ul>

@@ -10,7 +10,7 @@
  * the skills catalogue, the memory browser, and the job ledger, and this
  * route is one more door into each. */
 
-import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   BookOpen,
   CalendarClock,
@@ -20,6 +20,7 @@ import {
   Scale,
   type LucideIcon,
 } from 'lucide-react';
+import { SectionHeader } from '@/components/SectionHeader';
 import { WorkspaceNavLink } from '@/components/workspace/WorkspaceNavLink';
 import { useReviewInboxCount } from '@/lib/useReviewInboxCount';
 import { DecisionsSection } from '@/sections/settings/DecisionsSection';
@@ -65,15 +66,54 @@ const HUB_MEMORY_ID = 'learning-hub-memory';
  *     so it does not take SectionHeader.
  *   • A full-screen MODE surface keeps its own top bar (see LiveSurface).
  *     It is not a page — the chat stays visible behind it, and a page
- *     header would claim the whole window for a mode. */
+ *     header would claim the whole window for a mode.
+ *
+ * What that means HERE, now that the hub is the second home of the four
+ * settings sections:
+ *
+ *   • The hub is a ROUTE, so the hub owns a rail header ("Learning" + the
+ *     graduation cap) — the rail header it already had.
+ *   • Each TAB is a SECTION inside that route, so each tab's content opens
+ *     with `SectionHeader` (no icon — the rail row carries it). The
+ *     Inbox, Skills and Scheduler tabs do; the Memory tab follows the
+ *     reference capture literally and opens straight into its own section
+ *     headers ("You", "Topics", "Notes", "Rules"), which is what the
+ *     Claude memory list does.
+ *   • The four sections render the SAME header in the SETTINGS host as
+ *     they do here. One shape, two homes — see `host.ts` for the one
+ *     difference that survives (a link that leaves the surface). */
 
 export function LearningHub() {
-  // Tab state is local, not a route segment: the hub is one nav destination
-  // and each tab is a view inside it, the way the settings rail is a view
-  // inside /settings. The deep link for a tab's full page remains the
-  // settings section it was always reachable at.
-  const [tab, setTab] = useState<HubTabId>('inbox');
+  /* The tab is a local view, not a route segment — the hub is ONE nav
+   * destination and each tab is a view inside it, the way the settings rail
+   * is a view inside /settings. It is still DEEP-LINKABLE, though: a link
+   * from another surface (the skills detail's "Review inbox") has to be able
+   * to land on a named tab, and `?tab=` is the only way to say which one
+   * without turning five tabs into five routes.
+   *
+   * The PARAMETER is the single source of truth — one `?tab=`, read by the
+   * hub and written by the rail. A second copy of the tab (local state) would
+   * be a second truth, and the two would disagree the moment a reader edited
+   * the URL by hand. */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requested = searchParams.get('tab');
+  const tab: HubTabId =
+    requested && TABS.some((t) => t.id === requested) ? (requested as HubTabId) : 'inbox';
   const inbox = useReviewInboxCount();
+
+  /** Select a tab and write it into the URL, so the view can be linked to.
+   * `replace` — the hub is one destination, so moving between its tabs is
+   * not a navigation the back button should walk. */
+  const selectTab = (id: HubTabId) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('tab', id);
+        return next;
+      },
+      { replace: true },
+    );
+  };
 
   return (
     <div className="flex h-full min-h-0" data-testid="learning-hub">
@@ -101,7 +141,7 @@ export function LearningHub() {
                 label={label}
                 active={tab === id}
                 badge={countsDecisions && inbox.total > 0 ? String(inbox.total) : null}
-                onSelect={() => setTab(id)}
+                onSelect={() => selectTab(id)}
               />
             ))}
           </div>
@@ -113,10 +153,19 @@ export function LearningHub() {
           ride its scrollbar — one rule for all of them. */}
       <div className="h-full min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
         {tab === 'inbox' ? <HarnessImprovementsSection /> : null}
-        {tab === 'skills' ? <SkillsSection /> : null}
+        {tab === 'skills' ? <SkillsSection host="hub" /> : null}
         {tab === 'memory' ? <MemorySection active={{ id: HUB_MEMORY_ID }} /> : null}
         {tab === 'scheduler' ? (
           <div className="px-8 py-6">
+            {/* A tab is a SECTION inside the route, so it takes SectionHeader:
+                no icon (the rail row carries it) and a smaller title. The
+                panel below keeps its own collapsed-header grammar — it is a
+                card, and a card names itself. */}
+            <SectionHeader
+              title="Scheduler"
+              subtitle="The background passes that learn from your sessions, and when each one last ran"
+              className="mb-4"
+            />
             <LearningPanel defaultExpanded />
           </div>
         ) : null}

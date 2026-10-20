@@ -1,8 +1,15 @@
 /* ── Memory — human-readable browse of what August stores ────────────── */
-/* Memories + Facts tabs render one flat chronological list across kinds
- * : kind chip · title · relative date · ⋯, filter chips above
- * (not tabs), no cards/meters, and a one-line health footer fed by the
- * consolidation log.
+/* One flat chronological list, split into named SECTIONS (You / Topics /
+ * Notes / Rules), and each row is a hairline row: name · one-line summary ·
+ * updated date, with edit and delete on hover. There is no kind chip, no
+ * card per row and no meter — the section a row sits in says what kind of
+ * thing it is, which is the one thing a chip on every row was saying.
+ *
+ * The section headers are the reference's shape: bold, ~15 px, with a
+ * hairline rule running the full content width beneath them
+ * (docs/plans/2026-10-11-ui-reference-capture.md §5, "List view"). The
+ * page has NO title of its own — the nav in front of it carries the name,
+ * and the reference's memory list opens straight into its section headers.
  *
  * Detail view (Markdown body, delete, inline edit over whitelisted fields),
  * the Claude-style add-box, the two model-memory toggles, and per-entry /
@@ -28,7 +35,7 @@ import { BrainBackupsCard } from './BrainBackupsCard';
 import type { ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArchiveRestore, ArrowUp, ChevronLeft, ChevronRight, Download, Loader2, Pencil, RefreshCw, Search, Trash2, UserRoundCog } from 'lucide-react';
+import { ArchiveRestore, ArrowUp, ChevronLeft, ChevronRight, Download, Loader2, Pencil, RefreshCw, Search, SlidersHorizontal, Trash2, UserRoundCog } from 'lucide-react';
 import { api } from '@/api/client';
 import { PageLoader } from '@/components/PageLoader';
 import { Button } from '@/components/ui/button';
@@ -460,13 +467,34 @@ function entryToMarkdown(store: string, r: Row, meta: StoreMeta): string {
  * project, and the August-specific surface under that. Groups are separated by a
  * rule, not by a box — a box around every group is what made the page read as
  * stacked cards instead of one list you scan. */
-/* A flat section header — the reference's shape: a small title, a quiet hint
- * at its right, then the rows separated by hairlines. No card chrome. */
-function MemorySectionHeader({ title, hint }: { title: string; hint?: string }) {
+/* A section header — the reference's shape: BOLD, ~15 px, with a hairline
+ * rule running the full content width beneath it and generous space above
+ * (docs/plans/2026-10-11-ui-reference-capture.md §5, "List view": "Section
+ * headers — You, Topics, Areas — are bold, ~15 px, with a hairline rule
+ * running the full content width beneath them and generous space above").
+ * The old header was a 13 px title with NO rule, and the group header was a
+ * tiny uppercase tracked-out label — two grammars for the same thing. */
+function MemorySectionHeader({
+  title,
+  hint,
+  hintTestId,
+  className,
+}: {
+  title: string;
+  hint?: string;
+  hintTestId?: string;
+  className?: string;
+}) {
   return (
-    <div className="flex items-baseline justify-between gap-3 pb-1">
-      <h3 className="text-[0.8125rem] font-semibold tracking-tight text-foreground">{title}</h3>
-      {hint && <span className="truncate text-2xs text-muted-foreground/55">{hint}</span>}
+    <div className={cn('mt-6 border-b border-border/60 pb-1.5', className)}>
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="text-[0.9375rem] font-semibold tracking-tight text-foreground">{title}</h2>
+        {hint && (
+          <span className="truncate text-2xs tabular-nums text-muted-foreground/60" data-testid={hintTestId}>
+            {hint}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -483,23 +511,8 @@ function MemoryGroup({
   testId: string;
 }) {
   return (
-    <section
-      className="border-t border-white/[0.07] pt-3 first:border-t-0 first:pt-0"
-      data-testid={testId}
-    >
-      <div className="flex items-baseline gap-3 pb-0.5">
-        <h2 className="text-[0.65625rem] font-semibold uppercase tracking-widest text-muted-foreground/55">
-          {title}
-        </h2>
-        {aside && (
-          <span
-            className="ml-auto shrink-0 text-[0.65625rem] tabular-nums text-muted-foreground/70"
-            data-testid={`${testId}-aside`}
-          >
-            {aside}
-          </span>
-        )}
-      </div>
+    <section className="mt-6" data-testid={testId}>
+      <MemorySectionHeader title={title} hint={aside} hintTestId={`${testId}-aside`} className="mt-0" />
       {children}
     </section>
   );
@@ -531,6 +544,10 @@ export function MemorySection({ active }: { active: { id: string } }) {
   // C-5: pagination past the 200-row unified fetch cap.
   const [unifiedOffset, setUnifiedOffset] = useState(0);
   const query = search.trim();
+  /* How many filters are narrowing the list — the disclosure says so, so a
+   * filtered list is never silently filtered. */
+  const activeFilterCount =
+    (catFilter ? 1 : 0) + (srcFilter ? 1 : 0) + (confFilter ? 1 : 0) + (sort !== 'newest' ? 1 : 0);
 
   // A deep link to either alias lands on the same page; clear the browse state
   // so arriving from a stale link never shows another entry's filters.
@@ -1048,9 +1065,11 @@ export function MemorySection({ active }: { active: { id: string } }) {
           row ABOUT the list instead of the list. */}
 
       {/* Import from another AI — the reference's banner position: one
-          prominent row at the very top, before the list it feeds. */}
+          prominent row at the very top, before the list it feeds. It is a
+          ROW, not a card: a filled box above the list was the loudest
+          thing on a page whose job is showing what August remembers. */}
       <div
-        className="flex items-start justify-between gap-4 rounded-xl border border-white/[0.06] bg-card/60 p-4"
+        className="flex items-start justify-between gap-4 border-b border-border/60 pb-4"
         data-testid="memory-import-banner"
       >
         <div className="min-w-0">
@@ -1063,20 +1082,25 @@ export function MemorySection({ active }: { active: { id: string } }) {
             before importing.
           </p>
         </div>
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="sm"
           onClick={() => setImportOpen(true)}
-          className="shrink-0 rounded-lg border border-border/60 bg-card px-3.5 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:bg-muted/60"
           data-testid="memory-import-open"
         >
           Start import
-        </button>
+        </Button>
       </div>
 
-      {/* Search + server-side filters + sort + refresh + export + select. */}
+      {/* Search, the server-side filters, refresh, export and the bulk
+          select. The four server-side selects and the sort sit behind ONE
+          disclosure: they were standing in a row across the top of the
+          page, louder than the list they filter, and the page's job is
+          showing what August remembers. */}
       <div className="flex flex-wrap items-center gap-2 pt-4">
-        <div className="relative flex-1 max-w-sm min-w-44">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground/60" />
+        <div className="relative min-w-44 max-w-sm flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-3 -translate-y-1/2 text-muted-foreground/60" />
           <input
             value={search}
             onChange={(e) => {
@@ -1086,71 +1110,99 @@ export function MemorySection({ active }: { active: { id: string } }) {
             }}
             placeholder="Search memory…"
             aria-label="Search memory"
-            className="w-full rounded-lg border border-border/60 bg-card/60 py-1.5 pl-8 pr-3 text-xs text-foreground outline-none transition focus:border-primary/40 focus-visible:ring-2 focus-visible:ring-primary/50"
+            className="w-full rounded-full border border-border/60 bg-card/60 py-1.5 pl-9 pr-3 text-xs text-foreground outline-none transition focus:border-primary/40 focus-visible:ring-2 focus-visible:ring-primary/50"
             data-testid="memory-search-input"
           />
         </div>
-        <select
-          value={catFilter}
-          onChange={(e) => {
-            setCatFilter(e.target.value);
-            setUnifiedOffset(0);
-          }}
-          className="rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-xs text-foreground outline-none"
-          data-testid="memory-category-filter"
-          aria-label="Filter by category"
-        >
-          <option value="">All categories</option>
-          {['general', 'user', 'project', 'workflow', 'preference'].map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
-        <select
-          value={srcFilter}
-          onChange={(e) => {
-            setSrcFilter(e.target.value);
-            setUnifiedOffset(0);
-          }}
-          className="rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-xs text-foreground outline-none"
-          data-testid="memory-source-filter"
-          aria-label="Filter by source"
-        >
-          <option value="">All sources</option>
-          {['remember', 'user', 'extracted', 'lesson'].map((s) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
-        <select
-          value={confFilter}
-          onChange={(e) => {
-            setConfFilter(e.target.value);
-            setUnifiedOffset(0);
-          }}
-          className="rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-xs text-foreground outline-none"
-          data-testid="memory-confidence-filter"
-          aria-label="Filter by confidence"
-        >
-          <option value="">All confidence</option>
-          <option value="high">high</option>
-          <option value="medium">medium</option>
-          <option value="low">low</option>
-        </select>
-        <select
-          value={sort}
-          onChange={(e) => {
-            setSort(e.target.value);
-            setUnifiedOffset(0);
-          }}
-          className="rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-xs text-foreground outline-none"
-          data-testid="memory-sort"
-          aria-label="Sort order"
-        >
-          {SORTS.map((s) => (
-            <option key={s.value} value={s.value}>{s.label}</option>
-          ))}
-        </select>
-        <button
+        <details className="group/filters relative">
+          <summary
+            className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-lg border border-border/60 bg-card/60 px-2.5 py-1.5 text-2xs text-muted-foreground transition hover:text-foreground [&::-webkit-details-marker]:hidden"
+            data-testid="memory-filters"
+          >
+            <SlidersHorizontal className="size-3" />
+            Filters
+            {activeFilterCount > 0 && (
+              <span className="tabular-nums text-muted-foreground/70">· {activeFilterCount}</span>
+            )}
+          </summary>
+          <div className="absolute left-0 top-full z-30 mt-1.5 flex w-64 flex-col gap-2 rounded-lg border border-border/60 bg-card p-3 shadow-xl">
+            <label className="block">
+              <span className="text-2xs text-muted-foreground/70">Category</span>
+              <select
+                value={catFilter}
+                onChange={(e) => {
+                  setCatFilter(e.target.value);
+                  setUnifiedOffset(0);
+                }}
+                className="mt-1 w-full rounded-lg border border-border/60 bg-background px-2 py-1.5 text-xs text-foreground outline-none"
+                data-testid="memory-category-filter"
+                aria-label="Filter by category"
+              >
+                <option value="">All categories</option>
+                {['general', 'user', 'project', 'workflow', 'preference'].map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-2xs text-muted-foreground/70">Source</span>
+              <select
+                value={srcFilter}
+                onChange={(e) => {
+                  setSrcFilter(e.target.value);
+                  setUnifiedOffset(0);
+                }}
+                className="mt-1 w-full rounded-lg border border-border/60 bg-background px-2 py-1.5 text-xs text-foreground outline-none"
+                data-testid="memory-source-filter"
+                aria-label="Filter by source"
+              >
+                <option value="">All sources</option>
+                {['remember', 'user', 'extracted', 'lesson'].map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-2xs text-muted-foreground/70">Confidence</span>
+              <select
+                value={confFilter}
+                onChange={(e) => {
+                  setConfFilter(e.target.value);
+                  setUnifiedOffset(0);
+                }}
+                className="mt-1 w-full rounded-lg border border-border/60 bg-background px-2 py-1.5 text-xs text-foreground outline-none"
+                data-testid="memory-confidence-filter"
+                aria-label="Filter by confidence"
+              >
+                <option value="">All confidence</option>
+                <option value="high">high</option>
+                <option value="medium">medium</option>
+                <option value="low">low</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-2xs text-muted-foreground/70">Sort</span>
+              <select
+                value={sort}
+                onChange={(e) => {
+                  setSort(e.target.value);
+                  setUnifiedOffset(0);
+                }}
+                className="mt-1 w-full rounded-lg border border-border/60 bg-background px-2 py-1.5 text-xs text-foreground outline-none"
+                data-testid="memory-sort"
+                aria-label="Sort order"
+              >
+                {SORTS.map((s) => (
+                  <option key={s.value} value={s.value}>{s.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </details>
+        <Button
           type="button"
+          variant="ghost"
+          size="icon-sm"
           onClick={() => {
             void storesQ.refetch();
             void unifiedQa.refetch();
@@ -1159,40 +1211,39 @@ export function MemorySection({ active }: { active: { id: string } }) {
           }}
           title="Refresh"
           aria-label="Refresh memory stores"
-          className="rounded-lg border border-border/60 bg-card/60 p-1.5 text-muted-foreground transition hover:border-primary/30 hover:text-foreground"
           data-testid="memory-refresh"
         >
           <RefreshCw className={cn('size-3', (unifiedQa.isFetching || unifiedQb.isFetching) && 'animate-spin')} />
-        </button>
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={exportStore}
+          disabled={flatEntries.length === 0}
+          title="Export as Markdown"
+          aria-label="Export as Markdown"
+          data-testid="memory-export"
+        >
+          <Download className="size-3" /> Export
+        </Button>
         {/* C-6: bulk mode is opt-in — the default row carries no checkbox,
             because the reference's row is name/description/date and nothing
             else. The mode reveals the checkboxes and the bulk bar. */}
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="sm"
           onClick={() => {
             setSelectMode((v) => !v);
             setChecked(new Set());
           }}
           aria-pressed={selectMode}
-          className={cn(
-            'rounded-lg border px-2 py-1.5 text-2xs transition',
-            selectMode
-              ? 'border-primary/40 bg-primary/10 text-foreground'
-              : 'border-border/60 bg-card/60 text-muted-foreground hover:border-primary/30 hover:text-foreground',
-          )}
+          className={cn(selectMode && 'text-foreground')}
           data-testid="memory-select-mode"
         >
-          {selectMode ? 'Done selecting' : 'Select'}
-        </button>
-        <button
-          type="button"
-          onClick={exportStore}
-          disabled={flatEntries.length === 0}
-          title="Export as Markdown" aria-label="Export as Markdown"
-          className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-2xs text-muted-foreground transition hover:border-primary/30 hover:text-foreground disabled:opacity-40"
-        >
-          <Download className="size-3" /> Export
-        </button>
+          {selectMode ? 'Done' : 'Select'}
+        </Button>
       </div>
 
       {/* C-6: bulk bar appears when rows are checked. */}
@@ -1227,7 +1278,10 @@ export function MemorySection({ active }: { active: { id: string } }) {
           Could not load memory: {(unifiedError as Error | null)?.message ?? 'unknown error'}
         </div>
       ) : (
-        <div className="space-y-6 pt-1">
+        <div className="pt-1">
+          {/* The spacing between sections is the HEADER's (the reference's
+              "generous space above"), not a second margin on the container —
+              two gaps stacked read as a hole. */}
           {/* You — the profile lane. These facts ride along on every turn
               instead of being recalled by keyword, so the section says so
               once instead of stamping a chip on every row. */}
@@ -1237,7 +1291,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
                 title="You"
                 hint={`always in the model's context on every turn · ${sections.you.length}`}
               />
-              <div className="divide-y divide-white/[0.04]">
+              <div className="divide-y divide-border/60">
                 {sections.you.map((e) => rowFor(e))}
               </div>
               <p className="pt-1.5 text-[0.65625rem] leading-relaxed text-muted-foreground/60" data-testid="memory-profile-explainer">
@@ -1255,11 +1309,11 @@ export function MemorySection({ active }: { active: { id: string } }) {
               {sections.topicGroups.map(([category, entries]) => (
                 <div key={category || 'uncategorized'} className="pt-2 first:pt-0">
                   {sections.topicGroups.length > 1 && (
-                    <h4 className="pb-0.5 text-2xs font-medium uppercase tracking-widest text-muted-foreground/45">
+                    <h3 className="pb-0.5 text-2xs font-medium uppercase tracking-widest text-muted-foreground/45">
                       {category || 'uncategorized'}
-                    </h4>
+                    </h3>
                   )}
-                  <div className="divide-y divide-white/[0.04]">
+                  <div className="divide-y divide-border/60">
                     {entries.map((e) => rowFor(e))}
                   </div>
                 </div>
@@ -1271,7 +1325,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
           {sections.notes.length > 0 && (
             <section data-testid="memory-section-notes">
               <MemorySectionHeader title="Notes" hint={`${sections.notes.length}`} />
-              <div className="divide-y divide-white/[0.04]">
+              <div className="divide-y divide-border/60">
                 {sections.notes.map((e) => rowFor(e))}
               </div>
             </section>
@@ -1281,14 +1335,14 @@ export function MemorySection({ active }: { active: { id: string } }) {
           {sections.rules.length > 0 && (
             <section data-testid="memory-section-rules">
               <MemorySectionHeader title="Rules" hint="retired writer · kept for recall" />
-              <div className="divide-y divide-white/[0.04]">
+              <div className="divide-y divide-border/60">
                 {sections.rules.map((e) => rowFor(e))}
               </div>
             </section>
           )}
 
           {filteredEntries.length === 0 && (
-            <p className="rounded-xl border border-white/[0.06] bg-card/60 px-4 py-6 text-center text-xs text-muted-foreground">
+            <p className="px-4 py-8 text-center text-xs text-muted-foreground">
               {query
                 ? `No entries match “${query}”.`
                 : 'Nothing stored here yet.'}
@@ -1370,7 +1424,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
             appears here.
           </p>
         ) : (
-          <div className="divide-y divide-white/[0.06]" data-testid="memory-project-rows">
+          <div className="divide-y divide-border/60" data-testid="memory-project-rows">
             {projectsWithMemory.map((w) => (
               <MemoryRow
                 key={w.path}
@@ -1396,7 +1450,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
           the global pane opened, and the layout test pinned that (2026-10-03). */}
       <MemoryGroup testId="memory-group-behavior" title="Memory behavior">
         {/* Model-memory toggles: one line each, separated by rules. */}
-        <div className="divide-y divide-white/[0.06]">
+        <div className="divide-y divide-border/60">
         <SettingsToggle
           checked={Boolean(cfg?.modelMemoryRead ?? true)}
           onCheckedChange={(next) => configMut.mutate({ modelMemoryRead: next })}
@@ -1438,7 +1492,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
           store, so it waits until someone asks for it. A number cannot ride
           the toggles above (a PUT per keystroke), so it has its own draft
           and its own Save. */}
-      <div className="mt-3 border-t border-white/[0.06] pt-3" data-testid="memory-budget-group">
+      <div className="mt-3 border-t border-border/60 pt-3" data-testid="memory-budget-group">
         <label
           htmlFor="memory-fact-budget"
           className="text-sm font-medium text-foreground"
@@ -1588,7 +1642,7 @@ function MemoryRow({
 }) {
   const className =
     'flex w-full items-center gap-3 py-2.5 text-left' +
-    (onClick ? ' cursor-pointer transition hover:bg-white/[0.03]' : '');
+    (onClick ? ' cursor-pointer transition hover:bg-muted/40' : '');
   const body = (
     <>
       <span className="min-w-0 flex-1">
@@ -1716,16 +1770,16 @@ function ProjectMemoryPane({
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               placeholder="Search this project’s memory…"
-              className="w-full border-b border-white/[0.08] bg-transparent py-1.5 pl-6 pr-2 text-[0.78125rem] text-foreground outline-none transition focus:border-primary/40"
+              className="w-full border-b border-border/60 bg-transparent py-1.5 pl-6 pr-2 text-[0.78125rem] text-foreground outline-none transition focus:border-primary/40"
               data-testid="memory-project-search"
             />
           </div>
 
-          <section className="border-t border-white/[0.07] pt-2" data-testid="memory-project-files">
+          <section className="border-t border-border/60 pt-2" data-testid="memory-project-files">
             <h3 className="pb-0.5 text-[0.65625rem] font-semibold uppercase tracking-widest text-muted-foreground/55">
               Files
             </h3>
-            <div className="divide-y divide-white/[0.06]">
+            <div className="divide-y divide-border/60">
               {files.length === 0 ? (
                 <p className="py-3 text-[0.71875rem] text-muted-foreground">
                   No memory files yet in this project.
@@ -1745,11 +1799,11 @@ function ProjectMemoryPane({
             </div>
           </section>
 
-          <section className="border-t border-white/[0.07] pt-2" data-testid="memory-project-entries">
+          <section className="border-t border-border/60 pt-2" data-testid="memory-project-entries">
             <h3 className="pb-0.5 text-[0.65625rem] font-semibold uppercase tracking-widest text-muted-foreground/55">
               Entries
             </h3>
-            <div className="divide-y divide-white/[0.06]">
+            <div className="divide-y divide-border/60">
               {entries.length === 0 ? (
                 <p className="py-3 text-[0.71875rem] text-muted-foreground">
                   {q ? `Nothing here matches “${filter.trim()}”.` : 'No entries yet.'}
@@ -1879,7 +1933,7 @@ function BottomAddBar({
 }) {
   return (
     <div
-      className="sticky bottom-0 -mx-8 mt-6 border-t border-white/[0.07] bg-background/95 px-8 py-3 backdrop-blur"
+      className="sticky bottom-0 -mx-8 mt-6 border-t border-border/60 bg-background/95 px-8 py-3 backdrop-blur"
       data-testid={testId}
     >
       <div className="flex items-center gap-2 rounded-xl border border-border/60 bg-card/60 px-3 py-2">
@@ -2185,7 +2239,7 @@ function MemoryComposeBar({
 
   return (
     <div
-      className="sticky bottom-0 -mx-8 mt-6 border-t border-white/[0.07] bg-background/95 px-8 py-3 backdrop-blur"
+      className="sticky bottom-0 -mx-8 mt-6 border-t border-border/60 bg-background/95 px-8 py-3 backdrop-blur"
       data-testid={testId}
     >
       {plan && (
@@ -2381,7 +2435,7 @@ function FlatEntryRow({
         // in over a transparent row, so nothing said which line they belonged
         // to). The negative margin lets the highlight outrun the text column
         // while keeping every column aligned row to row.
-        'group relative -mx-2 flex items-center gap-3 rounded-md px-2 py-2.5 transition hover:bg-white/[0.035]',
+        'group relative -mx-2 flex items-center gap-3 rounded-md px-2 py-2.5 transition hover:bg-muted/40',
         entry.expired && 'opacity-50',
       )}
       data-testid="memory-flat-row"
@@ -2472,21 +2526,25 @@ function FlatEntryRow({
         </span>
       ) : null}
       <span
-        className="shrink-0 text-2xs tabular-nums text-muted-foreground/55"
+        className="shrink-0 text-2xs tabular-nums text-muted-foreground/55 transition-opacity group-hover:opacity-0 group-focus-within:opacity-0"
         title={absoluteDate(asUtc(entry.updated)) || entry.updated}
         data-testid="memory-row-updated"
       >
         {shortUpdated(entry.updated)}
       </span>
-      {/* Hover actions; focus-within keeps them reachable without a mouse. */}
-      <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
+      {/* Hover actions; focus-within keeps them reachable without a mouse.
+          They REPLACE the timestamp, the way the reference's rows do ("the
+          row fills lighter, and a pencil + trash icon pair appears at the far
+          right, replacing the timestamp"). The date fades out under them so
+          the two never overlap. */}
+      <span className="absolute right-2 flex shrink-0 items-center gap-0.5 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
         {canEdit && (
           <button
             type="button"
             onClick={onEdit}
             aria-label={`Edit ${entry.title}`}
             title="Edit"
-            className="rounded p-1 text-muted-foreground/60 transition hover:bg-white/[0.05] hover:text-foreground"
+            className="rounded p-1 text-muted-foreground/60 transition hover:bg-muted/60 hover:text-foreground"
             data-testid="memory-row-edit"
           >
             <Pencil className="size-3" />
@@ -2539,7 +2597,7 @@ function HealthFooter({
 
   return (
     <div
-      className="flex items-center gap-2 border-t border-white/[0.06] pt-2.5 text-[0.65625rem] text-muted-foreground/70"
+      className="flex items-center gap-2 border-t border-border/60 pt-2.5 text-[0.65625rem] text-muted-foreground/70"
       data-testid="memory-health-footer"
     >
       {lastPass ? (
