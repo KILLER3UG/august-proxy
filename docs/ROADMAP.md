@@ -553,6 +553,94 @@ one hardcoded hue outside the palette. It is `primary` now.
   with hairline children. The memory panel is a list and reads that way;
   the form panels are still cards.
 
+## The round after that: EVERY settings panel, against the reference
+
+The memory panel was one panel. The owner asked about the other tabs, so
+every one of the nineteen was captured, audited and compared - the rail
+walked tab by tab, with the DOM measured rather than eyeballed.
+
+**THE PAGE HEADER WAS FOUR SIZES AND TWO WEIGHTS.** General and
+Appearance rolled their own 18px title, Browser Use and Computer Use
+their own 24px one with a coloured glyph, Usage stats a 24px BOLD one,
+and the Memory panel opened with an `<h3>` sitting ABOVE its `<h2>`
+section headers. The reference's settings page header is one shape, and
+now every panel is 20px semibold with one 13px muted subtitle and no
+icon - the nav item already carries the icon, and the repo's own
+`SectionHeader` has said so since it was written. Measured across all
+nineteen: 20px on every one.
+
+**"BORDERS ARE HAIRLINES, NEVER BOXES" was the most-violated rule in
+the app.** General was six bordered cards, Appearance three, Computer
+Use eight, Phone pairing four, Usage stats eight, the Agent Board a
+box inside a box, Model settings two boxes with a second nav column
+inside them. They are one container each now, with hairline-separated
+children.
+
+**THE ROWS ARE ONE GRAMMAR.** The reference's settings row is a NAME,
+a VALUE at THE SAME TYPE SIZE, and a muted third column, with the
+control at the right edge. The Browser Use rows set 14px against 12px
+and cut the descriptions mid-word at 110 characters; the Review Inbox
+set 14px against 10px; the Memory panel had two row grammars in one
+panel. One grammar now, and the hard cut is a real CSS ellipsis.
+
+### Three real bugs, found by reading the panels rather than the code
+
+- **The Computer Use stat cards accepted a `tone` prop and discarded
+  it** (`tone: _tone` in the signature), so Status, Health, Backend and
+  Platform all rendered in the same white although the caller had
+  computed good/warn/muted for each.
+- **The Usage stats' refresh button was `fixed` to the WINDOW**, not to
+  the panel, so it was painted at the window's bottom-right, outside
+  the settings modal, over the dimmed app - measured at ≈1840,1157
+  while the panel ends at x=1680.
+- **The Notification permission was the raw DOM enum** in a monospace
+  badge, so the word "default" sat in the card's top-right as if it
+  were a value.
+
+### Also
+
+- **The nav search is a pill.** The app had THREE shapes for one thing:
+  the nav's was a rounded box, the Memory panel's own search was a
+  pill, and the Integrations tab's was a box again.
+- **The selected nav row's icon was the accent blue.** The reference's
+  nav row is monochrome and the selection is the lighter fill, so the
+  selection was two signals at once.
+- **The card's icon tile was a bordered box** around a glyph.
+- **The Skills catalogue cell had LOST its rounded icon tile** while
+  the Plugins tab's copy of the same grid still had one, so the two
+  tabs disagreed with each other.
+- **Four native `<select>` elements in the Memory filters and two in
+  the Skills tab** rendered the OS popup, which the repo's own
+  `SettingsSelect` header calls the loudest element on a page that is
+  supposed to be four quiet rows.
+- **The Turn Limits rows printed the value TWICE** - the number box and
+  a smaller caption under it - in two type sizes.
+- **The Onboard wizard's "Next" landed in the MIDDLE of its row**,
+  because the row was `justify-between` with three children.
+- **The Agent Board's kanban cards had no boundary** - only a hairline
+  and a hover fill, as the reference's list grammar has it.
+
+### Still open, and named after this round
+
+- **Turn Limits keeps its Save button**, moved out of the card into the
+  header's actions slot. The reference's panel has no Save because its
+  values commit as they change; making August's brain-config writes
+  commit on blur needs a draft flush on unmount (a focused field can
+  be removed from the DOM without a blur), and that is a rewrite of a
+  save path, not a cosmetic change. It is the owner's call.
+- **Three prose blocks survive in Browser Use** - the tool
+  descriptions, which are the row's value column and are truncated
+  with an ellipsis - and two in Phone pairing (the verdict detail and
+  the empty state), and one in Memory (the memory-budget note).
+- **The panels still use four to eight font sizes each.** The
+  reference uses about two: a body size and a metadata size. The page
+  HEADER is one size now, and the rows are one grammar, but the type
+  scale inside a panel is still the app's whole scale.
+- **The `SettingsSelect` listbox has a visible chevron**, and the
+  reference's value control is chevron-less. `ValuePill` is the
+  chevron-less primitive and the Skills tab uses it; the rest use the
+  listbox, which is a real trade and not yet settled.
+
 ## Deliberately not done
 
 - **No test suite was restored.** The suite was removed on 2026-10-17 at the
