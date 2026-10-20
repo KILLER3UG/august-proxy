@@ -27,6 +27,7 @@ import { pushBrowserAction } from '@/lib/browser-store';
 import { upsertQueuedMessage, removeQueuedMessage } from '../queue-store';
 import { updateSessionStreamState, useSessionStreamStore } from './session-stream-store';
 import { injectSessionMessage } from './session-history';
+import { buildCompactionNoticeMessage } from '@/sections/chat/message/CompactionNoticeCard';
 import { makeSubagentEventHandlers } from './apply-subagent-event';
 import { activeStreamControllers } from './active-stream-controllers';
 import {
@@ -136,10 +137,36 @@ export function ensureSessionSubscriber(sessionOrWorkbenchId: string): void {
       detachSessionSubscriber(wbId);
     },
     ...subagentHandlers,
-    onCompaction: (_data) => {
-      // Compaction events are handled by the per-turn handler
-      // (makeStreamHandlers); the background subscriber acknowledges
-      // them so the SSE stream stays healthy.
+    onCompaction: (data, seq) => {
+      // The MANUAL "Free up memory" button compacts OUTSIDE any turn, so
+      // the per-turn handler (makeStreamHandlers) is not attached and its
+      // card never appeared: the transcript silently lost rows, while an
+      // automatic compaction rendered a card. The frame carries the same
+      // vocabulary either way -- `trigger` is the discriminator that field
+      // exists for.
+      //
+      // The two paths are mutually exclusive by construction, not by luck:
+      // `ensureSessionSubscriber` returns early when a per-turn stream owns
+      // the SSE, so this subscriber and the per-turn handler never render
+      // the same frame. And the frame id makes the notice id
+      // deterministic, so a re-delivered frame maps to the same notice and
+      // the store's id guard drops the twin.
+      const notice = buildCompactionNoticeMessage(
+        {
+          headCount: data?.headCount,
+          tailCount: data?.tailCount,
+          relief: data?.relief,
+          pinnedCount: data?.pinnedCount,
+          replayedCount: data?.replayedCount,
+          compressedCount: data?.compressedCount ?? 0,
+          originalTokens: data?.originalTokens ?? 0,
+          compressedTokens: data?.compressedTokens ?? 0,
+          contextWindow: data?.contextWindow,
+          threshold: data?.threshold,
+        },
+        seq,
+      );
+      injectSessionMessage(uiSessionId, notice);
     },
     onRecovery: (_data) => {
       // Same as compaction: the per-turn handler renders the recovery

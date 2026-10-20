@@ -399,7 +399,7 @@ function parseKeyList(raw: unknown): string[] {
   const s = str(raw).trim();
   if (!s) return [];
   try {
-    const parsed = JSON.parse(s);
+    const parsed = JSON.parse(s) as unknown;
     return Array.isArray(parsed) ? parsed.map((x) => str(x)).filter(Boolean) : [];
   } catch {
     return [];

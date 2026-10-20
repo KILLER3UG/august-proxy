@@ -204,28 +204,93 @@ function rewriteApiUrl(url: string): string {
   return url;
 }
 
-/** In the Tauri webview, relative `/api` hits the asset origin (HTML), not
- *  the Python proxy. Rewrite those requests once we know the backend port. */
+/** The header the backend reads the per-install token from. */
+const LOCAL_TOKEN_HEADER = 'X-August-Local-Token';
+
+/**
+ * True when a request targets the MANAGEMENT API -- the surface the LAN
+ * token gate covers.
+ *
+ * `/v1/` is deliberately absent: it is the external proxy, closed by
+ * default and gated by the gateway bearer key, not by the local token.
+ */
+function isManagementRequest(url: string): boolean {
+  let pathname = url;
+  try {
+    pathname = new URL(
+      url,
+      typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
+    ).pathname;
+  } catch {
+    /* keep the raw string */
+  }
+  return pathname === '/api' || pathname.startsWith('/api/');
+}
+
+/** Attach the token to a request without clobbering one the caller set. */
+function withLocalToken(init: RequestInit | undefined, token: string): RequestInit {
+  const headers = new Headers(init?.headers ?? {});
+  if (!headers.has(LOCAL_TOKEN_HEADER)) headers.set(LOCAL_TOKEN_HEADER, token);
+  return { ...init, headers };
+}
+
+/**
+ * Give EVERY `/api` request the per-install token -- not just the ones that
+ * go through `request()`.
+ *
+ * The LAN gate (`require_lan_token`) covers the whole management API, and
+ * the raw `fetch()` calls in `api/workbench/stream.ts` (the chat),
+ * `api/workbench.ts` (BTW, brain config, mutation-respond) and
+ * `api/liveClient.ts` never sent the header. A phone could open August and
+ * browse it, and could not have a conversation.
+ *
+ * The token goes on a request only when the backend is NOT on loopback --
+ * the same rule the backend itself applies (`_is_loopback_peer`), so the
+ * desktop pays nothing: it adds no header, and a cross-origin GET that had
+ * no preflight does not grow one.
+ *
+ * The patch is installed in BOTH hosts. In Tauri it also rewrites the URL
+ * (a relative `/api` would hit the asset origin); outside Tauri -- the
+ * phone -- the URL needs no rewrite, but the header is exactly what was
+ * missing.
+ */
 function installFetchPatch(): void {
-  if (fetchPatched || typeof window === 'undefined' || !baseUrl) return;
+  if (fetchPatched || typeof window === 'undefined') return;
   fetchPatched = true;
   const originalFetch = window.fetch.bind(window);
   window.fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    if (typeof input === 'string') {
-      return originalFetch(rewriteApiUrl(input), init);
-    }
-    if (input instanceof URL) {
-      return originalFetch(rewriteApiUrl(input.toString()), init);
-    }
-    if (input instanceof Request) {
-      const next = rewriteApiUrl(input.url);
-      if (next !== input.url) {
-        return originalFetch(new Request(next, input), init);
+    const rawUrl =
+      typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    const url = rewriteApiUrl(rawUrl);
+    const wantsToken = isManagementRequest(url) && !isLoopbackHost(url);
+
+    const send = (token: string | null): Promise<Response> => {
+      const withToken = token && wantsToken ? withLocalToken(init, token) : init;
+      if (typeof input === 'string') return originalFetch(url, withToken);
+      if (input instanceof URL) return originalFetch(url, withToken);
+      if (input instanceof Request) {
+        const req = new Request(url, input);
+        if (token && wantsToken && !req.headers.has(LOCAL_TOKEN_HEADER)) {
+          req.headers.set(LOCAL_TOKEN_HEADER, token);
+        }
+        return originalFetch(req, init);
       }
-    }
-    return originalFetch(input, init);
+      return originalFetch(input, init);
+    };
+
+    // Outside Tauri the token is already in hand -- the pairing URL put it
+    // there, or the host page set the global. Inside Tauri it arrives over
+    // the IPC, so it is awaited here rather than blocking the patch.
+    if (resolvedLocalToken) return send(resolvedLocalToken);
+    if (!isTauri) return send(hostGlobalToken() ?? bootHostToken);
+    return localToken().then(send);
   };
 }
+
+// Outside Tauri the backend serves the app itself, so no URL rewrite is
+// needed -- but the LAN token gate still applies, and the raw fetch()
+// calls never sent the header. The patch installs here for that reason.
+if (!isTauri) installFetchPatch();
 
 /** Attempts per discovery run, and the settled promise for the current one.
  *
@@ -379,6 +444,34 @@ export async function wsUrl(path: string): Promise<string> {
   }
   const token = await localToken();
   if (!token) return url;
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}${LOCAL_TOKEN_URL_PARAM}=${encodeURIComponent(token)}`;
+}
+
+/**
+ * The token if it is already in hand -- no await, no IPC.
+ *
+ * The two `EventSource` surfaces build their URL synchronously, and a
+ * transport that cannot set a header is exactly the case this is for.
+ */
+export function localTokenSync(): string | null {
+  return resolvedLocalToken ?? bootHostToken ?? hostGlobalToken();
+}
+
+/**
+ * Add the per-install token to a URL's query string.
+ *
+ * `EventSource` cannot set a request header -- the browser API has no such
+ * option -- so the two live-stream GET surfaces carry the token here
+ * instead. It is the same parameter name the pairing URL uses, so there is
+ * one name for the token across the URL, the header and the socket.
+ *
+ * The token is left off a loopback URL: the backend exempts a loopback
+ * peer (`_is_loopback_peer`), and the desktop's own stream should not put a
+ * secret in a URL it does not need it in.
+ */
+export function withLocalTokenQuery(url: string, token: string | null): string {
+  if (!token || isLoopbackHost(url)) return url;
   const separator = url.includes('?') ? '&' : '?';
   return `${url}${separator}${LOCAL_TOKEN_URL_PARAM}=${encodeURIComponent(token)}`;
 }

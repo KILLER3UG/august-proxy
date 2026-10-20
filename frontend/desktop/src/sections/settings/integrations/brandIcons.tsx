@@ -1,5 +1,5 @@
 import { FolderOpen, Brain, Globe, Package } from 'lucide-react';
-import { SiGithub, SiGoogle, SiSlack } from 'react-icons/si';
+import { SiGithub, SiGoogle, SiSlack } from '@/lib/icons';
 
 export type BrandIcon = React.ComponentType<{
   className?: string;

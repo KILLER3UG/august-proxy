@@ -259,7 +259,7 @@ export function startRealtimeBridge(): void {
   if (started && es && es.readyState !== EventSource.CLOSED) return;
   started = true;
   void (async () => {
-    const { whenReady } = await import('@/api/client');
+    const { whenReady, getLocalToken, withLocalTokenQuery } = await import('@/api/client');
     const base = (await whenReady()) ?? '';
     try {
       es?.close();
@@ -267,7 +267,11 @@ export function startRealtimeBridge(): void {
       /* ignore */
     }
     // In Tauri, relative /api hits the asset origin — use the proxy base.
-    es = new EventSource(`${base}/api/realtime/stream`);
+    // An EventSource cannot set a request header -- there is no browser
+    // API for it -- so the LAN token rides in the query string, which is
+    // the only channel this transport has.
+    const token = await getLocalToken();
+    es = new EventSource(withLocalTokenQuery(`${base}/api/realtime/stream`, token));
     es.onmessage = (msg: MessageEvent) => {
       try {
         const data = JSON.parse(String(msg.data)) as RealtimeEvent;

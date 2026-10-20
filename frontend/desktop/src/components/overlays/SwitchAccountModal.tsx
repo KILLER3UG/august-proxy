@@ -1,5 +1,5 @@
 import { Check, X } from 'lucide-react';
-import { SiGoogle } from 'react-icons/si';
+import { SiGoogle } from '@/lib/icons';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Backdrop } from '@/components/overlays/Backdrop';

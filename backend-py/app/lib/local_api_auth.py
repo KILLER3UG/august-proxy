@@ -112,6 +112,31 @@ LOCAL_AUTH_ENV = 'AUGUST_LOCAL_API_TOKEN'
 LAN_OPEN_PATHS = frozenset({'/api/health'})
 
 
+#: The query parameter the token may ride in, for the two browser
+#: transports that cannot set a request header.
+#:
+#: It is the SAME name the pairing URL uses, so there is one name for the
+#: token across the URL, the header and the socket.
+LOCAL_AUTH_QUERY_PARAM = 'august-token'
+
+#: Paths where the token may be presented in the QUERY STRING.
+#:
+#: An ``EventSource`` cannot set a request header -- the browser API has no
+#: such option -- so the two live-stream GET surfaces have no way to present
+#: the header the LAN gate wants. Exempting them would be worse than it
+#: looks: a same-origin GET carries no ``Origin`` header at all, so the
+#: origin guard cannot tell the phone's stream from a script on the LAN,
+#: and a live stream of the user's own activity would be open to any
+#: neighbour.
+#:
+#: So the token is accepted in the query for these two paths ONLY, and the
+#: comparison is the same constant-time one the header uses.
+LAN_QUERY_TOKEN_PATHS = frozenset({
+    '/api/realtime/stream',
+    '/api/monitor/events/stream',
+})
+
+
 def _expected_token() -> str:
     return (os.environ.get(LOCAL_AUTH_ENV) or '').strip()
 
@@ -305,6 +330,24 @@ async def require_lan_token(conn: HTTPConnection) -> bool:
                 'code': 'local_token_invalid',
                 'message': (
                     f'The {LOCAL_AUTH_HEADER} header is not valid for this install.'
+                ),
+            },
+        )
+
+    # No header. Two browser transports cannot send one: a WebSocket
+    # handshake and an EventSource. The WebSocket has the trusted-origin
+    # route below; the two EventSource surfaces have only the query.
+    query_presented = (conn.query_params.get(LOCAL_AUTH_QUERY_PARAM) or '').strip()
+    if query_presented and path in LAN_QUERY_TOKEN_PATHS:
+        if hmac.compare_digest(query_presented, expected):
+            return True
+        raise HTTPException(
+            status_code=401,
+            detail={
+                'code': 'local_token_invalid',
+                'message': (
+                    f'The {LOCAL_AUTH_QUERY_PARAM} query parameter is not valid for '
+                    'this install.'
                 ),
             },
         )

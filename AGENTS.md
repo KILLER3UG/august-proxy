@@ -408,8 +408,8 @@ set at all. **Two unresolvable lineages resolve in opposite directions on purpos
 dangling `parentId` is reachable by ordinary use (the UI delete has no children check)
 and means *no restriction* — the parent's bound left with the record, and reading it as
 `set()` collapsed every such worker to zero tools — whereas a `parentId` **cycle** is
-not reachable by a model turn (`update_agent` no longer writes `parentId`, and
-`create_agent` sets it only on a freshly minted id) so it fails closed; before the walk
+not reachable by a model turn (`update_agent` never wrote `parentId`, and
+`create_agent` no longer writes it either — it is the human door's field) so it fails closed; before the walk
 was bounded it raised `RecursionError`, which the ceiling swallowed into "no ceiling",
 i.e. the fail-OPEN direction (measured, at `agent_registry._effectivePermissions`).
 `POST /api/august/agents/manage` now deletes through `roster.delete_bot` like

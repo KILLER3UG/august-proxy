@@ -448,6 +448,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       'Soft cost budget',
       'Wall-clock budget',
       'Runaway backstop',
+      'Context relief',
     ],
     settingAliases: [
       'maxWorkbenchToolLoops',
@@ -455,6 +456,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       'budget soft tokens',
       'wall clock',
       'runaway nudge rounds',
+      'contextReliefRotate',
+      'rotate context',
     ],
     keywords: [
       'turn limits',

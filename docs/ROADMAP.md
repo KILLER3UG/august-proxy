@@ -164,10 +164,10 @@ the state below is the tree's, not the plan's memory.
 
 | Item | State on 2026-10-20 |
 |---|---|
-| **B4's `<DisclosureRow>` consumers.** Five call sites; only `HandoffNoticeCard` passed the `content` prop, so four still owned their bodies as siblings — and the trigger of a closed one advertised no `aria-controls`. | **fixed for three of the four** — `ThinkingDisclosure`, `tool/ToolCallItem` and `CompactionNoticeCard` now pass `content`, so every one of them advertises a real `aria-controls` and `aria-expanded` in BOTH states; `ChangesCard` is the last, and it belongs to the changes-card work. The trap was **measured, not assumed**: with the motion element mounted eagerly, `forceMount`+`hidden` plays the mount animation inside a `display:none` region, so the row opens on an element already at its final state (opacity flat at 1.000, measured in Chromium). Mounted lazily — created in the same commit that un-hides the region — the animation plays (opacity 0.000 → 1.000). The EXIT collapse needed a second fix: the region's `hidden` must not land on the frame the exit starts, so a body that leaves on its own keeps the region rendered until it reports that it is gone (`DisclosureBodyApi`). |
-| **The Settings scrim.** `components/workspace/WorkspaceShell.tsx:277-287` says the reference "floats over a completely unchanged app — sidebar, transcript and composer all stay at full brightness" and deliberately drops the tint. | **The code is wrong and the comment is wrong with it.** The repo's own capture says the opposite, twice: `docs/plans/2026-10-11-ui-reference-capture.md:20` — "A **centred modal** on a dimmed chat behind it" — and `:252` — "The chat is dimmed behind it". Being fixed. |
-| **The jobs tray.** `components/shell/RightDrawerJobsSection.tsx:100-102` renders `useBackgroundTasksStore`, and `store/background-tasks.ts` has no `persist` — so the tray is in-memory and empties on every reload. | **open** — "move it to a global surface" is a FEATURE (persistence + a surface that survives a reload), not a relocation. The audit's premise was wrong and the measurement says what the feature is. |
-| **The composer row and the sidebar density.** No measured target exists. | **open** — an owner's-eye judgement against the reference, not a defect list. |
+| **B4's `<DisclosureRow>` consumers.** Five call sites; only `HandoffNoticeCard` passed the `content` prop, so four still owned their bodies as siblings — and the trigger of a closed one advertised no `aria-controls`. | **fixed for three of the four** — `ThinkingDisclosure`, `tool/ToolCallItem` and `CompactionNoticeCard` now pass `content`, so every one of them advertises a real `aria-controls` and `aria-expanded` in BOTH states; `ChangesCard` was the last, and it is migrated too - so every call site advertises a real `aria-controls` and `aria-expanded` in BOTH states. The trap was **measured, not assumed**: with the motion element mounted eagerly, `forceMount`+`hidden` plays the mount animation inside a `display:none` region, so the row opens on an element already at its final state (opacity flat at 1.000, measured in Chromium). Mounted lazily — created in the same commit that un-hides the region — the animation plays (opacity 0.000 → 1.000). The EXIT collapse needed a second fix: the region's `hidden` must not land on the frame the exit starts, so a body that leaves on its own keeps the region rendered until it reports that it is gone (`DisclosureBodyApi`). |
+| **The Settings scrim.** `components/workspace/WorkspaceShell.tsx:277-287` says the reference "floats over a completely unchanged app — sidebar, transcript and composer all stay at full brightness" and deliberately drops the tint. | **The code is wrong and the comment is wrong with it.** The repo's own capture says the opposite, twice: `docs/plans/2026-10-11-ui-reference-capture.md:20` — "A **centred modal** on a dimmed chat behind it" — and `:252` — "The chat is dimmed behind it". **fixed** - the backdrop now carries `bg-scrim` (measured `rgba(0,0,0,0.55)` in dark), and the comment says what the capture says and cites it. |
+| **The jobs tray.** `components/shell/RightDrawerJobsSection.tsx:100-102` renders `useBackgroundTasksStore`, and `store/background-tasks.ts` has no `persist` — so the tray is in-memory and empties on every reload. | **built as a FEATURE** — the store persists in the repo's own hand-rolled idiom (copied from `sections/chat/offline-queue-store.ts`; the three stores that persist here all do it by hand and a fourth style would be the odd one out), and a quiet titlebar button (`components/shell/BackgroundJobsButton.tsx`) is the global surface: no button at all when there are no jobs, a spinner and a count while one runs, a muted dot for a finished one. A job that was running when the app closed comes back **cancelled** — "Interrupted — August was closed while this was running" — rather than falsely "running". The panel reuses the drawer's own row, so a job has one rendering, not two. |
+| **The composer row and the sidebar density.** No measured target exists. | **the sidebar half is DONE** — the project group header was `uppercase tracking-wide` while every other rail label is sentence case (the reference says "small, muted, sentence case — NOT uppercase"), and the three nav blocks were 24px of chrome above the first chat, now 8px. **The composer half is NOT done, and the brief pointed at the wrong directory**: there is no composer in `components/shell/**` — it is `sections/chat/ChatThreadComposer.tsx` + `sections/chat/composer/ComposerToolbar.tsx`. It remains an owner's-eye judgement against the reference, not a defect list. |
 | **26 of 44 settings sections are `tier: 'hidden'`.** (18 basic, 26 hidden — re-measured, and the 27/45 figure in the old audit was wrong on all three numbers.) | **open** — a decision about the intended depth of Settings. |
 | **Two live readouts still on screen**: `N t/s` (`sections/chat/message/AssistantMessageContent.tsx:158`) and `answered via {model}` (`:182`). | **open** |
 | **Three chat-surface font sizes exist only as un-tokenised rem literals** — `text-[0.71875rem]`, `text-[0.65625rem]`, `text-[0.8125rem]` (e.g. `components/chat/tool/CommandOutputPane.tsx:131,177`, `components/chat/git/ChangesPill.tsx:142`). | **open** |
@@ -183,6 +183,52 @@ recorded here so nobody repeats them: `ChangesCard`'s three type sizes and
 three nested borders (fixed in `0c641143` — the card is now uniformly
 `text-2xs` with one border level) and the four native `<select>`s in
 `GeneralSection` (migrated to `SettingsSelect` in `c365c586`).
+
+## What shipped in the round of 2026-10-20
+
+Eight tracks, each shipped as its own commit with its own gate list. The
+items below are the ones that were OPEN before it and are CLOSED now, or
+that a track discovered along the way.
+
+| Item | State |
+|---|---|
+| **The board is a schematic element.** Its pins ARE the deck's nodes, so a stimulus lands on a board pin and the SVG says `X1 UNO`. | **done** - and a live bug fixed with it: the logic levels were keyed by short name, so a `firmware_stimulus(board="arduino:renesas_uno:unor4")` fell through to 5.0 V for a 3.3 V board. |
+| **`board_flash` was not actually confirm-gated.** It sat in the prompt-write bucket instead of the plan-blocked one, so plan and ask modes waved a real board flash through. | **done** - the same trap caught a second time, independently, for `circuit_add_board`. A tool in `_PROMPT_WRITE` alone is only *described* as a write. |
+| **One activity line for everything.** A mixed run (read, command, read) was three rows; the reference says one. | **done** - one line whose phrase names each kind, and a run containing a FAILURE opens by default with a "failed" marker, because a failure hidden behind a collapsed line is one nobody sees. The Explore group's vocabulary went with it: a run of web searches now reads "read N files". |
+| **The disclosure owns its body.** Five `DisclosureRow` call sites; only one passed `content`, so a closed row advertised no `aria-controls`. | **done, all five** - and the `forceMount`+`hidden` trap measured in Chromium, including the eager-mount counterfactual that reproduces the flat opacity curve. |
+| **The Settings panel could not be clicked at all.** The cause was not the controls: the first-run checklist's backdrop claimed the same `z-50` as the settings panel and mounted later. | **done at the cause** - a layer ladder (`components/overlays/modal-layers.ts`) plus the app-owned surfaces YIELDING (not just a z-order change: a live focus trap under a panel the user cannot tab out of is its own bug). |
+| **The jobs tray.** In-memory, and it emptied on every reload. | **done as a FEATURE** - persistence plus a quiet global surface. |
+| **`react-icons/si`.** One 4.9 MB barrel, ~3,000 icons, for ~12 glyphs. | **done** - the 80 marks in use live in `lib/icons.tsx`, extracted verbatim, and all 80 were rendered through `react-dom/server` and compared attribute-by-attribute: **80/80 byte-identical**. The shipped-byte win is only ~8 kB (Rollup was already tree-shaking); the real win is build and parse cost. |
+| **The phone could not chat in LAN mode.** The raw `fetch()` calls in `api/workbench/stream.ts`, `api/workbench.ts` and `api/liveClient.ts` never sent the token, because only `api/client.ts` attached it. | **done** - the fetch patch now carries the token on every `/api` request, and only when the backend is NOT on loopback, which is the same rule the backend itself applies. The desktop pays nothing. |
+| **The phone's two live streams could not reach the door.** An `EventSource` cannot set a header - there is no browser API for it. | **done** - the token rides in the query string for the two named stream paths, and the backend accepts it there and NOWHERE else. Exempting them would have been worse: a same-origin GET carries no `Origin`, so the origin guard cannot tell the phone's stream from a script on the LAN. |
+| **The manual "Free up memory" left no trace.** It compacted outside any turn, so the per-turn handler was not attached and no card appeared. | **done** - the durable subscriber renders the frame now. The two paths are mutually exclusive by construction (`ensureSessionSubscriber` returns early when a per-turn stream owns the SSE), so nothing renders twice. |
+| **One aggregation for `skill_lift`.** The Skills UI and the demotion prior could disagree about the same skill. | **done** - one `skill_lift_detail`. Measured: the old `COUNT(*)` denominator was 4 where `COUNT(ok)` was 3, so a row with `ok IS NULL` was counted by one and not the other. |
+| **The memory store had no lineage and no signals.** | **done** - `superseded_by`/`supersedes` on both sides (and deleting a winner RESTORES what it replaced), `verified_at`, a `contested` status for a genuine contradiction, an injection/disuse signal, a store budget (default OFF - archiving a user's memories on the day they upgrade is a destructive default), a source stamp, and an assistant-output scrubber for the `<memory>` fence. |
+| **LAN access.** Opt-in, off by default, with a warning. | **done** - and the reason the token had to widen is in the code: the trusted-origin guard is NOT a LAN boundary, because a request with no `Origin` and no `Sec-Fetch-Site` is a non-browser client and passes untouched. In LAN mode the token covers the whole management API, fails CLOSED with no token configured, and a WebSocket may present the token OR a trusted browser origin - because a browser's handshake cannot set a header. |
+| **The phone pairing.** The per-install token reaches the phone. | **done** - the token travels in a URL FRAGMENT (never sent to the server, never in a `Referer`), is rewritten out of the address bar with `history.replaceState`, and is held in ONE module-level variable - not in storage, not in the URL. |
+
+### Still open after this round
+
+- **The composer row** - `sections/chat/**`, and the brief pointed at
+  `components/shell/**`, which has no composer. An owner's-eye judgement
+  against the reference, not a defect list.
+- **The four double-mounted settings sections** the Learning plan targets:
+  `MemorySection.tsx`, `SkillsSection.tsx`, `HarnessImprovementsSection.tsx`
+  and `LearningPanel.tsx`. Another track owns `sections/settings/**`.
+- **The sidebar section header's THREE icons** against the reference's two.
+  Two of them are the only door to their capability, and removing a
+  capability's only door is the owner's call.
+- **The phone re-pairs after a restart.** `frontend/mobile` has no
+  `expo-secure-store` and no `@react-native-async-storage`, and a
+  dependency cannot be added without the owner, so the token and the
+  address are held in MEMORY ONLY. The UI says so.
+- **The token in a URL.** The two `EventSource` streams carry it in the
+  query string, because that transport cannot set a header. The backend
+  accepts it for those two paths ONLY.
+- **The WebSocket's residual hole.** A socket from the network may present
+  a trusted browser origin, and a script can forge an `Origin` header.
+  That is the trust the origin guard has always given a browser request;
+  the HTTP half of the terminal is behind the token.
 
 ## Deliberately not done
 

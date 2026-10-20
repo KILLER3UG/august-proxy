@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import { UserRound, Plus, LogOut, Trash2, Check } from 'lucide-react';
-import { SiGoogle } from 'react-icons/si';
+import { SiGoogle } from '@/lib/icons';
 import { toast } from 'sonner';
 import { SettingsCard } from '@/components/settings/SettingsCard';
 import { Badge } from '@/components/ui/badge';

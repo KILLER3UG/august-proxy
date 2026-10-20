@@ -1,6 +1,6 @@
 /* Feature Flow pipeline visualization and proxy-path AUG.md injection toggle. */
 
-import { api, backendOriginSync } from '../client';
+import { api, backendOriginSync, localTokenSync, withLocalTokenQuery } from '../client';
 
 export interface FeatureFlowEvent {
   id: string;
@@ -41,7 +41,11 @@ export function openFeatureFlowEventStream(): EventSource {
   // EventSource bypasses the window.fetch rewrite, so resolve the backend
   // base explicitly — relative /api would hit the Tauri asset origin.
   const base = backendOriginSync() ?? '';
-  return new EventSource(`${base}/api/monitor/events/stream`);
+  // An EventSource cannot set a request header, so the LAN token rides in
+  // the query string -- the only channel this transport has.
+  return new EventSource(
+    withLocalTokenQuery(`${base}/api/monitor/events/stream`, localTokenSync()),
+  );
 }
 
 export function getInjectAugOnProxy(): Promise<{ enabled: boolean }> {
