@@ -464,54 +464,19 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
                 {ghostNext && sendKind === 'continue' ? ` · ${ghostNext}` : ''}
               </div>
             ) : null}
-            <textarea
-              ref={taRef}
-              value={input}
-              onChange={(e) => {
-                popovers.handleInputChange(e.target.value);
-              }}
-              onKeyDown={popovers.onKey}
-              onPaste={handleComposerPaste}
-              aria-label="Chat message"
-              placeholder={
-                streaming
-                  ? 'Keep typing to queue follow-up changes'
-                  : focusedSubagent
-                    ? focusedSubagent.running === false && focusedSubagent.workstream
-                      ? ghostNext || `Continue ${focusedSubagent.workstream}…`
-                      : `Steer ${focusedSubagent.title} (next round)`
-                    : continueName
-                      ? ghostNext || `Continue workstream ${continueName}…`
-                      : harnessMode === 'orchestrator'
-                        ? 'Plan the next wave — or open Dispatch from +'
-                        : 'Write a message…'
-              }
-              rows={1}
-              className="w-full resize-none bg-transparent px-3 pt-2 pb-0.5 text-sm outline-none placeholder:text-muted-foreground/70"
-              style={{ minHeight: '36px', maxHeight: '240px' }}
-            />
-
-            {showPreview && input.trim() && (
-              <div
-                className="border-t border-border bg-muted/5 max-h-[240px] overflow-y-auto px-4 py-2 text-foreground/90"
-                aria-label="Message preview"
-                data-testid="composer-preview"
-              >
-                <div className="text-2xs uppercase tracking-wider text-muted-foreground/70 mb-1.5 font-semibold">
-                  Preview
-                </div>
-                <Markdown content={input} />
-              </div>
-            )}
           </>
         )}
 
+        {/* The composer ROW: the `+`, the input, the one primary action. The
+            input lives INSIDE it because the reference's card is one row — an
+            input with a control strip bolted underneath it is two rows, and two
+            rows is what made August's composer read as a control panel. */}
         <ComposerToolbar
           sessionId={sessionId}
           loadedSessionId={loadedSessionId}
           /* The folder chip used to occupy its own full-width row INSIDE the
              card, which made the composer three stacked rows — chip, input,
-             toolbar — where every reference has one. It rides the toolbar's
+             toolbar — where every reference has one. It rides the row's
              left cluster instead, beside the `+`. Only on a fresh session:
              once the chat has messages the binding is fixed and the titlebar
              chips are the read-only context. */
@@ -566,7 +531,53 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
           onCameraCapture={handleCameraCapture}
           onAskParallel={() => setArenaOpen(true)}
           onStartDebate={() => setDebateOpen(true)}
-        />
+        >
+          {voiceActive ? null : (
+            <textarea
+              ref={taRef}
+              value={input}
+              onChange={(e) => {
+                popovers.handleInputChange(e.target.value);
+              }}
+              onKeyDown={popovers.onKey}
+              onPaste={handleComposerPaste}
+              aria-label="Chat message"
+              placeholder={
+                streaming
+                  ? 'Keep typing to queue follow-up changes'
+                  : focusedSubagent
+                    ? focusedSubagent.running === false && focusedSubagent.workstream
+                      ? ghostNext || `Continue ${focusedSubagent.workstream}…`
+                      : `Steer ${focusedSubagent.title} (next round)`
+                    : continueName
+                      ? ghostNext || `Continue workstream ${continueName}…`
+                      : harnessMode === 'orchestrator'
+                        ? 'Plan the next wave — or open Dispatch from +'
+                        : 'Write a message…'
+              }
+              rows={1}
+              /* The horizontal padding is small on purpose: the `+` and the
+                 send circle now flank the text on the SAME row, so the text
+                 starts right after the `+` — the reference's `+` sits
+                 directly beside the placeholder. */
+              className="w-full resize-none bg-transparent px-1 pt-2 pb-0.5 text-sm outline-none placeholder:text-muted-foreground/70"
+              style={{ minHeight: '36px', maxHeight: '240px' }}
+            />
+          )}
+        </ComposerToolbar>
+
+        {showPreview && input.trim() && (
+          <div
+            className="border-t border-border bg-muted/5 max-h-[240px] overflow-y-auto px-4 py-2 text-foreground/90"
+            aria-label="Message preview"
+            data-testid="composer-preview"
+          >
+            <div className="text-2xs uppercase tracking-wider text-muted-foreground/70 mb-1.5 font-semibold">
+              Preview
+            </div>
+            <Markdown content={input} />
+          </div>
+        )}
       </div>
 
       {/* Footer line under the card: disclaimer left, model + effort right.

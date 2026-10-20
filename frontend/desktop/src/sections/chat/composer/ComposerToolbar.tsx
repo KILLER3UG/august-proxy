@@ -1,15 +1,24 @@
 /* ── Composer toolbar ──────────────────────────────────────────────────── */
-/* Slim pill controls: + menu, voice, send / steer / stop.               */
- /* The model + effort control is gone from this toolbar and from the composer
-  * below the card; the prop list shrank with it. `selectedModel` and
-  * `visibleModels` stay because the send gate and the subagent modal still
-  * need them. */
+/* The composer's ONE control row: the `+` at the left, the message input in
+ * the middle, the single primary action (send / stop) at the right.
+ *
+ * It used to be a second row UNDER the textarea, so the card held two rows
+ * of controls where the reference holds one. The capture is explicit about
+ * the reference's shape: "Inside: a `+` glyph at the left, placeholder
+ * `Write a message…` … and at the right a voice glyph and a small chevron.
+ * When generating, the right-hand control becomes a filled light circle with
+ * a dark rounded square inside (the stop button)." One row, one filled
+ * control, everything else a borderless glyph.
+ *
+ * The model + effort control is gone from this toolbar and from the composer
+ * below the card; the prop list shrank with it. `selectedModel` and
+ * `visibleModels` stay because the send gate and the subagent modal still
+ * need them. */
 
 import { useState, useEffect, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { ArrowUp, Square } from 'lucide-react';
 import { setWorkbenchGuardMode, setWorkbenchSandboxMode, setWorkbenchAgentMode } from '@/api/workbench';
 import type { WorkbenchSession } from '@/types/workbench';
-import type { ChatMessage } from '@/types/chat';
 import {
   WorkbenchModeSelector,
   type WorkbenchGuardMode,
@@ -62,6 +71,7 @@ export function ComposerToolbar({
   sendKind = 'send',
   onAskParallel,
   onStartDebate,
+  children,
 }: {
   sessionId: string | null;
   loadedSessionId: string | null;
@@ -94,7 +104,10 @@ export function ComposerToolbar({
   onToggleActions: () => void;
   onAttach: () => void;
   /** Optional control rendered beside the `+` in the left cluster — the
-   *  composer passes the folder chip here so the card stays one row tall. */
+   *  composer passes the folder chip here so the card stays one row tall.
+   *  It is a FRESH-SESSION control only: once the chat has messages the
+   *  folder binding is fixed and the titlebar chips are the read-only
+   *  context. */
   folderSlot?: ReactNode;
   onMention: () => void;
   onVoice: () => void;
@@ -111,6 +124,10 @@ export function ComposerToolbar({
   sendKind?: 'steer' | 'continue' | 'dispatch' | 'send';
   onAskParallel?: () => void;
   onStartDebate?: () => void;
+  /** The message input. It is rendered INSIDE this row — between the `+` and
+   *  the primary action — because the reference's composer card is one row,
+   *  not an input with a control strip bolted under it. */
+  children?: ReactNode;
 }) {
   const [spawnOpen, setSpawnOpen] = useState(false);
   useEffect(() => {
@@ -204,94 +221,101 @@ export function ComposerToolbar({
   };
 
   return (
-    <div className="flex flex-col gap-0">
-      <div className="flex items-center justify-between gap-1.5 px-2 pb-1 pt-0">
-      <div className="flex items-center gap-1 min-w-0">
-        {/* REMOVED: the `⌘` "Browse slash commands" trigger.
-            The reference composer has no such control — its only left-hand
-            affordance is the `+` beside the placeholder. Removed as the button
-            itself plus the `onCommands` prop and its call site, not hidden with
-            a class, so there is no dead element left in the DOM.
+    <>
+      {/* THE composer row. Three zones, in the reference's order: the `+`
+          glyph at the left, the placeholder, the one filled control at the
+          right. `items-end` keeps the send circle on the BOTTOM-right as the
+          input grows, the way a growing composer card does. */}
+      <div className="flex items-end gap-1 px-2 py-1">
+        {/* LEFT — the reference's only left-hand affordance is the `+`; the
+            folder chip is August's own and only rides along while the
+            folder binding is still open (a fresh chat). */}
+        <div className="flex min-w-0 shrink-0 items-center gap-1">
+          {/* REMOVED: the `⌘` "Browse slash commands" trigger.
+              The reference composer has no such control — its only left-hand
+              affordance is the `+` beside the placeholder. Removed as the button
+              itself plus the `onCommands` prop and its call site, not hidden with
+              a class, so there is no dead element left in the DOM.
 
-            NOT deleted: `ComposerCommandsDropdown` and the
-            `showCommandsDropdown` state it is driven by. This button was its
-            ONLY entry point (`ChatThread.tsx:415` exposes the setter on a ref,
-            but nothing calls that ref method), and the ⌘K Command Palette does
-            not list slash commands. Removing the dropdown as well would delete
-            the feature rather than the icon, which is a different decision and
-            the user's to make. */}
-        {folderSlot}
-        <ComposerActionsMenu
-          open={actionsOpen}
-          pos={actionsPos}
-          triggerRef={actionsTriggerRef}
-          onToggle={onToggleActions}
-          onAttach={onAttach}
-          onMention={onMention}
-          onVoice={onVoice}
-          onCamera={onCamera}
-          onSpawn={() => {
-            onToggleActions();
-            setSpawnOpen(true);
-          }}
-          onAskParallel={
-            onAskParallel
-              ? () => {
-                  onToggleActions();
-                  onAskParallel();
-                }
-              : undefined
-          }
-          onStartDebate={
-            onStartDebate
-              ? () => {
-                  onToggleActions();
-                  onStartDebate();
-                }
-              : undefined
-          }
-          extras={
-            <div className="flex items-center gap-2 px-1.5 flex-wrap pt-0.5">
-              <WorkbenchModeSelector
-                selectedMode={workbenchMode}
-                onChange={handleModeChange}
-                sandboxMode={sandboxMode}
-                onSandboxChange={handleSandboxChange}
-                harnessMode={normalizeHarnessMode(workbenchSession?.agentMode)}
-                onHarnessChange={persistHarnessMode}
-              />
-              {sessionUsage && workbenchSession?.id && (
-                <CostCeilingChip
-                  sessionId={workbenchSession.id}
-                  cost={sessionUsage.totalCost ?? 0}
-                  estimated={sessionUsage.costEstimated}
-                  initialCeiling={workbenchSession.costCeiling ?? 0}
+              NOT deleted: `ComposerCommandsDropdown` and the
+              `showCommandsDropdown` state it is driven by. This button was its
+              ONLY entry point (`ChatThread.tsx:415` exposes the setter on a ref,
+              but nothing calls that ref method), and the ⌘K Command Palette does
+              not list slash commands. Removing the dropdown as well would delete
+              the feature rather than the icon, which is a different decision and
+              the user's to make. */}
+          <ComposerActionsMenu
+            open={actionsOpen}
+            pos={actionsPos}
+            triggerRef={actionsTriggerRef}
+            onToggle={onToggleActions}
+            onAttach={onAttach}
+            onMention={onMention}
+            onVoice={onVoice}
+            onCamera={onCamera}
+            onSpawn={() => {
+              onToggleActions();
+              setSpawnOpen(true);
+            }}
+            onAskParallel={
+              onAskParallel
+                ? () => {
+                    onToggleActions();
+                    onAskParallel();
+                  }
+                : undefined
+            }
+            onStartDebate={
+              onStartDebate
+                ? () => {
+                    onToggleActions();
+                    onStartDebate();
+                  }
+                : undefined
+            }
+            extras={
+              <div className="flex flex-wrap items-center gap-2">
+                <WorkbenchModeSelector
+                  selectedMode={workbenchMode}
+                  onChange={handleModeChange}
+                  sandboxMode={sandboxMode}
+                  onSandboxChange={handleSandboxChange}
+                  harnessMode={normalizeHarnessMode(workbenchSession?.agentMode)}
+                  onHarnessChange={persistHarnessMode}
                 />
-              )}
-            </div>
-          }
-        />
-        {onCamera && onCameraCapture && (
-          <CameraPopover
-            open={!!cameraOpen}
-            pos={cameraPos ?? null}
-            onClose={() => onCameraClose?.()}
-            onCapture={(file) => onCameraCapture(file)}
+                {sessionUsage && workbenchSession?.id && (
+                  <CostCeilingChip
+                    sessionId={workbenchSession.id}
+                    cost={sessionUsage.totalCost ?? 0}
+                    estimated={sessionUsage.costEstimated}
+                    initialCeiling={workbenchSession.costCeiling ?? 0}
+                  />
+                )}
+              </div>
+            }
           />
-        )}
-      </div>
+          {folderSlot}
+          {onCamera && onCameraCapture && (
+            <CameraPopover
+              open={!!cameraOpen}
+              pos={cameraPos ?? null}
+              onClose={() => onCameraClose?.()}
+              onCapture={(file) => onCameraCapture(file)}
+            />
+          )}
+        </div>
 
-      <div className="flex items-center gap-1 shrink-0">
+        {/* MIDDLE — the input. It owns the row's height (a 36 px minimum,
+            auto-growing), which is what the card's one row is sized by. */}
+        <div className="min-w-0 flex-1">{children}</div>
 
-        {streaming ? (
-          <>
-            {/* Neutral, circular, monochrome — measured off the Claude reference:
-                the composer's right-hand control is a CIRCLE (a stop button while
-                generating, an outlined circle here), and neither it nor anything
-                else in the card is the accent colour. August's `bg-primary` made
-                this the only saturated element on the whole surface.
-                `rounded-full` + a token-based fill keeps it legible on either
-                theme without inventing a hue. */}
+        {/* RIGHT — the ONE primary action. Neutral and circular, measured off
+            the Claude reference: "a circular button, ~32 px, containing an
+            up-arrow glyph — a circle, not the blue rounded square August
+            uses", and the stop button that replaces it while generating is a
+            "filled light circle with a dark rounded square inside". */}
+        <div className="flex shrink-0 items-center gap-1">
+          {streaming ? (
             <button
               type="button"
               onClick={stop}
@@ -301,51 +325,51 @@ export function ComposerToolbar({
             >
               <Square className="size-3 fill-current" />
             </button>
-          </>
-        ) : (
-          <button
-            type="button"
-            onClick={() => {
-              void send();
-            }}
-            disabled={!canSend}
-            title={
-              sendKind === 'steer'
-                ? 'Steer this worker on its next round'
-                : sendKind === 'continue'
-                  ? 'Continue the named workstream'
-                  : sendKind === 'dispatch'
-                    ? 'Send to the orchestrator (it will spawn workers)'
-                    : canSend
-                      ? 'Send (Enter)'
-                      : !selectedModel
-                        ? 'No model available — check Settings → AI Setup'
-                        : !sessionId
-                          ? 'Open a chat session first'
-                          : 'Type a message to send'
-            }
-            aria-label={
-              sendKind === 'steer'
-                ? 'Steer'
-                : sendKind === 'continue'
-                  ? 'Continue'
-                  : sendKind === 'dispatch'
-                    ? 'Dispatch'
-                    : 'Send'
-            }
-            className={cn(
-              /* Same reasoning as the stop button above: circular and neutral.
-                 The reference's send control is not the accent colour, and a
-                 32px circle matches the stop button it swaps into. */
-              'size-8 justify-center rounded-full p-0 text-xs font-medium flex items-center gap-1.5 transition',
-              'bg-foreground/90 text-background hover:bg-foreground',
-              'disabled:opacity-30 disabled:pointer-events-none',
-            )}
-          >
-            <ArrowUp className="size-3" />
-          </button>
-        )}
-      </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                void send();
+              }}
+              disabled={!canSend}
+              title={
+                sendKind === 'steer'
+                  ? 'Steer this worker on its next round'
+                  : sendKind === 'continue'
+                    ? 'Continue the named workstream'
+                    : sendKind === 'dispatch'
+                      ? 'Send to the orchestrator (it will spawn workers)'
+                      : canSend
+                        ? 'Send (Enter)'
+                        : !selectedModel
+                          ? 'No model available — check Settings → AI Setup'
+                          : !sessionId
+                            ? 'Open a chat session first'
+                            : 'Type a message to send'
+              }
+              aria-label={
+                sendKind === 'steer'
+                  ? 'Steer'
+                  : sendKind === 'continue'
+                    ? 'Continue'
+                    : sendKind === 'dispatch'
+                      ? 'Dispatch'
+                      : 'Send'
+              }
+              className={cn(
+                /* Same reasoning as the stop button above: circular and
+                   neutral. The reference's send control is not the accent
+                   colour, and a 32px circle matches the stop button it swaps
+                   into. */
+                'size-8 justify-center rounded-full p-0 text-xs font-medium flex items-center gap-1.5 transition',
+                'bg-foreground/90 text-background hover:bg-foreground',
+                'disabled:opacity-30 disabled:pointer-events-none',
+              )}
+            >
+              <ArrowUp className="size-3" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* The model+effort control lived here once, then below the card, and is now
@@ -358,6 +382,6 @@ export function ComposerToolbar({
         onClose={() => setSpawnOpen(false)}
         models={visibleModels}
       />
-    </div>
+    </>
   );
 }

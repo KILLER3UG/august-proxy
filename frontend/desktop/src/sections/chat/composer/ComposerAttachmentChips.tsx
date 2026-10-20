@@ -1,6 +1,16 @@
 /* ── Attachment chips ──────────────────────────────────────────────────── */
 /* Modern pending-file cards: circular progress while reading, then a      */
-/* thumbnail (images) or type icon (pdf/doc/txt/…) once ready.             */
+/* thumbnail (images) or type icon (pdf/doc/txt/…) once ready.              */
+/*                                                                          */
+/* The strip used to be a FILLED BAND (`bg-muted/15` + a bottom border)      */
+/* holding N separate BORDERED CARDS with their own shadows — three border  */
+/* levels for what is a list of pending files. The capture's rule is the    */
+/* opposite: "Borders are hairlines, never boxes. Where something needs      */
+/* containment it is one rounded container with hairline children, not N      */
+/* bordered cards", and the elevated surfaces in the reference set are FILLS  */
+/* ("the elevated surfaces — user bubble, selected row, input field — sit at */
+/* a grey band well above the page background"). So the band is gone and the chips are fills      */
+/* separated by a gap: no boxes where a gap will do.                         */
 
 import type { ReactNode } from 'react';
 import { AlertCircle, X } from 'lucide-react';
@@ -81,7 +91,7 @@ function AttachmentThumb({ file }: { file: FileAttachment }) {
   if (status === 'error') {
     return (
       <div
-        className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-destructive/10 border border-destructive/30"
+        className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-destructive/10"
         title={file.error || 'Failed to read file'}
       >
         <AlertCircle className="size-4 text-destructive" />
@@ -91,7 +101,7 @@ function AttachmentThumb({ file }: { file: FileAttachment }) {
 
   if (isImage) {
     return (
-      <div className="size-11 shrink-0 overflow-hidden rounded-lg border border-border/60 bg-muted">
+      <div className="size-11 shrink-0 overflow-hidden rounded-lg bg-muted">
         <img
           src={previewSrc}
           alt={file.name}
@@ -104,7 +114,7 @@ function AttachmentThumb({ file }: { file: FileAttachment }) {
 
   if (isDocThumb && previewSrc) {
     return (
-      <div className="relative size-11 shrink-0 overflow-hidden rounded-lg border border-border/60 bg-white">
+      <div className="relative size-11 shrink-0 overflow-hidden rounded-lg bg-white">
         <img
           src={previewSrc}
           alt={file.name}
@@ -116,7 +126,7 @@ function AttachmentThumb({ file }: { file: FileAttachment }) {
   }
 
   return (
-    <div className="flex size-11 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/80">
+    <div className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-muted/70">
       <IconComponent size={18} color={fileIcon.color} />
     </div>
   );
@@ -132,7 +142,10 @@ export function ComposerAttachmentChips({
   if (attachments.length === 0) return null;
 
   return (
-    <div className="flex flex-wrap gap-2 p-2.5 bg-muted/15 border-b border-border">
+    <div
+      className="flex flex-wrap gap-1.5 px-2 pt-2"
+      data-testid="composer-attachment-strip"
+    >
       {attachments.map((file, i) => {
         const status = file.status ?? 'ready';
         const progress = file.progress ?? 0;
@@ -154,11 +167,11 @@ export function ComposerAttachmentChips({
               }
             }}
             className={cn(
-              'group relative flex items-center gap-2.5 pl-1.5 pr-2 py-1.5 rounded-xl',
-              'bg-card border border-border shadow-xs',
+              'group relative flex items-center gap-2.5 rounded-lg pl-1.5 pr-2 py-1.5',
+              'bg-muted/40 transition-colors',
               'max-w-[220px] animate-in fade-in zoom-in-95 duration-150',
-              canOpen && 'cursor-pointer hover:border-primary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
-              status === 'error' && 'border-destructive/40 bg-destructive/5',
+              canOpen && 'cursor-pointer hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
+              status === 'error' && 'bg-destructive/10',
             )}
             title={canOpen ? `Open ${file.name} in preview` : file.name}
             aria-label={canOpen ? `Open ${file.name} in preview` : undefined}
@@ -190,7 +203,7 @@ export function ComposerAttachmentChips({
               }}
               className={cn(
                 'absolute top-1 right-1 p-0.5 rounded-full',
-                'bg-background/90 border border-border/60 shadow-xs',
+                'bg-background/80',
                 'text-muted-foreground hover:text-foreground hover:bg-muted',
                 'opacity-0 group-hover:opacity-100 focus:opacity-100 transition',
               )}

@@ -145,19 +145,23 @@ export function AssistantMessageContent({
         )}
         {/* End-of-turn recap card removed by user request (2026-08-25):
             the chat area stays clean — activity lives in the right panel. */}
-        {/* Generation rate — ONLY once the turn completes, from the real
-            usage numbers (output tokens / model generation time). The old
-            live "~N t/s" estimate was removed (2026-09-08): the smooth
-            character reveal is the in-flight feedback now. */}
-        {isLast && !streaming && message.usage && message.usage.outputTokens > 0 && message.usage.durationMs && message.usage.durationMs > 0 ? (
-          <div
-            className="text-2xs tabular-nums text-tier-2"
-            title={`${message.usage.outputTokens.toLocaleString()} output tokens in ${(message.usage.durationMs / 1000).toFixed(1)}s of model generation`}
-            data-testid="final-rate-chip"
-          >
-            {(message.usage.outputTokens / (message.usage.durationMs / 1000)).toFixed(1)} t/s
-          </div>
-        ) : null}
+        {/* The per-turn generation-rate readout ("12.4 t/s") is GONE, and the
+            comment that described it went with it.
+
+            It was never the live estimate the old comment talked about. The
+            live "~N t/s" chip was dropped and the FINAL rate — real usage
+            numbers, once the turn closed — took its place in ONE change (the
+            transcript-parity batch of 2026-09-09, which the comment itself
+            dated 2026-09-08). So the comment was accurate about the block it
+            sat on and misleading about the surface: it read as if no rate
+            were rendered while one was.
+
+            Nothing reads it (`final-rate-chip` had no consumer), a rate is a
+            metric and not a state a reader can act on, and the reference
+            transcript carries no per-turn rate at all. The turn's numbers are
+            not lost with it: the Runs page's muted `tokens · cost ·
+            duration` meta line, the Usage stats dashboard, and the composer's
+            cost chip all still carry them. */}
         {/* Transient provider-retry notice (429/5xx backoff) — replaced on
             each attempt, cleared when the turn finalizes. The dots animate
             (travel) rather than the whole line fading. */}
@@ -172,10 +176,21 @@ export function AssistantMessageContent({
             <span className="tabular-nums">{message.retryNotice.replace(/^Reconnecting\s*/, '')}</span>
           </div>
         )}
-        {/* Fallback chip (D8): a chain/promotion switch answered this turn. */}
+        {/* Fallback (D8): a chain/promotion switch answered this turn.
+
+            KEPT through the reference-density pass, deliberately: this is the
+            ONLY place in the app that says which model actually answered.
+            The backend sets it on purpose (`doneEvent['usedFallback']` — "the
+            message shows who actually answered when a fallback/promotion
+            switch happened mid-turn") and the field is persisted per message,
+            so it survives a reload; deleting the line would hide a recorded
+            fact rather than a decoration.
+
+            It stays a quiet note, not a chip: tier-2 muted text, one line, no
+            border — the same vocabulary the reference gives metadata. */}
         {!(isLast && streaming) && message.usedFallback ? (
           <div
-            className="text-2xs text-muted-foreground/60"
+            className="text-2xs text-tier-2"
             title="The primary model failed; this model answered the turn"
             data-testid="fallback-chip"
           >
