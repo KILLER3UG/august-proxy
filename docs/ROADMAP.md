@@ -16,10 +16,10 @@ is the gap between what the reference shows and what August shows now.
 | The run phrase ("Ran 4 commands", "Ran 4 commands, read a file") | `lib/tool-summary.ts` |
 | The self-correction frame is visible in the transcript | `lib/recovery-copy.ts`, `makeStreamHandlers.ts` |
 | The model list no longer paints a long id over its own badges | `sections/workspace/models/ModelRow.tsx` |
-| The tool label is one span that actually animates, and is not dimmed | `components/chat/tool/ToolCallItem.tsx` |
-| The update is an in-place silent replace, and the app restarts itself | `src-tauri/windows/installer.nsi`, `hooks.nsh`, `src/backend.rs` |
+| The tool label is ONE span that is not dimmed, and the dots beside it animate | `components/chat/tool/ToolCallItem.tsx` |
+| The update is an in-place silent replace, and the app restarts itself — **implemented, NOT yet verified on a packaged install** | `src-tauri/windows/installer.nsi`, `hooks.nsh`, `src/backend.rs` |
 | The download is automatic; the restart is still the user's click | `hooks/useAppUpdate.ts`, `lib/preferences.ts` |
-| The updater signature is proved against the key the app trusts | `scripts/minisign-verify.mjs` |
+| The updater signature verifier matches the format the APP verifies with, and the two sources of the trusted key are checked against each other | `scripts/minisign-verify.mjs`, `scripts/check-minisign.mjs` |
 | `/mcp/harness` is behind the gateway key | `routers/harness_mcp.py` |
 | Four more data-directory paths are closed to the model | `services/sandbox/hardline.py` |
 | Three gates for defects that were invisible | `scripts/check-{brain-config,truncate}.mjs`, `check-sse-parity.mjs` |

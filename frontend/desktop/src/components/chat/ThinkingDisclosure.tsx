@@ -102,7 +102,7 @@ export const ThinkingDisclosure = memo(function ThinkingDisclosure({
                 : 'text-muted-foreground/55',
             )}
           >
-            <span className={cn('thinking-text', pending && 'animating')}>
+            <span className="thinking-text">
               <span className="thinking-label" style={{ whiteSpace: 'pre' }}>
                 {displayLabel}
               </span>

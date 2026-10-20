@@ -352,6 +352,11 @@ export function useAppUpdate() {
   const installRef = useRef(install);
   installRef.current = install;
   const autoDownloadUpdates = usePreferencesStore((s) => s.autoDownloadUpdates);
+  // The PERSISTED refusals. The module-level Set below is the in-memory fast
+  // path for "cancelled a moment ago"; this is the one that survives a
+  // restart, and a restart is exactly when the automatic download would
+  // otherwise start again behind the user's back.
+  const cancelledUpdateVersions = usePreferencesStore((s) => s.cancelledUpdateVersions);
 
   /**
    * Automatic background download.
@@ -372,25 +377,32 @@ export function useAppUpdate() {
     const version = query.data?.version;
     if (!version) return;
     if (!autoDownloadUpdates) return;
-    if (cancelledVersions.has(version)) return;
+    if (cancelledVersions.has(version) || cancelledUpdateVersions.includes(version)) return;
     const state = useAppUpdateInstallStore.getState();
     if (state.installing) return;
     if (state.progress.phase === 'ready') return;
     const timer = window.setTimeout(() => {
       const s = useAppUpdateInstallStore.getState();
       if (s.installing || s.progress.phase === 'ready') return;
-      if (cancelledVersions.has(version)) return;
+      if (cancelledVersions.has(version) || cancelledUpdateVersions.includes(version)) return;
       void installRef.current('download');
     }, AUTO_DOWNLOAD_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [query.data?.version, autoDownloadUpdates]);
+  }, [query.data?.version, autoDownloadUpdates, cancelledUpdateVersions]);
 
   const cancelDownload = useCallback(() => {
     cancelRequested = true;
     // Remember the refusal: the automatic background download must not start
     // this version again the next time the window gets focus.
     const version = query.data?.version;
-    if (version) cancelledVersions.add(version);
+    if (version) {
+      cancelledVersions.add(version);
+      // Persist the refusal. A cancel that a restart forgets is a cancel
+      // that did not happen: the automatic download starts again the moment
+      // the app comes back, and the user is asked again by a background
+      // task they never asked for.
+      usePreferencesStore.getState().cancelUpdateVersion(version);
+    }
     if (isWindowsDesktop()) {
       void invoke<string>('cancel_update_download').catch(() => undefined);
     }

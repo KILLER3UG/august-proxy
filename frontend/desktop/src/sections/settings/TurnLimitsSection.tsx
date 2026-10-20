@@ -182,6 +182,22 @@ export function TurnLimitsSection() {
     [config, defaults, draft],
   );
 
+  // aria-invalid belongs to the field the BACKEND rejected, not to every
+  // field on the panel. A save that failed because the network dropped did
+  // not reject any input, and marking all seven of them invalid tells the
+  // user seven things are wrong when none is.
+  //
+  // The validator's message names the key it refused ("maxWorkbenchToolLoops
+  // must be between 0 and 500"), so the rejected fields are read out of it.
+  const rejectedKeys = useMemo(() => {
+    if (!saveError) return new Set<string>();
+    const named = new Set<string>();
+    for (const spec of TURN_FIELDS) {
+      if (saveError.includes(spec.key)) named.add(spec.key);
+    }
+    return named;
+  }, [saveError]);
+
   const pending = rows.some((r) => draft[r.spec.key] !== undefined);
   const atDefaults = rows.every((r) => r.isDefault);
 
@@ -235,8 +251,10 @@ export function TurnLimitsSection() {
                     min={spec.min}
                     max={spec.max}
                     aria-label={spec.label}
-                    aria-invalid={saveError ? true : undefined}
-                    aria-describedby={saveError ? 'turn-limits-save-error' : undefined}
+                    aria-invalid={rejectedKeys.has(spec.key) ? true : undefined}
+                    aria-describedby={
+                      rejectedKeys.has(spec.key) ? 'turn-limits-save-error' : undefined
+                    }
                     data-testid={`turn-limit-input-${spec.key}`}
                     value={draft[spec.key] ?? String(shown)}
                     onChange={(e) => {

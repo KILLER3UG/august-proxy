@@ -50,6 +50,12 @@ interface PreferencesState {
    *  to ask for it. On by default: the app is expected to pick up a new
    *  version on its own, and the user still chooses when to APPLY it. */
   autoDownloadUpdates: boolean;
+  /** Versions whose download the user explicitly CANCELLED. Persisted,
+   *  because a refusal that is forgotten by a restart is a refusal that did
+   *  not happen: the automatic download starts again the moment the app
+   *  comes back, and the user who said no is asked again by a background
+   *  task they never asked for. */
+  cancelledUpdateVersions: string[];
   setProfile: (patch: Partial<ProfilePrefs>) => void;
   setChatFont: (font: ChatFont) => void;
   setReduceMotion: (on: boolean) => void;
@@ -57,6 +63,7 @@ interface PreferencesState {
   setNotifyResponseComplete: (on: boolean) => void;
   setLiveHtmlPreview: (mode: LiveHtmlPreview) => void;
   setAutoDownloadUpdates: (on: boolean) => void;
+  cancelUpdateVersion: (version: string) => void;
 }
 
 const STORAGE_KEY = 'august.preferences';
@@ -70,6 +77,7 @@ const DEFAULTS: Omit<
   | 'setNotifyResponseComplete'
   | 'setLiveHtmlPreview'
   | 'setAutoDownloadUpdates'
+  | 'cancelUpdateVersion'
 > = {
   profile: { callYou: '', workDescription: '', instructions: '' },
   chatFont: 'default',
@@ -78,6 +86,7 @@ const DEFAULTS: Omit<
   notifyResponseComplete: false,
   liveHtmlPreview: 'auto',
   autoDownloadUpdates: true,
+  cancelledUpdateVersions: [],
 };
 
 /**
@@ -117,6 +126,9 @@ function load(): typeof DEFAULTS {
         parsed.notifyResponseComplete ?? DEFAULTS.notifyResponseComplete,
       liveHtmlPreview: parsed.liveHtmlPreview ?? DEFAULTS.liveHtmlPreview,
       autoDownloadUpdates: parsed.autoDownloadUpdates ?? DEFAULTS.autoDownloadUpdates,
+      cancelledUpdateVersions: Array.isArray(parsed.cancelledUpdateVersions)
+        ? parsed.cancelledUpdateVersions.filter((v) => typeof v === 'string').slice(-20)
+        : DEFAULTS.cancelledUpdateVersions,
     };
   } catch {
     return DEFAULTS;
@@ -135,6 +147,7 @@ function persist(state: PreferencesState): void {
         notifyResponseComplete: state.notifyResponseComplete,
         liveHtmlPreview: state.liveHtmlPreview,
         autoDownloadUpdates: state.autoDownloadUpdates,
+        cancelledUpdateVersions: state.cancelledUpdateVersions,
       }),
     );
   } catch {
@@ -186,6 +199,14 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => ({
   },
   setAutoDownloadUpdates: (on) => {
     set({ autoDownloadUpdates: on });
+    persist(get());
+  },
+  cancelUpdateVersion: (version) => {
+    set((s) =>
+      s.cancelledUpdateVersions.includes(version)
+        ? s
+        : { cancelledUpdateVersions: [...s.cancelledUpdateVersions, version].slice(-20) },
+    );
     persist(get());
   },
 }));

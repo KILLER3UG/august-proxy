@@ -460,6 +460,14 @@ export interface BrainConfig {
   // Camera access for the camera_snapshot / camera_list_devices model tools.
   // Off by default — frames captured during a call are transient regardless.
   cameraAccess?: boolean;
+  /* Decision ledger. `decisionJournal` promotes `record_decision` into the
+     core tool set, so the MODEL can log its own decisions; off by default,
+     because arming it changes what a provider sees. `journalIntervalHours`
+     is how often the journal pass runs (1..168). Both were writable by the
+     backend and had no control anywhere until the Decisions panel grew
+     them. */
+  decisionJournal?: boolean;
+  journalIntervalHours?: number;
   /* Anything else the backend's fieldTable accepts. The settings panel renders
      from this shape, so a key added server-side appears without a TS change. */
   [key: string]: unknown;

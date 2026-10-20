@@ -57,6 +57,25 @@ the wizard flow this release removed. `docs/ROADMAP.md` records what was
 deliberately NOT done, and why. `docs/UPDATE_VERIFICATION.md` is the manual
 matrix for the one flow no static gate can verify.
 
+**A second pass found that two of those fixes were broken in a way their own
+gates could not see.** The minisign verifier implemented the wrong format — it
+signed the untrusted comment along with the message, and the crate the app
+verifies with signs the message alone — so it rejected every REAL signature
+while the release gate stayed green, because the self-test signed with the same
+wrong rule. The gate's first test is now the crate's own published vector.
+And the relaunch waiter exited while the old app was still running, because
+"August is running" was treated as "no update in progress"; the installer's own
+relaunch is suppressed under /UPDATE, so the update left a dead app. The waiter
+now waits for the pid that scheduled it.
+
+**And a capability was still open where the fix had been made.** Gating
+`/mcp/harness` closed one door of a class: `/api/subagents/spawn`, the steer
+and resume routes, and `POST /api/harness/proposals/{pid}/decide` still let any
+local process — or a model with `run_command` that can reach loopback — start
+workers and APPROVE a harness proposal, which is the harness's own output
+approving itself. Those routes now need a per-install token that the desktop
+shell generates and never writes to disk.
+
 **Also:** the app now has a smoke check that it STARTS — `npm run e2e:smoke`
 imports the real app, runs its lifespan and asks its basic doors a question,
 against a throwaway data directory. Three foreign files from another product

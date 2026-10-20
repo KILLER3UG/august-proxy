@@ -292,7 +292,7 @@ export function ToolStepRow({
                     running && 'shimmer process-tool-label--live',
                   )}
                 >
-                  {running ? 'Running' : 'Terminal'}
+                  {running ? 'Running' : 'Ran'}
                 </span>
                 {liveTimer}
                 {commandText ? (

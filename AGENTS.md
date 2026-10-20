@@ -35,8 +35,10 @@ The static gates cannot see whether the app **starts** — a module that fails
 to import, a migration that does not apply, a lifespan hook that raises and a
 router that fails to register are all invisible to a linter and fatal at
 launch. `e2e:smoke` is the floor under that, and it is deliberately not a
-behaviour test: it imports the real app, runs its lifespan, and asks six
-read-only doors plus two writes a question. It never touches the user's data
+behaviour test: it imports the real app, runs its lifespan, and asks ten
+questions — six read-only doors, one config write, the closed MCP door, and
+the local door twice (once without the per-install token, which must be
+refused, and once with it, which must get past the door). It never touches the user's data
 directory — that holds their brain database and their keys — and it points
 `AUGUST_DATA_DIR` at a temp directory that is removed afterwards.
 
@@ -76,30 +78,48 @@ every other gate, and each has already caught a live bug:
 - **An update is an IN-PLACE, SILENT replace, and the app restarts itself.**
   The Windows update path is a custom one (`backend.rs::launch_installer_and_exit`),
   not the plugin's, because the desktop release must carry backend changes.
-  Three things have to line up or the app never comes back: the installer is
+  Four things have to line up or the app never comes back: the installer is
   launched with `/UPDATE /S` (silent, and routed to `reinst_done` so the OLD
   uninstaller is never run — the user sees no uninstall wizard); the app
   schedules the detached waiter (`schedule_post_update_relaunch`) BEFORE
-  launching the installer; and the NSIS POSTINSTALL writes the completion
-  marker UNCONDITIONALLY and skips its own `ExecShell` under `/UPDATE`, so the
-  waiter is the single owner of the relaunch. The POSTINSTALL's 800 ms sleep
-  and the waiter's 600 ms would otherwise race each other into two Augusts.
+  launching the installer; the NSIS POSTINSTALL writes the completion marker
+  UNCONDITIONALLY and skips its own `ExecShell` under `/UPDATE`, so the
+  waiter is the single owner of the relaunch; and the waiter waits for **the
+  pid that scheduled it** to exit before it starts looking for the marker.
+  That last one is not a detail. "August is running" does not mean "no
+  update is in progress" — it means the opposite, because at the moment the
+  waiter starts the old app is ALWAYS still alive. A waiter that treated
+  "August is running" as "nothing to do" exited on its first iteration,
+  every iteration, and the update left a DEAD APP. The stale marker is
+  deleted when the waiter is SCHEDULED, not by the waiter: by the time the
+  waiter starts, the installer may already have written a fresh one.
   The waiter always relaunches at its 180 s deadline, so a failed update
   leaves a dead app rather than an app that never returns. The DOWNLOAD is
   automatic (Settings → About → "Download updates automatically", on by
   default, 60 s after launch); the RESTART never is — it interrupts whatever
-  is running, so it stays the user's click. `npm run check:minisign` proves
-  the published signature verifies under the `pubkey` in `tauri.conf.json`;
-  nothing else compared the two, and a mismatch is invisible until a user
-  tries to update.
-- **A run of tool calls is ONE line in the transcript, not N.** The
+  is running, so it stays the user's click.
+  `npm run check:minisign` proves the VERIFIER matches the format the app
+  verifies with (it checks the `minisign-verify` crate's own published
+  vector, so a verifier and a signer cannot agree on a mistake) and that the
+  key in `tauri.conf.json` and the key hardcoded in `backend.rs` are the
+  SAME key — they are two sources of truth for "the key the user trusts"
+  and nothing held them together. The RELEASE is what verifies the
+  published signature, against the bytes it is about to publish.
+  The whole flow is unverified on a packaged NSIS install: the matrix in
+  `docs/UPDATE_VERIFICATION.md` is the check, and it has not been run.
+- **A run of COMMANDS is ONE line in the transcript, not N.** The
   reference transcript collapses consecutive tool calls into an activity line
   — a warm dot, one phrase ("Ran 4 commands"), the elapsed time, a chevron —
   and reveals them in a bordered card. That grouping is a RENDER-TIME
   arrangement (`components/chat/ActivityGroup.tsx` + `lib/tool-summary.ts`),
   not a new persisted block kind: the transcript still stores one block per
   tool call, so a reload produces the same grouping and the backend knows
-  nothing about it. A command that FAILED, is waiting for approval, or
+  nothing about it. **Commands only, for now**: a run of READS keeps the
+  Explore group it already had, and a run of edits, memory writes, search
+  hits or subagents keeps its own row. Grouping every kind is the open
+  decision in `docs/ROADMAP.md` — the reference collapses everything into
+  one line, and merging the two groupings means dropping the Explore
+  group's own vocabulary. A command that FAILED, is waiting for approval, or
   carries an action widget stays on its own — a group collapses to a single
   line, and a failure hidden behind a collapsed line is one nobody sees.
   The live indicator (`WorkingIndicator`) and the persisted activity line are

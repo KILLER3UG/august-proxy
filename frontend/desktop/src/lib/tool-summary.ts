@@ -9,9 +9,13 @@
  * (the `react-refresh/only-export-components` rule), and the phrase is worth
  * more outside the component than the component is worth a second file for.
  *
- * `lib/tool-classify.ts` has always pointed at "the chat ToolSummary header"
- * — a component that did not exist. The component is
- * `components/chat/ToolSummary.tsx`; the phrasing is here. */
+ * There was a `components/chat/ToolSummary.tsx` that exported a component
+ * wrapping this function, and nothing imported it — the activity header
+ * calls `summarizeToolRun` directly. It is gone, because a component nobody
+ * renders is a component that rots silently: nothing type-checks its props,
+ * nothing exercises it, and the next reader cannot tell whether it is live.
+ * The phrasing lives here; the header lives in
+ * `components/chat/ActivityGroup.tsx`. */
 
 import type { ToolEntry } from '@/components/chat/tool/types';
 import { classifyTool, type ToolBucket } from '@/lib/tool-classify';

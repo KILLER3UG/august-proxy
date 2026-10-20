@@ -58,7 +58,9 @@ publishing:
 npm run check:minisign
 ```
 
-That proves the VERIFIER works. The release itself proves the pairing:
+That proves the VERIFIER is the same format the app verifies with — it
+checks the `minisign-verify` crate's own published vector, so a verifier and
+a signer cannot agree on a mistake. The release itself proves the pairing:
 `scripts/release-desktop.mjs` verifies the produced `.sig` against the pinned
 `pubkey` on every build, and refuses to publish if it does not match.
 

@@ -13,12 +13,14 @@
  * reason — a fresh install has logged nothing, and saying so is more useful than
  * a chart of zeros. */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Gavel, Loader2, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
+import { getBrainConfig, saveBrainConfig } from '@/api/workbench';
 import { Button } from '@/components/ui/button';
+import { SettingsToggle } from '@/components/settings/SettingsToggle';
 
 interface DecisionRow {
   id: number;
@@ -200,6 +202,41 @@ export function DecisionsSection() {
     },
   });
 
+  // ── The two knobs this panel owns ─────────────────────────────────────
+  //
+  // Both were WRITABLE by the backend and had no control anywhere, which
+  // is the same gap `check:brain-config` exists to close: a key nobody can
+  // reach is a key nobody can change.
+  //
+  //   decisionJournal    promotes `record_decision` into the core tool
+  //                      set, so the MODEL can log its own decisions. Off
+  //                      by default, because arming it changes what a
+  //                      provider sees.
+  //   journalIntervalHours  how often the daily journal pass runs.
+  const cfgQ = useQuery({ queryKey: ['brain-config'], queryFn: getBrainConfig });
+  const [journalHours, setJournalHours] = useState<number | null>(null);
+  const [journalError, setJournalError] = useState('');
+
+  useEffect(() => {
+    const raw = cfgQ.data?.config?.journalIntervalHours;
+    if (typeof raw === 'number') setJournalHours(raw);
+  }, [cfgQ.data?.config?.journalIntervalHours]);
+
+  const cfgMut = useMutation({
+    mutationFn: (updates: Record<string, unknown>) => saveBrainConfig(updates),
+    onSuccess: () => {
+      setJournalError('');
+      void qc.invalidateQueries({ queryKey: ['brain-config'] });
+      void qc.invalidateQueries({ queryKey: ['brain-decisions'] });
+    },
+    onError: (err: Error) => {
+      setJournalError(err.message);
+      toast.error(`Could not save — ${err.message}`);
+    },
+  });
+
+  const decisionJournalOn = Boolean(cfgQ.data?.config?.decisionJournal);
+
   const data = q.data;
   const digest = data?.digest;
   const logged = digest?.logged ?? 0;
@@ -238,6 +275,47 @@ export function DecisionsSection() {
             </span>
           )}
         </Button>
+      </div>
+
+      {/* The two knobs. The cadence is a number because the backend's range
+          is 1..168 hours; the switch is a switch because it is a boolean. */}
+      <div
+        className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-lg border border-white/[0.06] bg-card/40 px-3 py-2.5"
+        data-testid="decisions-controls"
+      >
+        <SettingsToggle
+          checked={decisionJournalOn}
+          onCheckedChange={(next) => cfgMut.mutate({ decisionJournal: next })}
+          label="Let the model log its own decisions"
+          disabled={cfgQ.isLoading || cfgMut.isPending}
+          data-testid="decision-journal-toggle"
+        />
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span>Journal every</span>
+          <input
+            type="number"
+            min={1}
+            max={168}
+            value={journalHours ?? ''}
+            onChange={(e) => setJournalHours(e.target.value === '' ? null : Number(e.target.value))}
+            onBlur={() => {
+              if (journalHours === null) return;
+              if (journalHours < 1 || journalHours > 168) {
+                setJournalError('The journal cadence must be between 1 and 168 hours.');
+                return;
+              }
+              cfgMut.mutate({ journalIntervalHours: journalHours });
+            }}
+            aria-label="Journal interval in hours"
+            className="w-16 rounded border border-white/[0.08] bg-transparent px-1.5 py-0.5 text-xs text-foreground tabular-nums"
+          />
+          <span>hours</span>
+        </label>
+        {journalError ? (
+          <span role="alert" className="text-xs text-danger-fg" data-testid="journal-cadence-error">
+            {journalError}
+          </span>
+        ) : null}
       </div>
 
       {/* Digest. `unscorable` is never folded into a success number — it is the
