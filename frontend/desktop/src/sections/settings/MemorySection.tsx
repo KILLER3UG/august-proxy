@@ -386,6 +386,34 @@ const UNIFIED_FETCH = 200;
 const UNIFIED_RENDER = 50;
 const LONG_TEXT_FIELDS = new Set(['fact_value', 'value', 'event_summary', 'rule']);
 
+/** The edit form's field labels, in a human's words.
+ *
+ *  The raw column names were shown in UPPERCASE - "FACT_VALUE",
+ *  "EXPIRES_AT" - which is the admin-panel vocabulary the app's own rule
+ *  rejects ("Section labels are muted and small, in sentence case"), and
+ *  a person editing a memory does not know what a fact_value is. */
+const EDIT_FIELD_LABELS = new Map<string, string>([
+  ['fact_value', 'Summary'],
+  ['value', 'Value'],
+  ['event_summary', 'Summary'],
+  ['rule', 'Rule'],
+  ['category', 'Category'],
+  ['confidence', 'Confidence'],
+  ['expires_at', 'Expires'],
+  ['title', 'Title'],
+  ['key', 'Key'],
+  ['source', 'Source'],
+  ['status', 'Status'],
+  ['kind', 'Kind'],
+  ['scope', 'Scope'],
+]);
+
+/** The facts store's two boxes: the summary it stores, and the details it
+ *  stores INSIDE the same value. Named once, because a snake_case column
+ *  name in this file is a computed access, never a member expression. */
+const FACTS_VALUE_FIELD = 'fact_value';
+const FACTS_DETAILS_FIELD = 'fact_details';
+
 /* What a row says out loud in the merged list: the memory itself, not the slug
  * the store keys it by. Facts and KV notes both stored their text behind a
  * machine key, so a row used to read `user:plant` where the memory is "My plant
@@ -828,6 +856,17 @@ export function MemorySection({ active }: { active: { id: string } }) {
     // editable keys are snake_case (the PATCH/write path); the row is the
     // camelCase wire shape, so read the converted key while seeding the draft.
     for (const f of meta.editable) draft[f] = str(selected[toCamel(f)]);
+    // The facts store's value is JSON: {"fact": ..., "details": ...}. The
+    // editor showed that JSON raw, so the only way a human could reach a
+    // details body was to hand-write it - and the Details section the
+    // detail view renders could never be filled by a person at all. The
+    // summary goes in the Summary box and the details in the Details box,
+    // and the value is composed on save.
+    if (activeStore === 'facts' && FACTS_VALUE_FIELD in draft) {
+      const parsed = parseFactValue(selected.factValue);
+      draft[FACTS_VALUE_FIELD] = parsed.summary;
+      draft[FACTS_DETAILS_FIELD] = parsed.details ?? '';
+    }
     setEditDraft(draft);
     setEditing(true);
   };
@@ -837,7 +876,20 @@ export function MemorySection({ active }: { active: { id: string } }) {
     const id = str(selected[meta.idField]);
     const patch: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(editDraft)) {
+      // The Details box is not a column - it is composed into the value.
+      if (k === FACTS_DETAILS_FIELD) continue;
       patch[k] = k === 'confidence' ? Number(v || 0) : v;
+    }
+    // The shape the read side already understands, and the shape the
+    // model's own `remember` tool and the bulk-import door both write.
+    // A fact with no details stays a plain string - byte-identical to
+    // what the panel wrote before.
+    if (activeStore === 'facts') {
+      const summary = (editDraft[FACTS_VALUE_FIELD] ?? '').trim();
+      const details = (editDraft[FACTS_DETAILS_FIELD] ?? '').trim();
+      patch[FACTS_VALUE_FIELD] = details
+        ? JSON.stringify({ fact: summary, details })
+        : summary;
     }
     editMut.mutate({ store: activeStore, id, patch });
   };
@@ -2656,6 +2708,32 @@ function HealthFooter({
 
 /* ── Detail view ────────────────────────────────────────────────────── */
 
+/** The edit form's fields, in order, with human labels.
+ *
+ *  A FACT gets a Details box, right under its Summary: the facts store
+ *  keeps a fact's details INSIDE its value, and without a box for it the
+ *  Details section the detail view renders could never be filled by a
+ *  person. */
+function editFields(
+  store: string,
+  meta: StoreMeta,
+): Array<{ key: string; label: string; long: boolean }> {
+  const fields = (meta.editable ?? []).map((f) => ({
+    key: f,
+    label: EDIT_FIELD_LABELS.get(f) ?? f,
+    long: LONG_TEXT_FIELDS.has(f),
+  }));
+  if (store === 'facts') {
+    const at = fields.findIndex((f) => f.key === FACTS_VALUE_FIELD);
+    fields.splice(at + 1, 0, {
+      key: FACTS_DETAILS_FIELD,
+      label: 'Details',
+      long: true,
+    });
+  }
+  return fields;
+}
+
 function DetailView({
   store,
   row,
@@ -2842,30 +2920,30 @@ function DetailView({
 
       {editing ? (
         <div className="space-y-3">
-          {(meta.editable ?? []).map((f) => (
-            <div key={f}>
+          {editFields(store, meta).map((f) => (
+            <div key={f.key}>
               <label
-                htmlFor={`memory-edit-${f}`}
-                className="mb-1 block text-2xs font-medium uppercase tracking-wide text-muted-foreground"
+                htmlFor={`memory-edit-${f.key}`}
+                className="mb-1 block text-2xs font-medium text-muted-foreground"
               >
-                {f}
+                {f.label}
               </label>
-              {LONG_TEXT_FIELDS.has(f) ? (
+              {f.long ? (
                 <textarea
-                  id={`memory-edit-${f}`}
-                  value={editDraft[f] ?? ''}
-                  onChange={(e) => onDraftChange(f, e.target.value)}
+                  id={`memory-edit-${f.key}`}
+                  value={editDraft[f.key] ?? ''}
+                  onChange={(e) => onDraftChange(f.key, e.target.value)}
                   rows={4}
                   className="w-full rounded-lg border border-border/60 bg-background/40 p-2 text-xs text-foreground outline-none focus:border-primary/40"
-                  data-testid={`memory-edit-${f}`}
+                  data-testid={`memory-edit-${f.key}`}
                 />
               ) : (
                 <input
-                  id={`memory-edit-${f}`}
-                  value={editDraft[f] ?? ''}
-                  onChange={(e) => onDraftChange(f, e.target.value)}
+                  id={`memory-edit-${f.key}`}
+                  value={editDraft[f.key] ?? ''}
+                  onChange={(e) => onDraftChange(f.key, e.target.value)}
                   className="w-full rounded-lg border border-border/60 bg-background/40 px-2 py-1.5 text-xs text-foreground outline-none focus:border-primary/40"
-                  data-testid={`memory-edit-${f}`}
+                  data-testid={`memory-edit-${f.key}`}
                 />
               )}
             </div>
