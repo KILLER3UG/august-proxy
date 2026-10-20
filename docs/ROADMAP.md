@@ -262,19 +262,24 @@ count was checked against the tree one key at a time.
   *Deferred*: the reader belongs in `sections/chat/**`, which another
   track owns. Finishing it is a FEATURE (a context meter the reference
   shows), not a fix.
-- **The provider API keys are still PLAINTEXT** in `data/providers.json`.
-  The file is refused by name at every listing door, but the bytes on disk
-  are plain. The secret store built this round could absorb them
-  unchanged -- the key names are stable.
-- **`mcpGlobalEnv` still holds a real `GOOGLE_OAUTH_CLIENT_SECRET` in
-  plaintext** in `config.json`. It is mirrored from the process env into
-  the config at startup, and it is exported to the MCP subprocess
-  environment -- so encrypting it changes MCP-door semantics and deserves
-  its own change.
-- **The outbound scrubber has never known about the service-connection
-  tokens.** It collects `providers.json`, `settings.gatewayApiKey` and
-  `*_API_KEY` env vars; a Google refresh token pasted into a transcript
-  still rides out on every later turn.
+- **The provider API keys WERE still PLAINTEXT** in `data/providers.json`
+  and are now in the store. `provider_credentials.py` owns the file end to
+  end and returns a MERGED view, so the ~15 readers that pull
+  `entry['apiKey']` straight out of the dict are unchanged. The file's
+  `defaultHeaders` map can still carry an `Authorization: Bearer` value
+  in the clear: a credential-shaped MAP cannot be split without a new
+  per-field convention.
+- **`mcpGlobalEnv` HELD a real `GOOGLE_OAUTH_CLIENT_SECRET` in plaintext**
+  and no longer does. The map is split BY NAME: a sensitive name goes to
+  the store, a public name stays in `config.json`. The premise turned out
+  to be wrong in an interesting way: the secret NEVER reached an MCP
+  child's environment -- `noninteractive_env()` drops every
+  credential-shaped name -- so only the PERSISTENCE moved.
+- **The outbound scrubber had NEVER known about the service-connection
+  tokens** and now does. The encrypted store is a fourth source, read
+  after the providers so a key in both is labelled with its provider. A
+  Google refresh token pasted into a transcript no longer rides out on
+  every later turn.
 - **`GITHUB_TOKEN` / `SLACK_BOT_TOKEN` are exported to `os.environ`** by
   the connect handlers, so they are in the process environment and in
   every child process.

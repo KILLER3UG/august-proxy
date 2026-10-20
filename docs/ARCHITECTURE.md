@@ -501,7 +501,9 @@ endpoints return honest **501**. Live config: `GET/PUT /api/config/live`.
   tools, start/stop). Tools are refreshed at boot.
 - **Service connections** — GitHub, Slack, Google OAuth under
   `/api/service-connections/*`; MCP env under `/api/mcp-env`. Google OAuth env
-  keys are mirrored into durable `mcpGlobalEnv` at startup.
+  keys are mirrored into durable `mcpGlobalEnv` at startup — the SENSITIVE
+  half into the encrypted secret store (`<dataDir>/secrets.json`, Windows
+  DPAPI) and the public half into `config.json`.
 
 ---
 
@@ -547,7 +549,7 @@ try/except so one failure does not block boot):
 
 | Service | Startup | Shutdown |
 |---------|---------|----------|
-| Settings + Google OAuth → mcpGlobalEnv | reload + mirror | — |
+| Settings + Google OAuth → mcpGlobalEnv (sensitive half → the encrypted store) | reload + mirror | — |
 | Log-stream hub (`log_stream`) | `startHub` + WS log handler | `stopHub` |
 | Tool registry | `tool_definitions.registerAll` | — |
 | Memory store | `memory_store.init` + optional storage-key migration | close paths in cognitive stop |

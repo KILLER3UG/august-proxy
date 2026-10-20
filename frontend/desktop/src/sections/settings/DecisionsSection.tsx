@@ -15,7 +15,7 @@
 
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Gavel, Loader2, RotateCcw } from 'lucide-react';
+import { Loader2, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { getBrainConfig, saveBrainConfig } from '@/api/workbench';
@@ -245,10 +245,10 @@ export function DecisionsSection() {
     <section className="px-8 py-6" data-testid="decisions-section">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <h2 className="flex items-center gap-1.5 text-[0.8125rem] font-semibold text-foreground">
-            <Gavel className="size-3.5 text-primary" aria-hidden="true" />
-            Decisions
-          </h2>
+          {/* No icon: a section inside a route takes its name from the nav
+              that already carries the glyph. The header grammar is written
+              down in `sections/learning/LearningHub.tsx`. */}
+          <h2 className="text-[0.8125rem] font-semibold text-foreground">Decisions</h2>
           <p className="mt-0.5 max-w-lg text-xs text-muted-foreground">
             One row per decision — the thesis, the alternatives that were rejected, and what it
             cost. A daily pass settles each one against the turn it belongs to and scores how well

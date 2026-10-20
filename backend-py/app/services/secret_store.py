@@ -74,10 +74,14 @@ WHAT IS *NOT* IN HERE
   fix it: the file's format is the external tool's contract. See
   ``app/services/service_connections.py`` (``_write_workspace_mcp_credentials``)
   for what was done about it and what was not.
-* ``mcpGlobalEnv`` in ``config.json`` — a different store, with different
-  consumers (MCP subprocess environments), still plaintext. Out of scope for
-  the secret-storage track; the key names are stable enough for this store to
-  absorb it later.
+* ``providers.json`` — the provider API keys were in the clear there too,
+  and are in this store now (``providerCredentials.<providerId>``). The FILE
+  still holds the provider's name, baseUrl, models and flags, and a
+  ``defaultHeaders`` map can still carry an ``Authorization: Bearer`` value
+  in the clear: a credential-shaped MAP cannot be split without a new
+  per-field convention.
+* ``mcp-servers.json`` — a per-server ``env`` map can hold a token in the
+  clear. A different file, with different consumers, not yet absorbed.
 
 A NOTE ON LISTING
 -----------------

@@ -6,6 +6,8 @@
 
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { MODAL_LAYER, modalLayerClass } from '@/components/overlays/modal-layers';
+import { cn } from '@/lib/utils';
 import { useMutation } from '@tanstack/react-query';
 import { Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -126,7 +128,10 @@ export function AddModelForm({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4 backdrop-blur-[2px]"
+      className={cn(
+        'fixed inset-0 flex items-center justify-center bg-black/50 p-4 backdrop-blur-[2px]',
+        modalLayerClass(MODAL_LAYER.dialog),
+      )}
       role="dialog"
       aria-modal="true"
       aria-label="Add model"

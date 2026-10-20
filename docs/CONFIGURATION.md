@@ -50,6 +50,11 @@ name, aliases, and env-var base names.
 ```
 
 Custom providers may also store `apiKey` on the entry in `providers.json`.
+The API KEY is moved into the encrypted secret store (`<dataDir>/secrets.json`,
+Windows DPAPI) and the file keeps the rest of the entry; the file's
+`apiKey` field is a MIGRATION SHAPE, not where the key lives. A `defaultHeaders`
+map can still carry an `Authorization: Bearer` value in the clear — a
+credential-shaped map cannot be split without a new per-field convention.
 
 ### `activeProvider`
 
@@ -830,7 +835,10 @@ can run with the default while a long-running prod instance flips it on.
 For a given provider, the API key is resolved roughly as:
 
 1. `config.json → {providerName}.apiKey` (name / aliases)
-2. `providers.json` entry `apiKey`
+2. `providers.json` entry `apiKey` — read through the encrypted secret store
+   (`app/services/provider_credentials.py`), which returns a MERGED view: the
+   file's configuration plus the decrypted key. The key itself is not in the
+   file.
 3. Provider-declared env vars / standard `{NAME}_API_KEY` patterns
 
 For model resolution, aliases take precedence over raw model ids

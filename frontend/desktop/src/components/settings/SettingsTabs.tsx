@@ -101,7 +101,10 @@ export function SettingsTabs({
         aria-orientation="vertical"
         onKeyDown={onKeyDown}
         className={cn(
-          'flex flex-col gap-0.5 rounded-xl border border-white/[0.06] bg-card/40 p-1.5 min-w-[11rem]',
+          // `border-white/[0.06]` is INVISIBLE over a light background -- the
+          // hairline simply did not exist there. `border-border/60` is
+          // theme-aware, which is what the rest of the app's hairlines use.
+          'flex flex-col gap-0.5 rounded-xl border border-border/60 bg-card/40 p-1.5 min-w-[11rem]',
           className,
         )}
       >
@@ -120,7 +123,7 @@ export function SettingsTabs({
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
                 active
                   ? 'bg-primary/15 text-foreground border border-primary/30'
-                  : 'border border-transparent text-muted-foreground hover:bg-white/[0.04] hover:text-foreground',
+                  : 'border border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground',
               )}
             >
               {Icon && (
@@ -152,8 +155,8 @@ export function SettingsTabs({
       aria-label={label}
       onKeyDown={onKeyDown}
       className={cn(
-        'inline-flex max-w-full items-center gap-0.5 rounded-xl border border-white/[0.06]',
-        'bg-white/[0.02] p-1 overflow-x-auto scrollbar-none',
+        'inline-flex max-w-full items-center gap-0.5 rounded-xl border border-border/60',
+        'bg-card/40 p-1 overflow-x-auto scrollbar-none',
         className,
       )}
     >
@@ -172,7 +175,7 @@ export function SettingsTabs({
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
               active
                 ? 'bg-primary/15 text-foreground shadow-sm ring-1 ring-primary/25'
-                : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground',
+                : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
             )}
           >
             {Icon && <Icon className="size-3" />}

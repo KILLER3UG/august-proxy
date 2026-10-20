@@ -338,6 +338,15 @@ workbench dumps an empty `ChatCompletionRequest` and assigns `body['messages']`
 afterwards (`workbench/providers.py`), and the `/v1` proxy appends tool results and
 re-sends after its dump — a serializer door covered neither, while the auth header
 (where a key legitimately belongs) stays untouched at either.
+**The encrypted store is a FOURTH source**, added when the service-connection
+tokens, the provider keys and the `mcpGlobalEnv` secrets moved into it: the
+collector reads the store after the providers, so a key in both is labelled
+with its provider rather than with a store key. The stamp covers
+`secrets.json` as well as `providers.json`, and a MISSING file contributes
+`(-1,-1)` rather than collapsing the whole stamp — before, a fresh install
+with no `providers.json` froze the credential set for the life of the
+process.
+
 **Matched by VALUE, never by pattern**: a pattern scrub would rewrite
 key-shaped text a user pasted to ask why their own key 401s —
 `test_key_shaped_text_the_user_pasted_survives` is that control, and
@@ -572,12 +581,13 @@ unknown keys round-trip through every patch.
 takes online copies through SQLite's backup API (read-only handle, no write lock
 on the live file), runs `PRAGMA integrity_check` on every copy before trusting
 it, and prunes to a verified rolling set; `GET /api/brain/integrity` is the
-health read. **Settings → Memory no longer shows either of them:** the 0.18
-restyle removed the "Memory files" card (backups, integrity, restore, raw-state
-lookup and the model-context preview all lived in it), so a restore is staged
-through `POST /api/brain/backups/restore` and nothing in the UI lists or stages
-it — `api/api-client/brain-backup.ts` is the surviving client if the card is
-ever rebuilt. **A restore is staged and applied at
+health read. **Settings → Memory shows the backups card again:** the 0.18 restyle
+removed the "Memory files" card (backups, integrity, restore, raw-state
+lookup and the model-context preview all lived in it), and `c3dce08e`
+("memory can be backed up again") re-added it DELIBERATELY — so the card is
+back and this paragraph was stale while it said the card was gone. A restore
+is staged through `POST /api/brain/backups/restore` and applied at the next
+launch; `api/api-client/brain-backup.ts` is the surviving client. **A restore is staged and applied at
 the next launch, never in place:** `memory_store.close()` closes only a
 thread-local connection while other threads still hold the live file, so an
 in-process swap yields a half-old database (and fails to rename on Windows).

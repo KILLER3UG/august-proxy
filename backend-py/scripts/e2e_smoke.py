@@ -33,9 +33,11 @@ directory on purpose.
 
 It also does not COPY the user's credentials out of the environment. The
 app's lifespan mirrors the Google OAuth keys from the process environment
-into `mcpGlobalEnv`, which is persisted into `config.json` — so without
-this, a smoke run writes this machine's OAuth secret into the scratch
-directory. The inherited keys are removed before the app is imported.
+into `mcpGlobalEnv` — whose SENSITIVE half now goes into the encrypted
+secret store and whose public half is persisted into `config.json` — so
+without this, a smoke run would write this machine's OAuth secret into the
+scratch directory. The inherited keys are removed before the app is
+imported, so the mirror has nothing to copy in the first place.
 
 Usage:
     python scripts/e2e_smoke.py             # scratch data, throwaway
