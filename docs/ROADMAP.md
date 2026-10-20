@@ -425,6 +425,53 @@ invisible, it was a full-strength line in both themes.
   `DecisionsSection` still owns its own heading rather than the shared
   one. Its icon is gone; the shared component is not yet adopted there.
 
+## The round after that: the app, RUN, against the reference
+
+The two censuses before this one read the source. This one ran the app.
+A dev server on `127.0.0.1:5173` against a backend on a throwaway
+`AUGUST_DATA_DIR`, driven by Chromium over the DevTools protocol, and
+every surface captured and compared with the Claude screenshots -- the
+chat (with a seeded transcript), Runs, Board, History, Automations,
+Learning, the Live surface, and the Settings panel.
+
+Running the product is what found the scrim. The source said the scrim
+had "a tint"; the screen said the tint was a 40% wash of the
+FOREGROUND colour, which is near-white in dark mode, so a dark app
+behind a modal was bleached to pale grey. The app already had the right
+token (`--dt-overlay-scrim`, exposed as `bg-scrim`, and already used by
+the settings panel's own backdrop); the `Backdrop` primitive was the one
+surface that had invented its own. Fixed at the cause.
+
+### Fixed in this round
+
+- **The modal scrim** bleached the app instead of dimming it. `bg-scrim`.
+- **The composer had no voice glyph and no chevron** at the right of the
+  card, where the reference has both. The mic is a real affordance:
+  August's voice input lived two levels down in the `+` menu.
+- **The activity header's chevron was stranded at the far right** of the
+  content column. The reference keeps the header a compact run -- "Ran 4
+  commands, read a file  9s >" -- with the chevron right after the
+  duration. The title was also bright white and bold where the
+  reference's is muted.
+- **The Learning route's title bar** said "August" (and so did the OS
+  window title), because `/learning` was missing from the route-label
+  table.
+
+### Looked at, and deliberately NOT changed
+
+- **The reference's idle composer has no send circle** -- it appears only
+  as the stop button while generating. August keeps its own up-arrow
+  circle. Removing a send button from a desktop app is a product
+  decision, not a UI fix, so it is named here rather than taken.
+- **The blue mark at the right edge of the transcript** is the
+  checkpoint pill, and its 16x6 size is deliberate ("the mark is 8x4; the
+  target should not be" -- `chat.css`). It looked like a rendering
+  artifact until it was measured.
+- **The surfaces that sit on a skeleton for several seconds** are the
+  dev server compiling on demand, not a stuck loader: at 16 s the Runs
+  page is fully rendered and the network log shows every endpoint
+  answering 200. The packaged app does not pay this.
+
 ## Deliberately not done
 
 - **No test suite was restored.** The suite was removed on 2026-10-17 at the
