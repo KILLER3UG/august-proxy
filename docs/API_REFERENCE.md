@@ -468,6 +468,18 @@ store initializes, and keeps the database it replaced as `<db>.pre-restore`. The
 response says `appliesOn: "next-launch"` for that reason — restart August to
 apply, or `DELETE /backups/restore` to abandon it.
 
+**If a migration itself is the thing that broke**, the rollback is the
+sibling file the migration runner leaves behind: `<db>.pre-migration`. Stop
+August, replace the live database with that file, and start August again —
+the runner sees the older `schema_migrations` version and re-applies the
+migrations that follow, so the schema comes back to a state the code
+understands. This is a manual step on purpose: the alternative — a runner
+that rolls back automatically — has to decide, at the moment a migration
+fails, whether the data written since the migration started is worth more
+than the schema, and no automatic answer is right. The sibling is kept
+because the cost of keeping it is one file and the cost of not having it
+is a brain.
+
 A copy is refused as a restore target when it fails `integrity_check`, when it
 holds no pages or no `schema_migrations`/`facts` table (an empty copy restores
 as an amnesic database), or when its schema version is newer than this build

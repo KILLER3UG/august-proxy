@@ -57,11 +57,19 @@ TanStack Query 5, shadcn-style primitives. No library swaps, no Tailwind v4.
 | R2 | [docs/ui-refactor/research/2026-10-03-reference-claude-desktop.md](ui-refactor/research/2026-10-03-reference-claude-desktop.md) | local MSIX v2.19675.0.0, asar-extracted tokens |
 | R3 | [docs/ui-refactor/research/2026-10-03-reference-chatgpt-desktop.md](ui-refactor/research/2026-10-03-reference-chatgpt-desktop.md) | official docs + Store API (no local install; gaps marked UNVERIFIED) |
 | R4 | [docs/ui-refactor/research/2026-10-03-reference-deepseek-harness.md](ui-refactor/research/2026-10-03-reference-deepseek-harness.md) | local install v0.2.0-rc.2 asar + open-source repo (MIT) |
-| A1 | [docs/ui-refactor/audit/2026-10-03-audit-shell-sidebar-drawer.md](ui-refactor/audit/2026-10-03-audit-shell-sidebar-drawer.md) | read-only code audit |
-| A2 | [docs/ui-refactor/audit/2026-10-03-audit-chat-surface.md](ui-refactor/audit/2026-10-03-audit-chat-surface.md) | read-only code audit |
-| A3 | [docs/ui-refactor/audit/2026-10-03-audit-settings-memory-skills.md](ui-refactor/audit/2026-10-03-audit-settings-memory-skills.md) | read-only code audit |
-| A4 | [docs/ui-refactor/audit/2026-10-03-audit-tokens-icons-update.md](ui-refactor/audit/2026-10-03-audit-tokens-icons-update.md) | read-only code audit + check-design run |
-| A5 | [docs/ui-refactor/audit/2026-10-03-audit-mobile.md](ui-refactor/audit/2026-10-03-audit-mobile.md) | read-only code audit |
+| A1 | shell / sidebar / drawer | read-only code audit, **re-judged item by item** in [the 2026-10-14 delta](ui-refactor/audit/2026-10-14-delta-shell-chat-settings.md) |
+| A2 | chat surface | read-only code audit, re-judged in the 2026-10-14 delta |
+| A3 | settings / memory / skills | read-only code audit, re-judged in the 2026-10-14 delta |
+| A4 | tokens / icons / update | read-only code audit + check-design run, re-judged in the 2026-10-14 delta |
+| A5 | mobile | read-only code audit, re-judged in the 2026-10-14 delta |
+
+The five 2026-10-03 audit files were **deleted on 2026-10-20**. They were
+point-in-time tree inventories, and the delta re-judged all five — 270
+verdicts, 130 still-true, 88 already-done, 25 reversed, 25 stale citations.
+Keeping the audits after the ledger that supersedes them would have kept
+42% of this plan's own source material describing a tree that no longer
+exists — and one of them told a reader two mounted components "do not
+exist".
 
 **Corrections to `AUGUST-UI-ENHANCEMENTS.md (now in docs/plans/)`** (the untracked merged plan from earlier
 today) — apply these when reading it; do not trust its stale lines:

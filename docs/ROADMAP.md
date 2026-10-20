@@ -132,6 +132,36 @@ credential store, but `board_monitor` reads a serial line that a sketch may
 be printing a WiFi password on — so the monitor's output is subject to the
 same outbound scrub as anything else the transcript carries.
 
+## Open — carried over from the UI parity round (2026-10-14)
+
+The parity plan (`docs/plans/2026-10-14-harness-ui-claude-parity.md` §8b)
+left these open, and they lived ONLY in its status file. They live here
+now, because a list that exists in one place and not another is a list
+that disappears. Each is re-measured against the tree on 2026-10-20, so
+the state below is the tree's, not the plan's memory.
+
+| Item | State on 2026-10-20 |
+|---|---|
+| **B4's `<DisclosureRow>` consumers.** Five call sites; only `HandoffNoticeCard` passes the `content` prop, so four still own their bodies as siblings — and the trigger of a closed one advertises no `aria-controls`. | **being fixed** — `ThinkingDisclosure`, `tool/ToolCallItem` and `CompactionNoticeCard` are being migrated; `ChangesCard` is the fourth. The trap: `content`'s `forceMount` kills the mount animation of a body that animates itself (`ThinkingDisclosure`, `CompactionNoticeCard`). |
+| **The Settings scrim.** `components/workspace/WorkspaceShell.tsx:277-287` says the reference "floats over a completely unchanged app — sidebar, transcript and composer all stay at full brightness" and deliberately drops the tint. | **The code is wrong and the comment is wrong with it.** The repo's own capture says the opposite, twice: `docs/plans/2026-10-11-ui-reference-capture.md:20` — "A **centred modal** on a dimmed chat behind it" — and `:252` — "The chat is dimmed behind it". Being fixed. |
+| **The jobs tray.** `components/shell/RightDrawerJobsSection.tsx:100-102` renders `useBackgroundTasksStore`, and `store/background-tasks.ts` has no `persist` — so the tray is in-memory and empties on every reload. | **open** — "move it to a global surface" is a FEATURE (persistence + a surface that survives a reload), not a relocation. The audit's premise was wrong and the measurement says what the feature is. |
+| **The composer row and the sidebar density.** No measured target exists. | **open** — an owner's-eye judgement against the reference, not a defect list. |
+| **26 of 44 settings sections are `tier: 'hidden'`.** (18 basic, 26 hidden — re-measured, and the 27/45 figure in the old audit was wrong on all three numbers.) | **open** — a decision about the intended depth of Settings. |
+| **Two live readouts still on screen**: `N t/s` (`sections/chat/message/AssistantMessageContent.tsx:158`) and `answered via {model}` (`:182`). | **open** |
+| **Three chat-surface font sizes exist only as un-tokenised rem literals** — `text-[0.71875rem]`, `text-[0.65625rem]`, `text-[0.8125rem]` (e.g. `components/chat/tool/CommandOutputPane.tsx:131,177`, `components/chat/git/ChangesPill.tsx:142`). | **open** |
+| **`components/overlays/Backdrop.tsx:26-38`** — the scrim has click-dismiss but no Escape, no `role="dialog"`, no `aria-modal`, and no focus trap of its own. | **open** |
+| **`components/shell/SessionSidebar.tsx:73`** — the resize separator carries only an `aria-label`: no `tabIndex`, no `onKeyDown`, no `aria-valuenow/min/max`. `role="separator"` appears nowhere in `frontend/desktop/src` any more. A keyboard user cannot resize the sidebar. | **open** |
+| **`components/chat/ClarifyTool.tsx:162`** — binds a document-wide `keydown` listener while the dialog is `aria-modal={false}` (`:258`). | **open** |
+| **`sections/workspace/models/ModelRow.tsx:251-252`** — a modal with `role="dialog" aria-modal="true"` and no focus trap and no initial focus. | **open** |
+| **A finished turn's todos are rendered nowhere.** `sections/chat/ChatThreadMessagePane.tsx:348` gates the todo strip on `streaming`, and the timeline never reads `todos` — so the state a turn produced is visible only in the right-drawer tasks section. | **open** |
+| **Two dead context stores**: `store/promptCacheLive.ts` and `store/contextSectionsLive.ts` have no consumer outside the stream handlers that write to them. | **open** — delete, or re-mount onto something. The ring they fed is gone, so there is nothing to re-mount onto. |
+
+Two items from the same list turned out to be **already done** and are
+recorded here so nobody repeats them: `ChangesCard`'s three type sizes and
+three nested borders (fixed in `0c641143` — the card is now uniformly
+`text-2xs` with one border level) and the four native `<select>`s in
+`GeneralSection` (migrated to `SettingsSelect` in `c365c586`).
+
 ## Deliberately not done
 
 - **No test suite was restored.** The suite was removed on 2026-10-17 at the
