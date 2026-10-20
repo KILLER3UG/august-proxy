@@ -775,23 +775,48 @@ in a splat. The catch-all is in the `<Routes>` that actually render, the
 layout route's path ends in `*` and its children are relative, and an
 unknown URL goes home.
 
+### The four that were open, and are now closed
+
+- **THE SETTLED ACTIVITY LINE CARRIES NO ELAPSED TIME.** Every duration
+  in the reference's captures is on a LIVE line ("Running a command
+  1m 18s") - a completed run reads "Ran 4 commands, read a file" with
+  no time. The line now shows its time only while the turn is running,
+  and the run's own time is in the card, on the group row, where the
+  reference puts it too. The repo's own rule (AGENTS.md) said otherwise
+  and has been corrected to match the reference.
+- **"Presented N files"** - the reference's expanded card carries a row
+  naming how many files the turn presented, and the card has it: the
+  row sits under the calls, in the group, and reads "Presented 3 files".
+  The count is `countSharedFiles`, which reads the SAME rule the
+  artifact card reads, so the row and the cards cannot disagree.
+- **A `.v` file written by `write_file` GETS A CARD.** The extension
+  list cannot tell a source file the user asked for from a source file
+  the agent merely edited, but the TOOL can: a write creates, a patch
+  changes. So a file the turn CREATED is a deliverable, whatever its
+  extension, and it appears as an artifact card with a Download - the
+  reference's own shape for a Verilog deliverable. A file the turn
+  CHANGED stays a diff, in the changes card.
+- **THE TWO COPIES OF THE PRODUCED-PATH RULE ARE ONE.** `collectProducedFiles`
+  and `producedFilePath` held the same rule twice, and agreed by luck.
+  `collectProducedFiles` now delegates.
+
+### And what the split cost the changes card
+
+The changes card gave up the files the artifact card owns - a document,
+an image, and now a source file the turn created. Its header counts
+the files it LISTS, so it never says "2 files changed" above an empty
+list; when it lists nothing, it shows the chevron and Undo alone. The
+Undo is the one thing a turn of pure deliverables would otherwise lose,
+so the card still renders.
+
 ### Still open, and named after this round
 
-- **The settled activity line carries an elapsed time; the reference's
-  settled line does not.** Every duration in the reference's captures is
-  on a LIVE line ("Running a command  1m 18s") - a completed run reads
-  "Ran 4 commands, read a file" with no time. This repo's own rule says
-  the line is "a warm dot, one phrase, the elapsed time, a chevron", and
-  the component's own doc puts the elapsed on the right of the
-  completion bar, so the time stays until that rule is changed
-  deliberately.
-- **"Presented N files"** - the reference's expanded card carries a row
-  naming how many files the turn presented. The count is one rule away
-  (`countSharedFiles`), and the row belongs in the activity card.
-- **A `.v` file written by `write_file` gets no card.** The kind is
-  'code' and the argument side is kind-filtered, so a Verilog
-  deliverable is a diff. A tool that REPORTS the file gets a card; one
-  that merely names it in its input does not.
-- **`lib/produced-files.ts` and `lib/produced-artifacts.ts` hold two
-  copies of "a path in an edit-classified call's input".** They agree
-  today; one of them should delegate to the other.
+- **A DEEP-DIVE REVIEW OF THE WHOLE APP IS ON THE TABLE.** See
+  `docs/research/2026-10-21-deep-dive-and-cleanup.md` - a read-only
+  review with a seven-batch manifest. Its three HIGH findings share
+  one root cause: the safety-critical guards live in one function and
+  three other paths reach the tool registry without passing through it
+  (the `/v1` proxy, and the MCP tool paths). The fix is structural -
+  route every path through `exec.py` - and the individual MCP items
+  (the lifecycle hooks and the mutating classification) are the
+  smallest high-value change in it.
