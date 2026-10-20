@@ -471,6 +471,33 @@ surface that had invented its own. Fixed at the cause.
   dev server compiling on demand, not a stuck loader: at 16 s the Runs
   page is fully rendered and the network log shows every endpoint
   answering 200. The packaged app does not pay this.
+- **The todo checklist was named by the MODEL.** Both surfaces that show
+  it took their name from the model's OPTIONAL list title -- free text the
+  model writes -- so the same feature could be headed "RESEARCH", "PLAN",
+  "PLANNED STEPS" or "FIX THE CHARTS" depending on the turn, and the
+  two surfaces did not even agree on the fallback ("Plan" in the working
+  indicator, "Planned Steps" in the floating pill). It is now called
+  "Todo" in both, and the model's title is demoted to a muted subject
+  line under the name. The collapsed pill shows the CURRENT STEP, which
+  is the reference's shape ("Fathoming  21s" -- the work there is the
+  todo item).
+- **The `update_state` phase reached the screen raw**, in two places: the
+  working indicator's fallback pill rendered it verbatim in caps, so the
+  pill literally read "RESEARCH", and the plan tree's group heading
+  rendered the raw enum value, so a group read "research". A bookkeeping
+  phase was wearing the costume of a feature name. Both now go through
+  one translation (`lib/phase-labels.ts`), so the raw value cannot leak
+  again.
+
+  The phase VOCABULARY is unchanged on purpose:
+  `research | plan | implement | review | complete` is the tool contract
+  -- it is in the tool's schema enum, in the error the model reads back
+  when it guesses wrong, and in the system prompt. Renaming a phase
+  breaks every session already carrying one, and "research -> plan ->
+  implement -> review -> complete" describes the work better than "todo
+  -> plan -> implement -> review -> complete" does: a todo is not a
+  phase of work. Changing the contract is a separate change and it is
+  the owner's to call.
 
 ## Deliberately not done
 
