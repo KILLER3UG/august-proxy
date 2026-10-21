@@ -99,6 +99,10 @@ jobs:
           "RELEASE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Host "Releasing version $version"
 
+      - name: Sync backend environment for the config probe
+        working-directory: backend-py
+        run: uv sync --frozen --python 3.12
+
       - name: Check version, documentation, naming, and SSE parity gates
         # `check:sse` is here because it is a pure static comparison of the
         # backend's emitted frames against the frontend's hand-written schema
@@ -106,6 +110,10 @@ jobs:
         # build-only job. `check:coverage` and pytest are gone from the repo
         # entirely (the suite was deleted on 2026-10-17), so there is nothing
         # for this job to skip.
+        #
+        # `check:brain-config` asks the REAL backend service for its keys, so
+        # the backend environment must exist before this step. The sync above
+        # creates backend-py/.venv for that probe.
         run: |
           npm run check:version
           npm run check:docs

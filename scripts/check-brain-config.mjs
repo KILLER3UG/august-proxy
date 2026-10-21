@@ -68,7 +68,14 @@ function resolvePython() {
       if (c.cmd.includes('/') || c.cmd.includes('\\')) {
         if (!existsSync(c.cmd)) continue;
       }
-      execFileSync(c.cmd, ['-c', 'import sys; sys.exit(0)'], { stdio: 'ignore' });
+      // The check is that the interpreter can IMPORT THE BACKEND APP, not
+      // merely that it exists. A bare CI python3 passes `import sys` and
+      // then dies inside the probe at `import app.config` (pydantic_settings
+      // missing) — a cryptic failure that says nothing about the environment.
+      execFileSync(c.cmd, ['-c', 'import app.main'], {
+        stdio: 'ignore',
+        cwd: resolve(root, 'backend-py'),
+      });
       return c.cmd;
     } catch {
       /* try the next one */
