@@ -22,6 +22,10 @@ interface TraceData {
   xunit: string;
   unit: string;
   points: number;
+  /** Change-sampled view the backend computes off the FULL run: how many times
+   *  the net actually moved. A 5 000-point idle rail and a 5 000-point clock
+   *  differ here and nowhere else in this payload. */
+  transitions?: number;
 }
 interface SimResult {
   traces?: Record<string, TraceData>;
@@ -143,8 +147,11 @@ function ScopeView({ traces }: { traces: Record<string, TraceData> }) {
       scales: { x: { time: false } },
       series: [
         {},
-        ...entries.map(([name], i) => ({
-          label: name,
+        ...entries.map(([name, trace], i) => ({
+          // The edge count belongs in the legend, not in a tooltip: "this net
+          // moved 3 times" is the fact that tells a reader whether the curve
+          // they are looking at is a clock or a rail that never switched.
+          label: trace.transitions ? `${name} · ${trace.transitions} edges` : name,
           stroke: `hsl(${(i * 57) % 360} 70% 55%)`,
           width: 1.5,
           points: { show: false },

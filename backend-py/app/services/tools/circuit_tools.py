@@ -1769,6 +1769,77 @@ def _downsample(
     return [xs[i] for i in idxs], [ys[i] for i in idxs]
 
 
+_EDGE_CAP = 400
+
+
+def _signal_edges(xs: list[float], ys: list[float]) -> dict[str, object]:
+    """Change-sampled view of a trace: only the moments the signal moved.
+
+    A fixed-rate sample grid costs the same to read whether the net toggled or
+    sat at 5 V for a second; a transition list makes a 1 ms spike and a 1 s idle
+    the same size, which is what makes a long run legible in a panel and what a
+    VCD/logic-analyser export actually needs. This is the shape SimulIDE's
+    instruments use — `(value, simTime)` pairs recorded on change, keyed to
+    circuit time rather than to a sample index.
+
+    Two views come back. `points` is the analog change list, deduped so a value
+    that repeats is one entry, and it is honest about a busy net: past
+    ``_EDGE_CAP`` changes it stops and sets `truncated` rather than thinning
+    silently. `logic` is the same signal read as a digital lane — a 0/1 per edge
+    with 30 %/70 % hysteresis around the swing. It is emitted only for a signal
+    that is actually two-valued: a logic-sized swing AND most samples parked near
+    one rail or the other. A monotonic ramp crosses each threshold exactly once
+    and a 0.2 mV ripple crosses 30 %/70 % of itself forever, so without that test
+    both would come back claiming edges that are not levels.
+    """
+    if len(xs) < 2 or len(ys) < 2:
+        return {'transitions': 0, 'points': []}
+    pts: list[list[float]] = [[xs[0], ys[0]]]
+    for x, y in zip(xs[1:], ys[1:]):
+        if y == pts[-1][1]:
+            continue
+        pts.append([x, y])
+    truncated = len(pts) > _EDGE_CAP
+    out: dict[str, object] = {
+        'transitions': len(pts) - 1,
+        'points': pts[:_EDGE_CAP] if truncated else pts,
+    }
+    if truncated:
+        out['truncated'] = True
+    hi = max(ys)
+    lo = min(ys)
+    swing = hi - lo
+    # Two tests before a signal is allowed to claim it is digital, because a
+    # logic lane is a claim: a 0.2 mV ripple on a rail has a swing and crosses
+    # 30 %/70 % of itself constantly (hundreds of edges out of noise), and a
+    # monotonic ramp crosses each threshold exactly once and would read as a
+    # clean level change. So: a real logic-sized swing, and most of the samples
+    # actually parked near one rail or the other.
+    if swing >= 0.5 and len(ys) >= 4:
+        band = swing * 0.1
+        near_rail = sum(1 for y in ys if y <= lo + band or y >= hi - band)
+        if near_rail / len(ys) >= 0.8:
+            top = lo + swing * 0.7
+            bottom = lo + swing * 0.3
+            level = 0 if ys[0] <= (top + bottom) / 2 else 1
+            edges: list[list[float]] = []
+            for x, y in zip(xs, ys):
+                if level == 0 and y >= top:
+                    level = 1
+                elif level == 1 and y <= bottom:
+                    level = 0
+                else:
+                    continue
+                edges.append([x, float(level)])
+            if edges:
+                out['logic'] = {
+                    'level0': edges[0][1] == 0,
+                    'edges': edges[:_EDGE_CAP],
+                    'count': len(edges),
+                }
+    return out
+
+
 # ── Parametric sweeps (LTspice-.step semantics, ngspice mechanics) ───────
 # ngspice has no `.step` card — the native mechanism is a .control loop:
 # foreach value / alterparam / reset / run. Circuit-section .measure
@@ -2147,7 +2218,7 @@ async def simulate_circuit(
         # Waveform traces: read back the wrdata files from the final run.
         if trace_exprs and exit_code in (0, None):
             xunit = _TRACE_XUNITS.get(analysis) or _dc_sweep_unit(deck_text)
-            sampled: list[tuple[str, list[float], list[float], int, str]] = []
+            sampled: list[tuple[str, list[float], list[float], int, str, dict[str, object]]] = []
             for i, expr in enumerate(trace_exprs):
                 tf = Path(tmpdir) / f'tr{i}.dat'
                 if not tf.exists():
@@ -2163,8 +2234,12 @@ async def simulate_circuit(
                     continue
                 xs, ys, is_mag = parsed
                 total = len(xs)
+                # Edges are computed off the FULL run, before thinning: a
+                # transition list built from a stride-thinned sample would miss
+                # exactly the short pulses the representation exists to keep.
+                edges = _signal_edges(xs, ys)
                 xs, ys = _downsample(xs, ys)
-                sampled.append((expr, xs, ys, total, _trace_y_unit(expr, is_mag)))
+                sampled.append((expr, xs, ys, total, _trace_y_unit(expr, is_mag), edges))
 
             if sampled:
                 traces_out: dict[str, dict[str, object]] = {
@@ -2174,8 +2249,9 @@ async def simulate_circuit(
                         'xunit': xunit,
                         'unit': unit,
                         'points': total,
+                        'edges': edges,
                     }
-                    for expr, xs, ys, total, unit in sampled
+                    for expr, xs, ys, total, unit, edges in sampled
                 }
                 if ws:
                     base = str(name)
@@ -2187,14 +2263,26 @@ async def simulate_circuit(
                 # the transcript cap; `points` still reports the run's own size.
                 budget = _inline_point_budget(len(traces_out))
                 inline: dict[str, dict[str, object]] = {}
-                for expr, xs, ys, total, unit in sampled:
+                for expr, xs, ys, total, unit, edges in sampled:
                     ixs, iys = _downsample(xs, ys, budget)
-                    inline[expr] = {
+                    entry: dict[str, object] = {
                         'x': ixs,
                         'y': iys,
                         'xunit': xunit,
                         'unit': unit,
                         'points': total,
+                    }
+                    # The transcript copy carries the summary of the edge view,
+                    # not the list: the panel reads `tracesFile` for the points,
+                    # and a 400-pair array per trace would push the tool result
+                    # over the transcript cap — where the UI vanishes rather than
+                    # degrading. A small logic lane is cheap and is the part a
+                    # reader actually wants inline.
+                    lane = edges.get('logic')
+                    inline[expr] = {
+                        **entry,
+                        'transitions': edges.get('transitions', 0),
+                        **({'logic': lane} if isinstance(lane, dict) and int(lane.get('count') or 0) <= 40 else {}),
                     }
                 result['traces'] = inline
         if (
