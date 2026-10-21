@@ -64,6 +64,20 @@ a signer cannot agree on a mistake. The release itself proves the pairing:
 `scripts/release-desktop.mjs` verifies the produced `.sig` against the pinned
 `pubkey` on every build, and refuses to publish if it does not match.
 
+## Known gap: minisign is not Authenticode
+
+The 0.18.19 NSIS installer verifies under the pinned **minisign** updater key,
+and its SHA-256 matches the GitHub asset digest. It is **not
+Authenticode-signed**: `Get-AuthenticodeSignature` reports `NotSigned`. The
+in-app updater only ever checks minisign, so the update path works; a manual
+download from the release page will still trigger Windows SmartScreen because
+the publisher is not certified. Closing that needs a Windows code-signing
+certificate wired into the Tauri bundle (and its own secret); it is not a
+change the repository can make on its own.
+
+Run the matrix below on the signed 0.18.19 build, on a throwaway Windows
+account or VM.
+
 ## If a row fails
 
 1. Do not work around it by re-running the installer. The point of the row
