@@ -218,11 +218,46 @@ export function buildPart(input: PartInput, palette: Palette): Group {
     rel(body);
     group.add(body);
   } else if (kind === 'isource' || kind === 'vsource') {
-    const geo = new CylinderGeometry(0.42, 0.42, 1.2, 20);
-    const body = new Mesh(geo, material(palette['--cb3d-ic'], { rough: 0.4 }));
-    body.rotation.z = Math.PI / 2;
-    body.position.set(0, 0.62, 0);
-    group.add(body);
+    // The deck's own adjustable input, drawn as the thing it is on a bench: a
+    // rotary knob. Its dimensions are the reference stage's, scaled from mm to
+    // world units — a 6.1/6.4 radius barrel, a knurled cap and a pointer that
+    // is what actually turns. `knob` is tagged so the stage can rotate exactly
+    // that group from a drag, and `draggable` is what the cursor and the
+    // pointer-down test read.
+    const base = new Mesh(
+      new CylinderGeometry(0.46, 0.46, 0.12, 24),
+      material(palette['--cb3d-lead'], { metal: 0.55, rough: 0.32 }),
+    );
+    base.position.set(0, 0.08, 0);
+    const knob = new Group();
+    knob.name = `${input.ref}-knob`;
+    const barrel = new Mesh(
+      new CylinderGeometry(0.61, 0.64, 0.7, 24),
+      material(palette['--cb3d-ic'], { rough: 0.45 }),
+    );
+    barrel.position.set(0, 0.48, 0);
+    const cap = new Mesh(
+      new CylinderGeometry(0.54, 0.62, 0.09, 24),
+      material(palette['--cb3d-board-deep'], { rough: 0.5 }),
+    );
+    cap.position.set(0, 0.87, 0);
+    const pointer = new Mesh(
+      new BoxGeometry(0.11, 0.04, 0.44),
+      material(palette['--cb3d-silk'], { rough: 0.3 }),
+    );
+    pointer.position.set(0, 0.93, 0.16);
+    knob.add(barrel, cap, pointer);
+    group.add(base, knob);
+    group.userData.draggable = 'pot';
+    group.userData.knob = knob;
+    for (const [i, offset] of [-0.254, 0, 0.254].entries()) {
+      const pin = new Mesh(
+        new BoxGeometry(0.07, 0.34, 0.05),
+        material(palette['--cb3d-lead'], { metal: 0.6, rough: 0.3 }),
+      );
+      pin.position.set(offset, -0.12, i === 1 ? -0.2 : 0.2);
+      group.add(pin);
+    }
   } else if (kind === 'led') {
     const geo = new SphereGeometry(0.3, 18, 12);
     const colour = /r/i.test(input.value) || input.nodes.length === 0
@@ -230,7 +265,13 @@ export function buildPart(input: PartInput, palette: Palette): Group {
       : /b/i.test(input.value)
         ? palette['--cb3d-led-b']
         : palette['--cb3d-led-g'];
-    const dome = new Mesh(geo, material(colour, { rough: 0.2, emissive: 0.5 }));
+    const domeMat = material(colour, { rough: 0.2 });
+    // Emissive starts at zero on purpose: the stage drives it from the knob, so
+    // a part that glows before anything is connected to it would be a lie about
+    // the circuit.
+    domeMat.emissiveIntensity = 0;
+    const dome = new Mesh(geo, domeMat);
+    dome.userData.led = true;
     dome.position.set(0, 0.45, 0);
     dome.scale.y = 1.3;
     group.add(dome);
@@ -268,7 +309,7 @@ export function buildPart(input: PartInput, palette: Palette): Group {
   }
   const bodies: AnyMesh[] = [];
   group.traverse((o) => {
-    const isHull = Boolean(o.userData['hull']);
+    const isHull = o.userData['hull'] === true;
     if (o instanceof Mesh && !isHull) bodies.push(o as AnyMesh);
   });
   for (const body of bodies) {

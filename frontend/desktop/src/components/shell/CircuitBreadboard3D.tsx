@@ -67,6 +67,10 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
   const haloRef = useRef<HTMLDivElement | null>(null);
   const [failed, setFailed] = useState(false);
   const [label, setLabel] = useState('');
+  // The knob's own readout, in the reference's `raw → pwm` form. It starts at
+  // the divider's midpoint because that is where a real pot's wiper sits when
+  // nothing has turned it.
+  const [knobReadout, setKnobReadout] = useState('512 → 128');
   const selectedRefProp = useRef(selectedRef);
   selectedRefProp.current = selectedRef;
 
@@ -160,6 +164,58 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
     const pointer = new Vector2();
     let hovered: PartState | null = null;
     let dragging = false;
+    // The knob's own state. `pot` is the raw 0–1023 divider reading the
+    // reference uses, and it lives HERE, not in React state: a drag fires
+    // sixty times a second and re-rendering the tree for each one would cost
+    // more than the draw does. It is mirrored onto the host's dataset so the
+    // value is assertable and so a screen reader can reach it.
+    let pot = 512;
+    let knobDrag: PartState | null = null;
+    let knobPivot = new Vector2();
+    let knobLastAngle = 0;
+    const knobs = parts.filter((p) => p.group.userData['draggable'] === 'pot');
+    const leds: MeshStandardMaterial[] = [];
+    scene.traverse((o) => {
+      if (o instanceof Mesh && o.userData['led'] === true) {
+        leds.push(o.material as MeshStandardMaterial);
+      }
+    });
+    /** The reference's sweep and its resulting sensitivity: 270° over 1023
+     *  counts is 217.1 counts per radian, ≈3.78 per degree. */
+    const SWEEP_DEG = 270;
+    const COUNTS_PER_RAD = 1023 / (SWEEP_DEG * (Math.PI / 180));
+    const applyPot = (): void => {
+      const pwm = Math.floor(pot / 4);
+      for (const p of knobs) {
+        const knob = p.group.userData['knob'] as Group | undefined;
+        if (knob) knob.rotation.y = -((pot / 1023) * SWEEP_DEG - SWEEP_DEG / 2) * (Math.PI / 180);
+      }
+      // A divider reading drives the LED the way the sketch would: the PWM
+      // count out of 255. Nothing here is written to the deck — the stage shows
+      // what the value would do, and the simulation stays the deck's business.
+      for (const mat of leds) mat.emissiveIntensity = pwm / 255;
+      const hostEl = host as HTMLElement & { dataset: DOMStringMap };
+      hostEl.dataset['pot'] = String(pot);
+      hostEl.dataset['pwm'] = String(pwm);
+      hostEl.dataset['led'] = (pwm / 255).toFixed(2);
+      setKnobReadout(`${pot} → ${pwm}`);
+    };
+    const ownerOf = (obj: object | null): PartState | null => {
+      let node = obj as Group | null;
+      while (node && !node.userData['ref']) node = node.parent as Group | null;
+      return parts.find((p) => p.group === node) ?? null;
+    };
+    const screenPivotOf = (p: PartState): Vector2 => {
+      const v = p.group.position.clone();
+      const knob = p.group.userData['knob'] as Group | undefined;
+      v.y = knob ? 0.9 : 0.5;
+      v.project(camera);
+      const rect = host.getBoundingClientRect();
+      return new Vector2(
+        rect.left + ((v.x + 1) / 2) * rect.width,
+        rect.top + ((1 - v.y) / 2) * rect.height,
+      );
+    };
     let lastX = 0;
     let lastY = 0;
     let azimuth = Math.PI / 5;
@@ -189,8 +245,33 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
       camera.updateProjectionMatrix();
     };
     applyCamera();
+    // Seat the knob at its starting reading and light the LED from it, so the
+    // first frame already agrees with the readout instead of showing an
+    // unlit LED and a "512 → 128" card.
+    applyPot();
 
+    const hitAt = (clientX: number, clientY: number): PartState | null => {
+      const rect = host.getBoundingClientRect();
+      pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+      ray.setFromCamera(pointer, camera);
+      const hits = ray.intersectObjects(parts.map((p) => p.group), true);
+      const obj = hits.find((h) => h.object.userData['hull'] !== true)?.object ?? null;
+      return ownerOf(obj);
+    };
     const onPointerDown = (e: PointerEvent): void => {
+      idleSince = performance.now();
+      const hit = hitAt(e.clientX, e.clientY);
+      if (hit && hit.group.userData['draggable'] === 'pot') {
+        // A knob owns the gesture. Without this branch, "turn the knob" and
+        // "look around the board" would be the same drag and neither would work.
+        knobDrag = hit;
+        knobPivot = screenPivotOf(hit);
+        knobLastAngle = Math.atan2(e.clientY - knobPivot.y, e.clientX - knobPivot.x);
+        host.classList.add('cursor-grabbing');
+        host.setPointerCapture?.(e.pointerId);
+        return;
+      }
       dragging = true;
       lastX = e.clientX;
       lastY = e.clientY;
@@ -201,6 +282,16 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
       const rect = host.getBoundingClientRect();
       pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      if (knobDrag) {
+        const angle = Math.atan2(e.clientY - knobPivot.y, e.clientX - knobPivot.x);
+        // Wrapped through atan2(sin, cos): crossing ±π must read as a few
+        // counts, not as a 2π jump that slams the knob to its stop.
+        const delta = Math.atan2(Math.sin(angle - knobLastAngle), Math.cos(angle - knobLastAngle));
+        knobLastAngle = angle;
+        pot = Math.min(1023, Math.max(0, Math.round(pot + delta * COUNTS_PER_RAD)));
+        applyPot();
+        return;
+      }
       if (dragging) {
         azimuth += (e.clientX - lastX) * 0.006;
         elevation = Math.min(1.45, Math.max(0.06, elevation + (e.clientY - lastY) * 0.004));
@@ -212,6 +303,11 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
       }
     };
     const onPointerUp = (): void => {
+      if (knobDrag) {
+        knobDrag = null;
+        host.classList.remove('cursor-grabbing');
+        return;
+      }
       dragging = false;
       // Ratchet to the nearest quarter turn, the reference's own behaviour: a
       // free camera looks arbitrary, a snapped one looks composed.
@@ -242,13 +338,12 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
       const t = performance.now();
       ray.setFromCamera(pointer, camera);
       const hits = ray.intersectObjects(parts.map((p) => p.group), true);
-      const hitGroup = hits.find((h) => h.object.userData.hull !== true)?.object;
-      let found: PartState | null = null;
-      if (hitGroup) {
-        let node = hitGroup as Group;
-        while (node.parent && !node.userData.ref) node = node.parent as Group;
-        found = parts.find((p) => p.group === node) ?? null;
-      }
+      const hitObj = hits.find((h) => h.object.userData['hull'] !== true)?.object ?? null;
+      const found = ownerOf(hitObj);
+      // A draggable part earns a different cursor: the stage is turnable
+      // everywhere, and the only way to tell a knob from the board under it is
+      // to say so before the press.
+      host.classList.toggle('cursor-pointer', found?.group.userData['draggable'] === 'pot');
       if (found !== hovered) {
         if (hovered) {
           hovered.hoverFrom = hovered.hover;
@@ -300,7 +395,7 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
         azimuth = snapFromAz + (targetAz - snapFromAz) * TIMING.camera.curve(k);
         elevation = snapFromEl + (targetEl - snapFromEl) * TIMING.camera.curve(k);
         if (k >= 1) snapStart = 0;
-      } else if (!dragging && t - idleSince > TIMING.idleAutoRotateMs) {
+      } else if (!dragging && !knobDrag && t - idleSince > TIMING.idleAutoRotateMs) {
         azimuth += 0.0016;
         targetAz = azimuth;
       }
@@ -381,9 +476,22 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
 
   return (
     <div className={className} data-testid="circuit-3d-stage">
-      <div className="mb-1 flex items-center justify-between px-0.5">
-        <span className="text-2xs font-medium text-muted-foreground">3D board</span>
-        <span className="text-2xs text-muted-foreground/70">drag to turn · scroll to zoom · release snaps square</span>
+      <div className="mb-1 flex items-center justify-between gap-2 px-0.5">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="shrink-0 text-2xs font-medium text-muted-foreground">3D board</span>
+          {knobReadout ? (
+            <span
+              className="truncate font-mono text-2xs text-muted-foreground"
+              data-testid="circuit-3d-pot"
+              title="Knob reading → PWM count. The view explores the value; the netlist keeps its own numbers."
+            >
+              {knobReadout}
+            </span>
+          ) : null}
+        </span>
+        <span className="shrink-0 text-2xs text-muted-foreground/70">
+          drag the knob · drag to turn · scroll to zoom
+        </span>
       </div>
       <div
         ref={hostRef}
