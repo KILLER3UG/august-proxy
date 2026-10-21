@@ -837,3 +837,69 @@ so the card still renders.
   the `/v1` boundary with the full tool surface. The packaged NSIS matrix
   remains unrun; 0.18.19 is the signed build to run it against, on a
   throwaway Windows account or VM.
+
+## The round after that: the board table, audited against the core it claims
+
+Two deep dives (SimulIDE, and the `pi` harness) turned up defects in August's
+own tables rather than in the reference repos, which is the usual outcome.
+
+**THE BOARD PIN TABLE SAID THE PRO MINI WAS A MEGA.** `_BOARD_PINS` carried
+`arduino:avr:pro` as 54 digital + 16 analog — the Mega's row — while the
+installed core says `pro.build.variant=eightanaloginputs`, whose header raises
+`NUM_ANALOG_INPUTS` to 8 on top of `standard`'s 14 digital pins and puts
+`PIN_A0` at 14. So `circuit_add_board` wrote a `.subckt` with 70 pins for a
+22-pin board, 40 of them invented, and `firmware_stimulus` named Arduino pin
+14 `D14` when the core calls that pin `A0`. `arduino:renesas_uno:unor4` said
+27+12 against its own `variants/MINIMA/pins_arduino.h` (20u digital, 6u
+analog, `PIN_A0 (14u)`) → 14+6. And `arduino:avr:micro` said 14 digital while
+its header is `#include "../leonardo/pins_arduino.h"` whole — two boards
+sharing one header cannot have different counts, so Micro is 20+12 like the
+Leonardo row beside it. **Fixed**, with the source of each count named next to
+the row: the table is now checked against a platform, not remembered.
+
+**A MENU-QUALIFIED FQBN WAS READ AS A BOARD.** arduino-cli takes
+`arduino:avr:pro:cpu=8MHzatmega328` — the 3.3 V Pro Mini — and the compiler
+path must keep that whole string. The board's FACTS are filed under the first
+three segments, so the qualified string missed both tables: `board_logic_level`
+fell through to its 5.0 default and stepped every PWL source on the wrong rail
+(the exact failure the UNO R4 fix recorded, reachable a second way),
+`board_pin_list` returned nothing, `board_short_name` answered
+`cpu=8mhzatmega328`, and a deck named its SPICE block `CPU_8MHZATMEGA328`
+instead of `PRO`. `board_base_fqbn` + `_board_row` resolve exact-then-base, a
+variant row carries its own rail, and `_BOARD_LOGIC_LEVELS` no longer repeats
+the rails the pin rows already state — one fact, one place. Measured after the
+fix: the qualified Pro resolves 14+8 pins, 3.3 V, block `PRO`, pin 14 → `A0`.
+
+**THE TOOL DESCRIPTIONS HAD STALE BOARD LISTS.** Six of them named
+`uno/nano/mega/leonardo/unor4` while the table carried seven boards, so a model
+was told `micro` and `pro` do not exist. They interpolate
+`firmware_tools.board_names()` now, which derives from the one table.
+
+**`BEGIN` WAS THE WRONG TRANSACTION FOR A READ-THEN-WRITE.** The sessions
+domain opens a transaction, reads `is_archived` (a column the wire does not
+carry, so the save keeps it), then upserts. A deferred `BEGIN` takes only a
+READ snapshot; once another connection commits, SQLite refuses the upgrade with
+`database is locked` IMMEDIATELY — `busy_timeout=10000` buys nothing, because
+waiting never makes a stale snapshot writable. Measured on a throwaway
+database, against the shipped `_begin_txn`: deferred read→write with one commit
+interleaved fails in 0.000 s; the same sequence under `BEGIN IMMEDIATE` writes
+in 0.005 s and the other connection just waits for the lock. `e2e:smoke` had
+caught it as a real `SQLite session write failed` ERROR at boot (310 ms after a
+migration wrote), which is how a durability loss in the session snapshot gets
+seen at all. The deferred form was restored in-tree to prove the red before the
+one-line change was kept.
+
+**A PAGED READ DID NOT SAY WHERE TO CONTINUE.** The receipt said
+`[lines 120-319 of 4200]` — the model had to compute the next offset and often
+re-read a window it already had. It now says `use offset=320`, and drops the
+clause at end-of-file so a complete read claims nothing is left. Same
+discipline as the spill note and the too-large error, and the reason the pi dive
+was worth running: its truncation receipts are actionable, and ours nearly were.
+
+**FROM THE REFERENCE DIVES, NOT COPIED:** SimulIDE is AGPLv3, so its mechanisms
+are readable and its code is not — and three of the four `pi` ideas that looked
+new turned out to be shipped already (length-stop fails the whole tool batch at
+`workbench.py:4661`, spill receipts name the path, read-before-edit is a gate).
+The open list from both dives lives in
+`docs/research/2026-10-21-simulide-and-pi-harness.md`.
+
