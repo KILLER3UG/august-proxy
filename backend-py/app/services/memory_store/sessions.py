@@ -13,7 +13,7 @@ from app.type_aliases import SessionRecord
 
 
 def _begin_txn(conn) -> None:
-    """Start an explicit transaction, tolerating an already-open one.
+    """Open an explicit WRITE transaction, tolerating an already-open one.
 
     Per-turn writers (``turn_outcomes`` / ``lifecycle`` / ``internal_state``)
     run on the loop thread and use ``deferred_writes.defer_commit``, which
@@ -22,13 +22,25 @@ def _begin_txn(conn) -> None:
     raises "cannot start a transaction within a transaction" and the whole
     session save/delete is lost. Settling the open transaction first is safe —
     those rows only ever wanted a *later* commit, and committing now just makes
-    them durable sooner — and it lets the explicit ``BEGIN`` below own a clean,
-    atomic transaction. When a transaction is already open it already provides
-    the atomicity the raw ``BEGIN`` was asking for, so we simply keep it.
+    them durable sooner — and it lets the ``BEGIN IMMEDIATE`` below own a clean,
+    atomic transaction.
+
+    IMMEDIATE, not deferred, and that is the part with a measured reason. Every
+    save here READS before it WRITES (the ``is_archived`` dual-read keeps a
+    column the wire does not carry), and a deferred transaction takes only a
+    read snapshot. Once another connection commits, that snapshot is stale, and
+    SQLite refuses the upgrade with ``database is locked`` RIGHT AWAY — the
+    ``busy_timeout=10000`` set on every brain connection buys nothing, because
+    no amount of waiting makes a stale snapshot writable. Measured on a
+    throwaway database: deferred read-then-write with one commit interleaved
+    fails in 0.000 s, the same sequence under ``BEGIN IMMEDIATE`` writes in
+    0.005 s and the other connection simply waits for the lock. Taking the write
+    lock at ``BEGIN`` rather than at the first write is what turns that error
+    into ordinary serialisation.
     """
     if conn.in_transaction:
         brain_commit(conn)
-    conn.execute('BEGIN')
+    conn.execute('BEGIN IMMEDIATE')
 
 
 def save_session(session: SessionRecord) -> None:
