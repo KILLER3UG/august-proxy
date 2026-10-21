@@ -733,7 +733,16 @@ async def call_openai_workbench(
     if not apiKey:
         return {'error': 'API key not configured'}
     from app.adapters.anthropic import translateMessages
+    from app.services.workbench.message_pairing import repair_tool_pairing
 
+    # Repaired at the boundary, not in the store: an unpaired tool call is a 400
+    # that would otherwise repeat on every later turn. See message_pairing.
+    messages, _synthesized, _dropped = repair_tool_pairing(messages)
+    if _synthesized or _dropped:
+        logger.warning(
+            'provider boundary: %d orphaned tool call(s) given a synthetic result, %d stray result(s) dropped',
+            _synthesized, _dropped,
+        )
     openaiMessages = translateMessages(messages)
     openaiMessages.insert(0, {'role': 'system', 'content': system_text})
     from app.models.openai import dump_openai_upstream_body
@@ -1098,6 +1107,14 @@ async def call_responses_workbench(
     # Normalize the internal history to OpenAI chat shape first (the
     # translator consumes role/content/tool_calls — translateMessages handles
     # both internal block shapes), then translate to Responses items.
+    from app.services.workbench.message_pairing import repair_tool_pairing
+
+    messages, _synthesized, _dropped = repair_tool_pairing(messages)
+    if _synthesized or _dropped:
+        logger.warning(
+            'provider boundary: %d orphaned tool call(s) given a synthetic result, %d stray result(s) dropped',
+            _synthesized, _dropped,
+        )
     openaiMessages = translateMessages(messages)
     openaiMessages.insert(0, {'role': 'system', 'content': system_text})
     body: dict[str, object] = {'model': model}

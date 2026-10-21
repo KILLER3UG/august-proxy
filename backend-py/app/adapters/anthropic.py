@@ -19,6 +19,7 @@ Key responsibilities:
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from typing import AsyncIterator, Callable, cast
 
@@ -74,6 +75,8 @@ from app.providers.clients.base import BaseProviderClient
 from app.providers.model_resolver import resolve
 from app.services.workbench.validator import validationErrorText
 from app.type_aliases import JsonValue
+
+logger = logging.getLogger('adapters.anthropic')
 
 # Back-compat aliases (previous camelCase names on this module).
 writeAnthropicSseData = write_anthropic_sse_data
@@ -1065,6 +1068,16 @@ async def _streamOpenaiAsAnthropic(
         roundBody = dict(openaiBody)
         # Round 2+ re-uses Anthropic-format blocks (including tool_result
         # user messages). Translate them before sending to an OpenAI upstream.
+        # Pairing is repaired HERE, per round, because round 2 is exactly where
+        # a call whose result never landed would otherwise surface.
+        from app.services.workbench.message_pairing import repair_tool_pairing
+
+        currentMessages, _synthesized, _dropped = repair_tool_pairing(currentMessages)
+        if _synthesized or _dropped:
+            logger.warning(
+                'provider boundary: %d orphaned tool call(s) given a synthetic result, %d stray result(s) dropped',
+                _synthesized, _dropped,
+            )
         roundBody['messages'] = cast(JsonValue, translateMessages(currentMessages, systemBlocks))
         roundBodyJson = cast(
             dict[str, object], as_dict(camelToSnake(strip_none_deep(cast(JsonValue, roundBody))), {})
