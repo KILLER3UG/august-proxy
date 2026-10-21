@@ -548,9 +548,15 @@ async def _readFile(
                     + f'[no line {window_start}: the file has {total_lines} line(s)]\n'
                 )
             last = min(window_end, total_lines)
-            header = f'[lines {window_start}-{last} of {total_lines}]\n' if (
-                window_start > 1 or last < total_lines
-            ) else ''
+            # The receipt carries the NEXT call, not just the fact that there
+            # was one: "[... of 4200]" makes the model compute an offset and
+            # often re-read a window it already has, while `offset=<last+1>` is
+            # obeyed. Same discipline as the spill note and the too-large error.
+            header = ''
+            if last < total_lines:
+                header = f'[lines {window_start}-{last} of {total_lines}, use offset={last + 1} to continue]\n'
+            elif window_start > 1:
+                header = f'[lines {window_start}-{last} of {total_lines}]\n'
             # Per-line anchors (R1): numbered lines let the model reference
             # exact lines in edit_lines.changes[].line and verify its anchors.
             # Join with '' and not with a separator: every element from the
