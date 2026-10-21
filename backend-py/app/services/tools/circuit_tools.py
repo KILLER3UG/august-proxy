@@ -4230,3 +4230,157 @@ def render_board_3d(
         'componentCount': len(placements),
         'refs': [str(p['ref']) for p in placements][:40],
     }
+
+
+# ── Circuits as fixtures: a folder of decks, run and asserted ─────────────
+#
+# The gap this closes is the one every other gate in this repo cannot see: a
+# renderer change, a parse change or an engine change can leave every static
+# check green while the decks a user actually runs produce wrong numbers. A
+# deck that carries its own expectations is a test the circuit workbench can
+# run without a test suite, and — because the expectation is a comment — it is
+# something the model can write, read back and extend inside the workspace.
+
+_EXPECT_RE = re.compile(
+    r'^\s*\*\s*expect\s+(?P<expr>[A-Za-z][\w().+]*)\s*'
+    r'(?P<op>~=|==|<=|>=|<|>)\s*'
+    r'(?P<value>[-+]?[\d.]+(?:[eE][-+]?\d+)?)'
+    r'(?:\s*(?:±|\+-|\+/-)\s*(?P<tol>[\d.]+(?:[eE][-+]?\d+)?))?\s*$',
+    re.M,
+)
+
+
+def parse_expectations(deck_text: str) -> list[dict[str, object]]:
+    """The `* expect` cards in a deck.
+
+    Grammar: `* expect v(out) ~= 5.0 ±0.05`, `* expect i(v1) < 0.002`,
+    `* expect tran_max v(led) > 0.1`. The left side is a measure key exactly as
+    `circuit_simulate` reports it, so an expectation cannot pass against a
+    number the tool never returned.
+    """
+    out: list[dict[str, object]] = []
+    for m in _EXPECT_RE.finditer(deck_text or ''):
+        tol = m.group('tol')
+        out.append({
+            'expr': m.group('expr'),
+            'op': m.group('op'),
+            'value': float(m.group('value')),
+            'tol': float(tol) if tol else None,
+        })
+    return out
+
+
+def _check_expectation(found: float, exp: dict[str, object]) -> tuple[bool, str]:
+    """One expectation against one measured number."""
+    op = str(exp.get('op'))
+    want = float(str(exp.get('value') if exp.get('value') is not None else 0.0))
+    tol = exp.get('tol')
+    if op in ('~=', '==') and tol is not None:
+        ok = abs(found - want) <= float(str(tol))
+        return ok, f'|{found:g} - {want:g}| <= {tol:g}'
+    if op in ('~=', '=='):
+        # No tolerance stated: compare to the precision a reader would accept
+        # for the magnitude, rather than pretending an analog number is exact.
+        ok = abs(found - want) <= max(abs(want) * 0.001, 1e-9)
+        return ok, f'{found:g} ~= {want:g} (0.1% default)'
+    if op == '<':
+        return found < want, f'{found:g} < {want:g}'
+    if op == '>':
+        return found > want, f'{found:g} > {want:g}'
+    if op == '<=':
+        return found <= want, f'{found:g} <= {want:g}'
+    return found >= want, f'{found:g} >= {want:g}'
+
+
+async def batch_test_decks(
+    folder: str = '',
+    workspace: str = '',
+    session: object | None = None,
+    limit: int = 25,
+) -> dict[str, object]:
+    """Run every deck under a folder and assert its own `* expect` cards.
+
+    Read-only: nothing is written, and each deck is simulated from its text, so
+    a fixture folder is safe to point at a real project. Decks with no
+    expectation are counted as `no-expectations`, never as a pass — a fixture
+    that asserts nothing passing is how a suite goes green around a broken
+    feature.
+    """
+    ws = workspace or _workspace(session)
+    if not ws:
+        return {'ok': False, 'error': 'no workspace open — pass workspace or open a project'}
+    try:
+        root = _bind(folder or '.', ws, for_write=False)
+    except Exception as exc:  # a path the sandbox refuses is an answer, not a crash
+        return {'ok': False, 'error': f'{exc}'}
+    decks: list[Path] = []
+    if root.is_file():
+        decks = [root]
+    else:
+        for ext in _NETLIST_EXT:
+            decks.extend(sorted(root.rglob(f'*{ext}')))
+    decks = [d for d in decks if '.aug' not in d.parts and 'node_modules' not in d.parts]
+    capped = decks[: max(1, int(limit))]
+    rows: list[dict[str, object]] = []
+    passed = failed = silent = 0
+    for deck in capped:
+        try:
+            text = deck.read_text(encoding='utf-8', errors='replace')
+        except OSError as exc:
+            rows.append({'path': str(deck), 'status': 'unreadable', 'error': str(exc)})
+            failed += 1
+            continue
+        expects = parse_expectations(text)
+        result = await simulate_circuit(netlist=text, name=deck.name, workspace=ws, session=session)
+        raw_measures = result.get('measures')
+        measures: dict[str, object] = raw_measures if isinstance(raw_measures, dict) else {}
+        if result.get('error') or result.get('errors'):
+            rows.append({
+                'path': deck.name,
+                'status': 'engine-error',
+                'errors': result.get('errors') or [str(result.get('error'))],
+            })
+            failed += 1
+            continue
+        if not expects:
+            rows.append({'path': deck.name, 'status': 'no-expectations', 'measures': measures})
+            silent += 1
+            continue
+        problems: list[str] = []
+        for exp in expects:
+            expr = str(exp.get('expr'))
+            if expr not in measures:
+                problems.append(f'{expr}: the run reported no such measure')
+                continue
+            try:
+                found = float(str(measures[expr]))
+            except (TypeError, ValueError):
+                # A measure ngspice reported as text (a time, a param) is not a
+                # number to compare against; say so rather than crash the run.
+                problems.append(f'{expr}: reported as {measures[expr]!r}, not a number')
+                continue
+            ok, why = _check_expectation(found, exp)
+            if not ok:
+                problems.append(f'{expr} {exp.get("op")} {exp.get("value")}: got {found:g} ({why})')
+        if problems:
+            rows.append({'path': deck.name, 'status': 'failed', 'problems': problems, 'measures': measures})
+            failed += 1
+        else:
+            rows.append({'path': deck.name, 'status': 'passed', 'asserts': len(expects), 'measures': measures})
+            passed += 1
+    return {
+        'ok': failed == 0 and passed > 0,
+        'folder': str(root),
+        'decks': rows,
+        'summary': {
+            'found': len(decks),
+            'run': len(capped),
+            'passed': passed,
+            'failed': failed,
+            'noExpectations': silent,
+        },
+        'hint': (
+            'Add `* expect v(out) ~= 5.0 ±0.05` cards to a deck to make it a '
+            'fixture; a deck with none is counted, never passed.'
+        ),
+    }

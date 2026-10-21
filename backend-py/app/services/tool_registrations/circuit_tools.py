@@ -423,6 +423,15 @@ async def _env() -> str:
         return _err(exc)
 
 
+async def _batchTest(folder: str = '', limit: int = 25, **_extra: object) -> str:
+    try:
+        return json.dumps(await circuit_tools.batch_test_decks(
+            folder=folder, workspace=_ws(), session=_session(), limit=limit,
+        ))
+    except Exception as exc:
+        return _err(exc)
+
+
 # ── /circuit command handling (called from the workbench turn loop) ────────
 
 CIRCUIT_MODE_HINT = (
@@ -1358,4 +1367,28 @@ def register() -> None:
         'plain SPICE.',
         _env,
         {'type': 'object', 'properties': {}},
+    )
+    tool_registry.register(
+        'circuit_batch_test',
+        'Run every SPICE deck under a folder as a fixture and assert each '
+        'deck\'s own `* expect` cards against the real run. Grammar: '
+        '`* expect v(out) ~= 5.0 ±0.05`, `* expect i(v1) < 0.002`, '
+        '`* expect tran_max v(led) > 0.1` — the left side is a measure key '
+        'exactly as circuit_simulate reports it, so an expectation cannot pass '
+        'against a number the tool never returned. Returns per-deck '
+        'passed/failed/engine-error/no-expectations with the failing '
+        'comparisons and the measures that were seen. A deck with no expect '
+        'card is COUNTED, never passed: a fixture that asserts nothing is how a '
+        'suite goes green around a broken circuit. Read-only — nothing is '
+        'written, and each deck is simulated from its text. Use it after '
+        'touching a shared subcircuit, a part value or the rendering/parse path, '
+        'and before claiming a design still works.',
+        _batchTest,
+        {
+            'type': 'object',
+            'properties': {
+                'folder': {'type': 'string', 'description': 'Workspace folder (or one deck path); default .'},
+                'limit': {'type': 'integer', 'description': 'Max decks to run (default 25)'},
+            },
+        },
     )
