@@ -245,4 +245,35 @@
     background-position: 0 0;
   }
 }
+
+/* 3D board stage: the halo around a selected part and the flash on a net the
+ * readout just named. Both are HTML overlays on the canvas, not scene meshes —
+ * a mesh halo would need a second render pass, and the cue is a 2D affordance
+ * either way. Timings match the reference stage (halo 2.8 s ease-out, flash
+ * 1.4 s), and the reduced-motion opt-out below already covers them because
+ * this file is imported last. */
+@keyframes cb3d-halo {
+  from {
+    transform: scale(0.6);
+    opacity: 0.85;
+  }
+  to {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+}
+@keyframes cb3d-line-flash {
+  from {
+    background: color-mix(in srgb, var(--cb3d-select) 28%, transparent);
+  }
+  to {
+    background: transparent;
+  }
+}
+.cb3d-halo {
+  animation: cb3d-halo 2.8s ease-out infinite;
+}
+.cb3d-line-flash {
+  animation: cb3d-line-flash 1.4s ease-out 1;
+}
 

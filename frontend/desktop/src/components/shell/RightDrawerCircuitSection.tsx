@@ -5,10 +5,11 @@
  * dedicated drawer section. Images open in the file viewer; netlists and   *
  * bitstreams reveal in folder.                                             */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FolderOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { FileIcon } from '@/components/ui/FileIcon';
+import { circuitApi, type SchematicGraph } from '@/api/circuit';
 import {
   openRightDrawerFile,
 } from '@/components/shell/RightDrawerState';
@@ -25,6 +26,7 @@ import { useSessionStream } from '@/sections/chat/hooks/useSessionStream';
 import { CircuitInstruments } from '@/components/shell/CircuitInstruments';
 import { CircuitWaveformViewer } from '@/components/shell/CircuitWaveformViewer';
 import { CircuitSchematicEditor } from '@/components/shell/CircuitSchematicEditor';
+import { CircuitBreadboard3D } from '@/components/shell/CircuitBreadboard3D';
 
 /** Row subtitle. A tool name is not something to show a user; the artifact's
  *  own kind is. */
@@ -54,6 +56,30 @@ export function RightDrawerCircuitSection({ sessionId }: { sessionId: string | n
   // the behaviour and a deck leaving the list degrades to a real selection.
   const activeNetlist =
     (netlists.find((n) => n.path === selectedNetlist) ?? netlists[netlists.length - 1])?.path ?? '';
+
+  // The 3D stage draws the SAME graph the schematic editor edits. Fetching it
+  // here rather than letting the stage read the editor's copy keeps one loader,
+  // and it is the deck's own data either way: no second model of the circuit.
+  const [graph, setGraph] = useState<SchematicGraph | null>(null);
+  const [selectedRef, setSelectedRef] = useState<string>('');
+  useEffect(() => {
+    let live = true;
+    if (!sessionId || !activeNetlist) {
+      setGraph(null);
+      return;
+    }
+    circuitApi
+      .readSchematic(sessionId, activeNetlist)
+      .then((g) => {
+        if (live) setGraph(g);
+      })
+      .catch(() => {
+        if (live) setGraph(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [sessionId, activeNetlist]);
 
   const open = async (path: string) => {
     try {
@@ -94,6 +120,12 @@ export function RightDrawerCircuitSection({ sessionId }: { sessionId: string | n
             <CircuitSchematicEditor
               sessionId={sessionId}
               netlistPath={activeNetlist}
+              className="mb-3"
+            />
+            <CircuitBreadboard3D
+              graph={graph}
+              selectedRef={selectedRef}
+              onSelect={setSelectedRef}
               className="mb-3"
             />
           </>

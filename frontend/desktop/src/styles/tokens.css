@@ -475,3 +475,34 @@
 /* Utility bridges for tokens that need alpha via color-mix (the Tailwind
    registrations above are plain vars without an <alpha-value> slot). */
 .bg-sunken-fade { background-color: color-mix(in srgb, var(--dt-surface-sunken) 95%, transparent); }
+
+/* ── 3D board stage palette ───────────────────────────────────────────────
+ * The stage builds its meshes from these, read once through getComputedStyle.
+ * They are CSS rather than a TS table for two reasons: check-design bans raw
+ * hex in .ts/.tsx, and a WebGL material needs the resolved value at build
+ * time anyway — so the stylesheet is the single place a part's colour can be
+ * changed, and the stage picks it up on the next mount.
+ *
+ * These are ELECTRICAL identities, not decoration: a resistor band, an LED
+ * and a board body are the same colours in light and dark because a user
+ * reading a schematic learns one vocabulary. The stage's own surface DOES
+ * follow the theme (stage-bg / stage-ink reuse the app tokens). */
+:root {
+  --cb3d-board:      #f2c14e;   /* the PCB under everything */
+  --cb3d-board-deep: #d8a13a;
+  --cb3d-slab:       #efe7d8;   /* breadboard plastic */
+  --cb3d-slab-hole:  #6c6357;
+  --cb3d-resistor:   #d9b382;   /* the tan body */
+  --cb3d-band-a:     #6b4b23;
+  --cb3d-band-b:     #b3282a;
+  --cb3d-band-c:     #2f6f3e;
+  --cb3d-cap:        #2f6fb5;
+  --cb3d-ic:         #2c3242;
+  --cb3d-lead:       #c9ccd2;   /* tinned wire / pins */
+  --cb3d-led-r:      #e8392e;
+  --cb3d-led-g:      #3fbf6a;
+  --cb3d-led-b:      #3d7be0;
+  --cb3d-stage-ink:  #141a2c;   /* outline + shadow tint */
+  --cb3d-silk:       #f4efe3;   /* the silkscreen legend on a board or IC */
+  --cb3d-select:     #ffb340;   /* the selected-part halo */
+}

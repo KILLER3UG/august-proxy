@@ -753,6 +753,25 @@ the measured spec — never from their bundles — which means a lockfile change
 the release gate and a token/excuse path for `check:design` (it bans inline
 `style={{` and hex literals in `.tsx`, and the reference does both).
 
+**SHIPPED (2026-10-22).** `three@0.186` (the reference's own revision) is now a
+desktop dependency and the stage lives in the circuit drawer beside the
+schematic editor: `components/shell/CircuitBreadboard3D.tsx` draws the deck's
+own `SchematicGraph` — the same payload the editor edits — as procedural solids
+on a hole-textured slab, orthographic camera, back-face hull outline, drag to
+turn with a quarter-turn ratchet on release, scroll to zoom clamped 3.2–22,
+idle auto-rotate after 4.5 s, per-part enter stagger on `outCubic`/`outBack`,
+hover lift, and a readout naming the part's ref, value and nets. Timing lives in
+`lib/circuit-motion.ts`, colour in `--cb3d-*` in `tokens.css` (read through
+`getComputedStyle`, so the stylesheet stays the only place a part's colour is
+set and the hex ban holds with zero new baseline entries).
+
+Two defects were caught by LOOKING at the render, not by reading it: every part
+was built around its own pin centroid but never placed AT it, so the whole board
+drew as one stack; and the frustum was a fixed half-extent, so a twenty-pin
+board filled the frame and pushed the filter off-screen. Both are the argument
+for the throwaway-entry screenshot pass over a type check — `tsc` was clean
+throughout, and the picture was wrong.
+
 ## Deliberately not done
 
 - **No test suite was restored.** The suite was removed on 2026-10-17 at the
