@@ -147,8 +147,40 @@ function symbolSvg(c: SchematicComponent): string {
         zeroAt === 0 ? groundBars(x0, y0, -1) : zeroAt === 1 ? groundBars(x1, y1, 1) : '';
       return `<circle cx="${mid}" cy="${y0}" r="${r}" fill="none" stroke="${STROKE}" stroke-width="2"/>${inner}${gnd}`;
     }
-    case 'subckt':
+    case 'subckt': {
+      if (c.pins.length > 2) {
+        // An interface part — a board, or any block with more nets than two.
+        // Drawing it as the two-pin box left twenty nets landing in empty air
+        // beside a part that looked two-terminal. The geometry matches
+        // schematic.py's `_board_body_svg` on purpose: the drawer and the
+        // exported artifact are the same circuit and must not disagree.
+        const xs = c.pins.map((p) => p[0]);
+        const ys = c.pins.map((p) => p[1]);
+        const left = Math.min(...xs) - 14;
+        const right = Math.max(...xs) + 14;
+        const top = Math.min(...ys) - 16;
+        const bottom = Math.max(...ys) + 10;
+        const body = [
+          `<rect x="${left.toFixed(0)}" y="${top.toFixed(0)}" width="${(right - left).toFixed(0)}" height="${(bottom - top).toFixed(0)}" fill="none" stroke="${STROKE}" stroke-width="2" rx="5"/>`,
+          `<circle cx="${(left + 7).toFixed(0)}" cy="${(top + 7).toFixed(0)}" r="2.6" fill="${STROKE}" stroke="none"/>`,
+        ];
+        c.pins.forEach((p, i) => {
+          const net = c.nodes[i] ?? '';
+          if (!net) return;
+          const { 0: px, 1: py } = p;
+          const inward = px <= bodyCx;
+          const edge = inward ? left : right;
+          body.push(
+            `<line x1="${edge.toFixed(0)}" y1="${py.toFixed(0)}" x2="${(px + (inward ? 8 : -8)).toFixed(0)}" y2="${py.toFixed(0)}" stroke="${STROKE}" stroke-width="1.5"/>`,
+          );
+          body.push(
+            `<text x="${px.toFixed(0)}" y="${(py - 3).toFixed(0)}" text-anchor="middle" font-size="8" fill="${STROKE}">${net}</text>`,
+          );
+        });
+        return body.join('');
+      }
       return `<rect x="${mid - Math.abs(x1 - x0) * 0.32}" y="${y0 - 12}" width="${Math.abs(x1 - x0) * 0.64}" height="24" fill="none" stroke="${STROKE}" stroke-width="2" rx="3"/>` + extraLeads(bodyCx, bodyCy, 2, 10);
+    }
     case 'transistor':
     case 'mosfet':
     case 'jfet':

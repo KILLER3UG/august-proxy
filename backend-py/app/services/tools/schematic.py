@@ -599,6 +599,49 @@ def _inductor_path(x0: float, y: float, x1: float) -> str:
     return ' '.join(d)
 
 
+def _board_body_svg(comp: 'Component', ps: list[tuple[float, float]], stroke: str) -> list[str]:
+    """An interface part as an object: an outline with every pin named on its own side.
+
+    A `X1 ... UNO` instance used to draw as the generic two-pin subckt box, so a
+    deck whose nodes ARE the board's pins showed a rectangle with two leads and
+    twenty nets routed into empty air beside it. The rule is structural — a
+    subckt with more than two nets is an interface, not a component — so it
+    covers a board and any other multi-pin block with no list of names to keep
+    in step. The outline spans the actual pins (never a fixed size, so an Uno
+    and a Mega differ), carries the pin-1 notch, and labels each stub with the
+    net the deck calls it — which is the whole point of the board being in the
+    schematic: `R1 D5 out 1k` should read as the board's D5 driving the filter.
+    """
+    xs = [p[0] for p in ps]
+    ys = [p[1] for p in ps]
+    mid_x = sum(xs) / len(xs)
+    left = min(xs) - 14
+    right = max(xs) + 14
+    top = min(ys) - 16
+    bottom = max(ys) + 10
+    parts = [
+        f'<rect x="{left:.0f}" y="{top:.0f}" width="{right - left:.0f}" height="{bottom - top:.0f}" '
+        f'fill="none" stroke="{stroke}" stroke-width="2" rx="5"/>',
+        # Pin-1 notch: the convention that makes a 20-pin part readable at all.
+        f'<circle cx="{left + 7:.0f}" cy="{top + 7:.0f}" r="2.6" fill="{stroke}" stroke="none"/>',
+    ]
+    for i, (px, py) in enumerate(ps):
+        net = _esc(str(comp.nodes[i])) if i < len(comp.nodes) else ''
+        if not net:
+            continue
+        inward = px <= mid_x
+        reach = 8.0 if inward else -8.0
+        parts.append(
+            f'<line x1="{(left if inward else right):.0f}" y1="{py:.0f}" '
+            f'x2="{px + reach:.0f}" y2="{py:.0f}" stroke="{stroke}" stroke-width="1.5"/>'
+        )
+        parts.append(
+            f'<text x="{px:.0f}" y="{py - 3:.0f}" text-anchor="middle" font-size="8" '
+            f'font-family="Segoe UI, system-ui, sans-serif" fill="{stroke}">{net}</text>'
+        )
+    return parts
+
+
 def _symbol_svg(comp: Component, color: str, voltage: float | None,
                 current: float | None) -> list[str]:
     parts: list[str] = []
@@ -669,6 +712,10 @@ def _symbol_svg(comp: Component, color: str, voltage: float | None,
     # that looks two-terminal — the same class of silence this commit fixed.
     if comp.kind in _FET_KINDS and len(ps) >= 3:
         lead_from, bc_x, bc_y = 3, sum(p[0] for p in ps) / len(ps), sum(p[1] for p in ps) / len(ps)
+    elif comp.kind == 'subckt' and len(ps) > 2:
+        # The board outline draws its own leads, one per pin, from the edge it
+        # sits on — a stub toward the centre would cross the outline.
+        lead_from, bc_x, bc_y = len(ps), sum(p[0] for p in ps) / len(ps), sum(p[1] for p in ps) / len(ps)
     else:
         (bx0, by0), (bx1, by1) = ps[0], ps[1]
         lead_from, bc_x, bc_y = 2, (bx0 + bx1) / 2, (by0 + by1) / 2
@@ -684,7 +731,9 @@ def _symbol_svg(comp: Component, color: str, voltage: float | None,
             f'stroke="{stroke}" stroke-width="1.5"/>'
         )
     half = 8  # body half-height (capacitor plates, diode triangle)
-    if comp.kind == 'resistor':
+    if comp.kind == 'subckt' and len(ps) > 2:
+        parts.extend(_board_body_svg(comp, ps, stroke))
+    elif comp.kind == 'resistor':
         parts.append(f'<polyline points="{_resistor_path(x0 + 4, y0, x1 - 4, y0)}" fill="none" stroke="{stroke}" stroke-width="2"/>')
     elif comp.kind == 'capacitor':
         parts.append(f'<line x1="{x0:.0f}" y1="{y0:.0f}" x2="{(x0 + x1) / 2 - 2:.0f}" y2="{y0:.0f}" stroke="{stroke}" stroke-width="2"/>')

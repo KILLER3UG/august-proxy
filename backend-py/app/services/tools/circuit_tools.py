@@ -834,19 +834,14 @@ def render_schematic(
 
 
 def _board_block_name(fqbn: str) -> str:
-    """The board's SPICE block name: the board segment, upper-cased.
-
-    ``arduino:avr:uno`` -> ``ARDUINO_UNO``. A block name has to be a legal
-    SPICE identifier and the FQBN's segments already are. The BOARD segment,
-    not the last one: ``arduino:avr:pro:cpu=8MHzatmega328`` is a Pro Mini with
-    a variant selector, and reading the tail as the board put the menu where
-    the board should be on the schematic.
+    """The board's SPICE block name — `firmware_tools.board_block_name` is the
+    ONE rule, because the schematic's board test reads the same set of block
+    names the deck is written with. A second spelling here would be a second
+    place for a board to be renamed and missed.
     """
     from app.services.tools import firmware_tools
 
-    base = firmware_tools.board_base_fqbn(fqbn)
-    tail = (base or fqbn or '').rsplit(':', 1)[-1]
-    return re.sub(r'[^A-Za-z0-9_]', '_', tail).upper() or 'BOARD'
+    return firmware_tools.board_block_name(fqbn)
 
 
 def _board_pin_filter(pins: object) -> list[str] | None:

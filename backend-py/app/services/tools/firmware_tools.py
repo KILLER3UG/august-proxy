@@ -1099,6 +1099,20 @@ def board_names() -> str:
     return ', '.join(board_short_name(f) for f in board_fqbns())
 
 
+def board_block_name(board: str) -> str:
+    """The SPICE block name a board is instantiated under: `arduino:avr:uno` → `UNO`.
+
+    A block name has to be a legal SPICE identifier and the board segment
+    already is. The BOARD segment, not the last one:
+    `arduino:avr:pro:cpu=8MHzatmega328` is a Pro Mini with a variant selector,
+    and naming the block after the selector put the menu on the schematic where
+    the board should be.
+    """
+    base = board_base_fqbn(board_fqbn(board) or board)
+    tail = (base or str(board or '')).rsplit(':', 1)[-1]
+    return re.sub(r'[^A-Za-z0-9_]', '_', tail).upper() or 'BOARD'
+
+
 def _as_board_list(value: object) -> list[dict[str, object]]:
     """The `boards` field of a board_list() result, as a list of dicts.
 
