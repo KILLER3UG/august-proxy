@@ -180,3 +180,181 @@ Recorded so the next dive does not re-propose them:
   behaviour, only about source.
 - pi's `compat` flag list and its retry/overflow message tables were sampled,
   not enumerated.
+
+---
+
+# Second pass (same day, deeper)
+
+Both repos were re-read file-by-file with a second team, and this pass
+**corrects the first one** as well as extending it.
+
+## Corrections to §A
+
+- There is **no `ItemInfo` / `GenObject`** class anywhere in the clone. The real
+  trio is `ItemLibrary` + `LibraryItem` + `CompBase`/`Component`/`eElement`, and
+  `LibraryItem` is just `{name, category, icon, typeList, createItemFnPtr}` — a
+  hardcoded C++ factory pointer (`src/gui/componentlist/itemlibrary.cpp:149-338`
+  is 190 lines of `addItem(X::libraryItem())`).
+- The register loop is `McuCreator::getRegisters`, `src/microsim/mcucreator.cpp:447-517`
+  (the first pass cited `:457-485`, which is inside it).
+- `Simulator::m_errors[3] = "LAST_SIM_EVENT reached"` is never assigned — the
+  string exists, the detection does not.
+
+## A9. The solver is the interesting part
+
+`CircMatrix` is a **dense N×N** matrix with **Crout, no pivoting**
+(`src/simulator/circmatrix.cpp:22-35`, `:153`), but it is decomposed: `analyze()`
+flood-fills connectivity into groups (`:54-118`), size-1 groups never enter the
+matrix (`:72-76`), and each group holds a matrix of *pointers into* the shared
+dense array (`:95`). Two per-group flags — `m_admitChanged` / `m_currChanged`
+(`circmatrix.h:29-39`) — decide what a re-solve costs: a **current-only** change
+(a digital pin flipping level) skips factorisation and is O(n²) back-substitution;
+a **conductance** change re-factors O(n³) — *of that group only*
+(`circmatrix.cpp:120-137`). Nonlinearity is companion fixed-point, not Newton:
+`eDiode::voltChanged` re-linearises to `dI/dV` + a Norton source, converges at
+ΔV < 0.01 V and ramps `gmin` geometrically (`elements/active/e-diode.cpp:58-96`).
+A zero diagonal does `continue` and `luSolve` returns `isOk=false` with volt 0
+(`circmatrix.cpp:168-171`, `:220-223`) — and the caller **discards it** with the
+warning commented out (`simulator.cpp:71-73`).
+
+## A10. Event queue and its one guard
+
+One global singly-linked list sorted by absolute `eventTime` in ps, threaded
+through the element itself (`e-element.h:43-44`), inserted by linear scan
+(`simulator.cpp:526-566`). The anti-runaway rule is **one pending event per
+element**: `addEvent` refuses a second insert for the same element and sets
+`m_warning = 200` (`:530-534`). There is no clamp on a *past* timestamp —
+`addEventAt` will insert at the head and `m_circTime` rewinds (`:265`), and a
+0-delay self-reschedule inside `runEvent` is legal (and `time/m_steps`
+integer-divides to 0 when slope steps are off, `iopin.cpp:118`).
+
+## A11. Nets have no names; pins do
+
+`createNodes()` (`simulator.cpp:354-390`) flood-fills from `Circuit::m_pinMap`
+and every eNode is synthetic (`"eNodeSim-N"`). Identity comes from **Tunnels**:
+`Tunnel::registerEnode` fans one eNode out to every same-name tunnel
+(`tunnel.cpp:95-108`, registry `:115-146`), a subcircuit's boundary pins *are*
+tunnels (`subcircuit.cpp:305-322`), and instruments can be bound **by tunnel
+name** rather than by a drawn wire (`oscope.cpp:140-156`). Bus is a propagating
+attribute on pins, not a net (`pin.cpp:350`, `bus.cpp:61-71`).
+
+## A12. Instruments and MCU time
+
+Both channels inherit `DataChannel{QVector<double> m_buffer; QVector<uint64_t> m_time}`
+— a circular buffer of **(value, simTime)** pairs (`plotbase.cpp:28`, default
+600 k samples). The oscilloscope samples **on change**, deduped by
+`delta == 0` and one write per simTime (`oscopechannel.cpp:136-151`); the logic
+analyser stores **edges only** with dual hysteresis thresholds
+(`lachannel.cpp:97-113`). The MCU is an `eElement`: `runEvent()` executes exactly
+**one instruction** then re-arms with `cycles · m_psTick` (`e_mcu.cpp:131-148`),
+and peripherals are *analytic* — `McuTimer` computes `time2ovf` in ps, schedules
+one overflow event and reconstructs the counter lazily from `circTime`
+(`mcutimer.cpp:117-141`, `:183-200`). Register writes fan out through
+`McuSignal`, a hand-rolled LIFO callback list whose order is load-bearing for
+interrupt-flag clearing (`mcusignal.h:50-111`, comment `:73-75`).
+
+## B9. pi's compaction is the strongest thing in it
+
+Cut points are chosen by **walking backwards from the newest entry accumulating
+estimated tokens until `keepRecentTokens` (20000), then snapping forward to the
+nearest LEGAL cut** (`compaction/compaction.ts:446-501`). Legal means
+user/assistant/bashExecution/custom/summary and **never a `toolResult`**
+(`:351-364`), so a cut never separates a call from its results — the invariant
+August had to discover as a live 400-bug (`AGENTS.md`, "Pins are unit-safe").
+Split turns are first-class (`isSplitTurn` + `turnStartIndex`, `:491-500`) and
+cost two LLM calls merged into one summary (`:980-1104`). A summary over an
+existing summary switches to an explicit **merge contract** with
+`<previous-summary>` and PRESERVE/MOVE rules (`:540-575`, `:714`) — which is
+exactly the "each note carries its predecessors as 600 chars" limit August
+states in `reliefStrategy`. A **file-op ledger survives compaction**: the
+previous run's `readFiles/modifiedFiles` are re-seeded and re-emitted as
+`<read-files>/<modified-files>` (`:60-88`, `:1043-1044`). `prepareCompaction`
+returns nothing when the tail is already a compaction or no visible content
+precedes the cut (`:863`, `:901`; `durable/harness/compaction.ts:279-296`) —
+August's manual-button `context_window=0` bug is the same failure class.
+Usage captured before a later `context_edit`/compaction is **thrown away** rather
+than trusted (`:227-262`).
+
+## B10. Repair at the provider boundary, not by escalation
+
+`transform-messages.ts:180-256` fixes a torn history deterministically *before
+every request*: an orphaned tool call gets a synthetic `isError`
+`"No result provided"`, errored/aborted assistant messages are dropped, and
+system messages are held so they never split a call from its result. August's
+`_stuckRequestEscape` reaches the same place by **escalating across turns off a
+strike ledger** — pi's arm is cheaper, deterministic, and needs no strike count.
+
+## What August should copy, second pass (ranked)
+
+1. **Legality rule for the compaction cut** (never a tool result, snap forward
+   after a token walk) → replaces `DEFAULT_HEAD_COUNT = 4`; touches
+   `reliefHeadCount`/`reliefStrategy` and the `tailCount` card fields.
+2. **Provider-boundary orphan repair** → a deterministic first arm ahead of the
+   `_stuckRequestEscape` ladder; touches `session.messages` normalisation before
+   each request.
+3. **Merge contract for the summariser prompt** → attacks the stated
+   note-on-note loss; prompt-only change.
+4. **File-op ledger carried across compactions** → rotate loses "which files
+   were touched" today; touches the compaction request builder + the receipt.
+5. **Refuse a compaction that frees nothing** → the guard the manual button's
+   `thresholdOverride` had to be preserved around; touches `compressMessages`.
+6. **Per-group dirty flags with two tiers** (conductance-dirty vs current-dirty)
+   → an agent edits one part per call; the re-solve cost should follow the change
+   class. August delegates solving to ngspice, so this lands as *"value-only
+   change is a cheaper tool call than topology change"* in `circuit_simulate`
+   and its caching, not as a new solver.
+7. **Change-sampled `(value, simTime)` circular buffers** → exactly what makes a
+   VCD/trace export cheap; touches `circuit_export_vcd` and the waveform viewer.
+8. **Probe by net NAME, never by coordinate or index** — tunnels are the alias
+   mechanism; August's board pins already work this way, so this is a rule to
+   keep, not to build.
+
+## Must NOT be copied (second pass)
+
+- Dense N×N matrices and **unpivoted Crout**; and above all the *discarded*
+  `isOk` — a solver whose silence looks like an answer.
+- Fixed-point companion iteration converging at ΔV < 0.01 V, and the fixed
+  `AnalogClock` step for L/C (`e-reactive.cpp:92-97`): ngspice does
+  trapezoid/Gear with truncation control. August must not regress.
+- `uint64` picosecond absolute time with integer `time/m_steps` (a rewind and
+  zero-delay hazard) and the `QtConcurrent` sim thread racing GUI reads.
+- **`pi-durable`'s intent protocol**: self-described "Experimental. The API
+  changes without notice", admits "this is not exactly-once execution", and
+  `pi-coding-agent` **does not depend on it at all** — the shipped CLI never uses
+  it. August's crash story is the interrupted-turn marker, deliberately.
+- **`ToolExposure`'s five-way split** (`direct|model-only|codemode|deferred|hidden`)
+  and `prepareLoadout`'s `hiddenDeclarations`: hiding is done by projecting the
+  name out of the transcript's tool deltas, so the tool **stays callable**.
+  August's stated rule is the opposite — *enforcement is the deny set, not the
+  withheld surface* (`_workerDeniedNames`). Copy the projection trick for
+  display only, never as a permission change.
+- **`context_edit` as a rewrite primitive** — August's transcript is append-only
+  AND archived; omission deltas would be a second source of truth for "what was
+  really sent".
+- pi's **cache warmer** (refresh at 90 % TTL when expected savings ≥ $0.05):
+  August's pricing is per-model `price_for_model` and models no provider TTL.
+
+## New, from pi's own gates and evals
+
+- `mergeCompatProperties` **throws** when a capability property is duplicated
+  across API schemas without a generic override (`compat-schema.ts:575-601`) — a
+  schema-level drift gate, the same idea as `check:brain-config` and
+  `check-version-sync`.
+- `pi-evals` runs a **real `AgentSession` in a temp workspace with isolated
+  HOME**, and scores by deterministic assertion — a *structured-submit tool
+  called exactly once with `verdict=="match"`* — including a paired
+  `with_docs`/`without_docs` lift. That is the two-arm measurement August still
+  does not have, and it needs no test suite to exist.
+- `scripts/coding-agent-smoke.mjs` installs the built package into a temp HOME
+  and asserts `--version` equals the manifest — August's `e2e:smoke` shape.
+
+## Still unverified after both passes
+
+- Neither repo was built or run; every claim is source-reading at
+  `a7d9fc9d` / `cae9fd2`. The grouping cost of `QList::contains`, the `m_NLstep`
+  latch and the rewind-on-past-event are read-from-code inferences.
+- Whether pi's `keepRecentTokens`/`reserveTokens` are per-model (settings-schema
+  leg unread), and pi's eval lift math (README + call sites only).
+- SimulIDE's released `data/` tree (`.mcu`, `.sim1/.sim2`, `diodes.model`,
+  `logic_families.model`) — not in the repo, so the data-driven part formats are
+  inferred from the parsers.
