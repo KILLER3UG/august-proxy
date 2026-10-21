@@ -84,6 +84,10 @@ export type VoiceCommandEvent =
       args: string;
     }
   | {
+      type: 'anatomy';
+      args: string;
+    }
+  | {
       type: 'verbose';
       sessionId?: string;
       args: string;

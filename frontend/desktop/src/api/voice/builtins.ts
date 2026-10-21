@@ -3,7 +3,7 @@
  * registers the command set on the singleton registry.
  *
  * The surface is intentionally tiny: /new, /compact, /init, /btw, /goal,
- * /circuit, /verbose.
+ * /circuit, /anatomy, /verbose.
  */
 
 import { voiceCommandRegistry } from './registry';
@@ -80,6 +80,23 @@ voiceCommandRegistry.register({
   // is skipped for the command itself.
   handler: ({ args }) => {
     voiceCommandEvents.emit({ type: 'circuit', args: args ?? '' });
+  },
+});
+
+voiceCommandRegistry.register({
+  id: 'anatomy',
+  triggers: ['anatomy figure', 'isometric figure', 'draw the machine', 'explain it as an object'],
+  slashCommand: '/anatomy',
+  category: 'core',
+  description:
+    'Draw the request as a crafted isometric figure — loads the anatomy skill for THIS turn only',
+  // Not a client-only command and not a mode: the turn itself is what carries
+  // the request, so it is posted as the message and the backend reads the
+  // leading `/anatomy` to pin the skill for that one turn. Nothing is stored
+  // on the session, so the next message is ranked on its own merits again.
+  handler: ({ args }) => {
+    const text = (args ?? '').trim();
+    voiceCommandEvents.emit({ type: 'anatomy', args: text });
   },
 });
 

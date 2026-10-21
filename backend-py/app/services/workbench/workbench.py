@@ -3006,7 +3006,7 @@ async def _sendWorkbenchMessageStreamImpl(
     _skillsInjectedNames: list[str] = []
     try:
         from app.services import session_scope as _session_scope
-        from app.services.capabilities_prompt import render_relevant_skills
+        from app.services.capabilities_prompt import pinned_skill_token, render_relevant_skills
         from app.services.memory_store.fact_retrieval import (
             build_memory_block,
             build_profile_memory_block,
@@ -3141,8 +3141,17 @@ async def _sendWorkbenchMessageStreamImpl(
                 _memWritesOn = bool(_bc.getRuntimeConfig().get('modelMemoryWrites', True))
             except Exception:
                 _memWritesOn = True
+            # A leading `/name` is the whole request surface for a skill: it
+            # pins that skill for THIS turn only, so the user gets the body
+            # rather than a description that happened to score, and nothing is
+            # written to the session. Unknown names drop silently at the
+            # catalogue lookup, so `/totally-not-a-skill …` costs nothing here.
+            _pinnedSkill = pinned_skill_token(_userText)
             _skillsBlock, _skillsDetail = render_relevant_skills(
-                _userText, _wsForTail or None, _session_scope.bot_agent_id(_turnScope)
+                _userText,
+                _wsForTail or None,
+                _session_scope.bot_agent_id(_turnScope),
+                pinned=(_pinnedSkill,) if _pinnedSkill else (),
             )
             _nudgeBlock = memory_nudge_block(session, _memWritesOn)
             # The workdir file map used to ride INSIDE <workspace> in the

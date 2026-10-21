@@ -364,6 +364,25 @@ export function useChatVoiceCommands(opts: UseChatVoiceCommandsOptions) {
             .catch(() => toast.error('Could not toggle the circuit workbench'));
           break;
         }
+        case 'anatomy': {
+          // /anatomy — the command IS the turn. Post it verbatim so the
+          // backend sees the leading `/anatomy` and pins the anatomy skill
+          // into this turn's <relevant_skills>; no session state is touched.
+          const sid = workbenchSessionId || sessionId || '';
+          if (!sid) {
+            toast.error('No active session');
+            break;
+          }
+          const ask = (event.args ?? '').trim();
+          api
+            .post<{ status?: string }>('/api/workbench/chat', {
+              sessionId: sid,
+              message: ask ? `/anatomy ${ask}` : '/anatomy',
+            })
+            .then(() => setInput(''))
+            .catch(() => toast.error('Could not start the figure turn'));
+          break;
+        }
         case 'verbose': {
           // /verbose — client-side per-session toggle:
           // raw tool output renders inline until turned off. Keyed on the

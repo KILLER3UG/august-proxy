@@ -11,6 +11,7 @@ the caution level of their primary bucket (read / write / destructive / …).
 from __future__ import annotations
 
 import logging
+import re
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -536,7 +537,10 @@ def _skill_usage_boost(skill_name: str) -> float:
 
 
 def render_relevant_skills(
-    query: str, workspace: str | Path | None = None, agent_id: str = ''
+    query: str,
+    workspace: str | Path | None = None,
+    agent_id: str = '',
+    pinned: 'tuple[str, ...]' = (),
 ) -> tuple[str, dict[str, int]]:
     """Render the per-turn ``<relevant_skills>`` block (M6 item 6).
 
@@ -554,6 +558,15 @@ def render_relevant_skills(
     M-2 (Part 21): ``agent_id`` adds the Bot's private skill root for bot
     home sessions (empty = global catalogue, the pre-M-2 behavior).
 
+    ``pinned`` are names the USER asked for by name on this turn (a leading
+    ``/anatomy``). They bypass both the ranking and the ``skillRelevance``
+    gate, because an explicit request is not automatic injection — the gate
+    exists to stop the harness spending context on a coincidence of wording,
+    and there is no coincidence when the user typed the name. A pinned name
+    that is not in the catalogue is dropped silently (a typo must not become
+    a claim), and the pin lasts ONE turn: nothing is written to the session,
+    so the next message is ranked on its own merits again.
+
     Returns the block and the UTF-8 byte size each included skill line added
     to it, measured in the same pass: the context meter can answer "which
     skill cost me this" only from what was actually rendered, and re-ranking
@@ -561,7 +574,9 @@ def render_relevant_skills(
     """
     detail: dict[str, int] = {}
     q = (query or '').strip()
-    if len(q) < _RELEVANT_SKILLS_MIN_QUERY or not skill_relevance_enabled():
+    wantPinned = tuple(dict.fromkeys(str(p).strip().lower() for p in pinned if str(p).strip()))
+    rankedLane = bool(q) and len(q) >= _RELEVANT_SKILLS_MIN_QUERY and skill_relevance_enabled()
+    if not rankedLane and not wantPinned:
         return '', detail
     try:
         from app.services import skill_service
@@ -570,9 +585,15 @@ def render_relevant_skills(
         catalogue = skill_service.catalogue(workspace, agent_id)
         if not catalogue:
             return '', detail
+        byName = {as_str(s.get('name'), '').strip().lower(): s for s in catalogue}
+        chosen: list[dict[str, object]] = [byName[n] for n in wantPinned if n in byName]
+        if not rankedLane:
+            # A pin alone: no query to rank against (or the auto lane is off),
+            # so render exactly what was asked for and stop.
+            return _render_skill_lines(chosen, wantPinned, detail)
         queryTokens = _tokenize(q)
         if not queryTokens:
-            return '', detail
+            return _render_skill_lines(chosen, wantPinned, detail)
         # The tokenize+BM25-index build is cached per (workspace, agent_id)
         # and keyed on the catalogue list's IDENTITY — skill_service's
         # mtime memo returns the same list object between edits, so a new
@@ -605,7 +626,7 @@ def render_relevant_skills(
                 build_entries.append(s)
             if not corpus:
                 _skills_bm25_cache.pop(cacheKey, None)
-                return '', detail
+                return _render_skill_lines(chosen, wantPinned, detail)
             bm25 = BM25(corpus)
             entries = build_entries
             _skills_bm25_cache[cacheKey] = (catalogue, bm25, entries)
@@ -614,8 +635,6 @@ def render_relevant_skills(
             score = bm25.score(queryTokens, i)
             if score > 0:
                 scored.append((score, s))
-        if not scored:
-            return '', detail
         # Relevance first, usage second, measurement last: both adjustments are
         # applied AFTER BM25 and only over the scored>0 candidates, so the
         # cached index stays usage-free (a load never invalidates it) and an
@@ -631,29 +650,80 @@ def render_relevant_skills(
             for score, s in scored
         ]
         ranked.sort(key=lambda pair: pair[0], reverse=True)
-        lines: list[str] = ['<relevant_skills>']
-        budget = _RELEVANT_SKILLS_CHAR_CAP
         for _score, s in ranked[:_RELEVANT_SKILLS_TOP_K]:
-            name = as_str(s.get('name'), '')
-            desc = as_str(s.get('description'), '')
-            line = f'- {name}: {desc}' if desc else f'- {name}'
-            if budget - len(line) < 0:
-                break
-            budget -= len(line)
-            lines.append(line)
-            if name:
-                detail[name] = len(line.encode('utf-8'))
-        if len(lines) == 1:
-            return '', detail
-        lines.append('Load one with load_skill(name) if it fits the request.')
-        lines.append('</relevant_skills>')
-        return '\n'.join(lines), detail
+            if s not in chosen:
+                chosen.append(s)
+        return _render_skill_lines(chosen, wantPinned, detail)
     except Exception:
         return '', detail
 
 
+def _render_skill_lines(
+    entries: 'list[dict[str, object]]',
+    pinned_names: 'tuple[str, ...]',
+    detail: dict[str, int],
+) -> tuple[str, dict[str, int]]:
+    """Render the chosen skill entries into the ``<relevant_skills>`` block.
+
+    Byte accounting happens HERE, in the same pass as the rendering, so the
+    meter cannot disagree with what was sent. A pinned entry says so on its own
+    line and gets its own footer: the model has to know the difference between
+    "this might be relevant" and "the user named this one", because the second
+    reading is what makes it call `load_skill` and follow the body instead of
+    answering from the one-line description.
+    """
+    lines: list[str] = ['<relevant_skills>']
+    budget = _RELEVANT_SKILLS_CHAR_CAP
+    named: list[str] = []
+    for s in entries:
+        name = as_str(s.get('name'), '')
+        desc = as_str(s.get('description'), '')
+        suffix = ' (the user asked for this one by name)' if name.lower() in pinned_names else ''
+        line = f'- {name}: {desc}{suffix}' if desc else f'- {name}{suffix}'
+        if budget - len(line) < 0:
+            break
+        budget -= len(line)
+        lines.append(line)
+        if name:
+            detail[name] = len(line.encode('utf-8'))
+            if name.lower() in pinned_names:
+                named.append(name)
+    if len(lines) == 1:
+        return '', detail
+    if named:
+        lines.append(
+            f"Load {', '.join(named)} with load_skill(name) and follow it — the user asked for it."
+        )
+    lines.append('Load one with load_skill(name) if it fits the request.')
+    lines.append('</relevant_skills>')
+    return '\n'.join(lines), detail
+
+
 def build_relevant_skills_block(
-    query: str, workspace: str | Path | None = None, agent_id: str = ''
+    query: str,
+    workspace: str | Path | None = None,
+    agent_id: str = '',
+    pinned: 'tuple[str, ...]' = (),
 ) -> str:
     """The ``<relevant_skills>`` text alone, for callers that don't meter it."""
-    return render_relevant_skills(query, workspace, agent_id)[0]
+    return render_relevant_skills(query, workspace, agent_id, pinned)[0]
+
+
+_PIN_TOKEN_RE = re.compile(r'[a-z0-9][a-z0-9._-]{0,63}$')
+
+
+def pinned_skill_token(text: str) -> str:
+    """The skill name a message asks for BY NAME on this turn, or ''.
+
+    A leading ``/word`` is the whole rule: ``/anatomy draw a pin-tumbler lock``
+    names `anatomy` for this turn and nothing else — no session flag is set, so
+    the next message is ranked on its own merits again. The token is not
+    validated against the catalogue here; that lookup happens in
+    `render_relevant_skills`, where a name nobody ships is dropped silently
+    rather than becoming a claim to the model.
+    """
+    parts = (text or '').strip().split(None, 1)
+    if not parts or not parts[0].startswith('/'):
+        return ''
+    token = parts[0][1:].strip().lower()
+    return token if _PIN_TOKEN_RE.fullmatch(token) else ''

@@ -718,6 +718,41 @@ always meant to be and the artifact card owns the deliverables.
   the body rather than duplicating it.
 
 
+**`/anatomy` IS NOW A COMMAND, AND IT LASTS ONE TURN.** The `anatomy` skill has
+always shipped in the bundled layer (it is the first row of the live catalogue,
+and the installer stages all eight of its files), but reaching it depended on
+BM25 happening to rank it for the message. A leading `/name` now pins that skill
+into THIS turn's `<relevant_skills>` — first line, marked "the user asked for
+this one by name", with its own footer telling the model to `load_skill(name)`
+and follow it — and writes nothing to the session, so the next message is
+ranked on its own again. A pinned name that isn't in the catalogue is dropped
+silently rather than becoming a claim, and the pin survives even with
+`skillRelevance` switched off, because an explicit request is not automatic
+injection. The pinned skill also lands in `turn_outcomes.skills_injected`, so
+the skill-lift ledger credits the turns the user asked for.
+
+**Why the skill was NOT re-ported to upstream v1.1.0.** August's copy is a
+deliberate trim of `wheresryan22/anatomy` (MIT), and two things in upstream must
+stay out of a shipped app: `scripts/publish.mjs` does `git fetch` on a third
+party repo and then **`git push --force`** to it (requiring an authenticated
+`gh`) — a bundled skill's procedure is followed by whichever model is talking, so
+shipping it hands the agent a documented remote write; and the skill's own
+`compatibility:` line requires **Chrome/Chromium** for every check, which the
+installer does not ship (it ships ngspice and arduino-cli). A v1.1.0 body would
+therefore instruct a verification loop that cannot run in the packaged app.
+
+**THE 3D BOARD STAGE IS AN OWNER DECISION, AND IT IS NOW MADE.** The reference
+(`learn-arduino-red.vercel.app`, no public repo, no licence statement) is
+three.js r186 with an **orthographic** camera, **procedural** geometry only (zero
+model files — every "texture" is a runtime canvas), a hand-written outline
+post-pass, and a named easing table; the knob is `rotation.y =
+-(pot/1023*270 - 135)°` dragged at ≈3.78 units/degree with no tween. August's
+`circuit_render_3d` is a static matplotlib PNG and cannot carry that. The owner
+chose to add `three` as a dependency and build the live stage in the drawer from
+the measured spec — never from their bundles — which means a lockfile change for
+the release gate and a token/excuse path for `check:design` (it bans inline
+`style={{` and hex literals in `.tsx`, and the reference does both).
+
 ## Deliberately not done
 
 - **No test suite was restored.** The suite was removed on 2026-10-17 at the
