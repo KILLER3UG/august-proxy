@@ -174,12 +174,32 @@ def board_fqbn(board: str) -> str:
     return _FQBN_GUESSES.get(raw.lower(), '')
 
 
+def board_base_fqbn(board: str) -> str:
+    """The ``vendor:arch:board`` part of an FQBN, with any menu segments dropped.
+
+    ``arduino:avr:pro:cpu=8MHzatmega328`` is one board to the pin map and two
+    boards to the compiler: the ``k=v`` tail is arduino-cli's variant selector,
+    so the compile and flash paths must keep the FULL string while the board's
+    FACTS are filed under the first three segments. Reading the tail as a board
+    name is what made a qualified FQBN miss both tables — the 3.3 V Pro Mini
+    then fell through to the 5 V default, and a deck named its SPICE block after
+    the menu instead of the board.
+    """
+    raw = str(board or '').strip()
+    if not raw or ':' not in raw:
+        return raw
+    parts = [seg for seg in raw.split(':') if '=' not in seg]
+    return ':'.join(parts[:3])
+
+
 def board_short_name(board: str) -> str:
     """The short name a board is filed under in the pin and logic-level tables.
 
     ``uno`` -> ``uno``; the ``r4`` alias -> ``unor4`` (the name
-    ``_FQBN_GUESSES`` maps it to); a full FQBN -> its last segment
-    (``arduino:renesas_uno:unor4`` -> ``unor4``). A name we do not know
+    ``_FQBN_GUESSES`` maps it to); a full FQBN -> its board segment
+    (``arduino:renesas_uno:unor4`` -> ``unor4``, and a menu-qualified
+    ``arduino:avr:pro:cpu=8MHzatmega328`` -> ``pro``, NOT ``cpu=8mhzatmega328``
+    — a variant selector is not a board). A name we do not know
     comes back as it was given, so a board outside the tables (esp32) still
     resolves to itself.
     """
@@ -187,7 +207,8 @@ def board_short_name(board: str) -> str:
     if not raw:
         return 'uno'
     if ':' in raw:
-        return raw.rsplit(':', 1)[-1]
+        segs = [seg for seg in raw.split(':') if '=' not in seg]
+        return segs[-1] if segs else raw
     fqbn = _FQBN_GUESSES.get(raw)
     if fqbn:
         return fqbn.rsplit(':', 1)[-1].lower()
@@ -602,20 +623,33 @@ async def firmware_run(
 
 # Arduino pin → logical high level by board family (volts at logic 1).
 _BOARD_LOGIC_LEVELS = {
-    'uno': 5.0, 'nano': 5.0, 'mega': 5.0, 'leonardo': 5.0, 'micro': 5.0,
-    'pro': 5.0, 'unor4': 3.3, 'esp32': 3.3, 'esp8266': 3.3, 'pico': 3.3,
+    # Boards with NO pin map here. Every board that has one carries its rail
+    # in `_BOARD_PINS['logic']`, which `board_logic_level` reads first — two
+    # tables saying what voltage one board sits at is exactly how a 3.3 V board
+    # got measured at 5 V once before.
+    'esp32': 3.3, 'esp8266': 3.3, 'pico': 3.3,
 }
 
 
 def board_logic_level(board: str) -> float:
-    """Volts at logic 1 for a board — ``_BOARD_LOGIC_LEVELS`` is the map.
+    """Volts at logic 1 for a board.
 
-    The map is keyed by the board's SHORT name, so a full FQBN is resolved
-    through ``board_short_name`` first: ``arduino:renesas_uno:unor4`` is a
-    3.3 V board, and reading it as 5 V set every PWL step to the wrong rail
-    — a stimulus that looked right and was not. A board with no entry here
-    is 5 V, the Arduino default.
+    The board's own row answers first: ``_BOARD_PINS`` carries ``logic``, and
+    ``_board_row`` resolves a menu-qualified FQBN to the variant row before
+    falling back to the base board — ``arduino:avr:pro:cpu=8MHzatmega328`` is
+    the 3.3 V Pro Mini and must not read as the 5 V one. Boards with no pin map
+    (esp32 and friends) take ``_BOARD_LOGIC_LEVELS`` by short name, and a board
+    in neither is 5 V, the Arduino default.
+
+    Reading a board at the wrong rail is not cosmetic: every PWL step the
+    stimulus writes is scaled by it, so the deck looks right and simulates
+    wrong. A 3.3 V board read as 5 V has happened here before (the UNO R4,
+    recorded in ``docs/ROADMAP.md``); a menu-qualified FQBN missing both tables
+    and landing on the 5 V default was the same failure a second way.
     """
+    logic = _board_row(board).get('logic')
+    if logic not in (None, ''):
+        return float(str(logic))
     return float(_BOARD_LOGIC_LEVELS.get(board_short_name(board), 5.0))
 
 
@@ -860,20 +894,53 @@ def firmware_stimulus(
 #: Digital/analog pin counts per board family, so a board can be used as a
 #: schematic element and not just a name. The PWL stimulus export already
 #: speaks in pin numbers; this says which pins the board HAS.
+#:
+#: These are the SILKSCREEN counts — what a user reads off the board — and
+#: every row is checked against an installed platform rather than remembered:
+#: ``arduino:avr:pro`` is ``pro.build.variant=eightanaloginputs``, whose header
+#: raises ``NUM_ANALOG_INPUTS`` to 8 on top of ``standard``'s 14 digital pins,
+#: so it is a 14+8 board like the Nano and NOT the 54+16 it used to carry (that
+#: is the Mega's row, and it drew 40 pins the Pro does not have).
+#: ``arduino:renesas_uno:unor4`` is ``variants/MINIMA/pins_arduino.h``:
+#: ``NUM_DIGITAL_PINS (20u)``, ``NUM_ANALOG_INPUTS (6u)``, ``PIN_A0 (14u)`` —
+#: 20 minus the 6 analog-capable pins is 14 digital, not 27. ``arduino:avr:micro``
+#: ``#include``s the Leonardo header whole, so it cannot carry a different
+#: digital count from the row above it.
+#:
+#: A menu-qualified FQBN is filed under its own key when the variant changes a
+#: fact the deck cares about: the Pro Mini is sold as 5 V/16 MHz and 3.3 V/8 MHz
+#: (``pro.menu.cpu.16MHzatmega328=ATmega328P (5V, 16 MHz)``,
+#: ``pro.menu.cpu.8MHzatmega328=ATmega328P (3.3V, 8 MHz)``), and the PWL rail a
+#: stimulus is stepped at is one of those facts. ``_board_row`` resolves the
+#: exact string first and falls back to the three-segment board.
 _BOARD_PINS: dict[str, dict[str, object]] = {
     'arduino:avr:uno': {'digital': 14, 'analog': 6, 'led': 13, 'logic': '5'},
     'arduino:avr:nano': {'digital': 14, 'analog': 8, 'led': 13, 'logic': '5'},
     'arduino:avr:mega': {'digital': 54, 'analog': 16, 'led': 13, 'logic': '5'},
     'arduino:avr:leonardo': {'digital': 20, 'analog': 12, 'led': 13, 'logic': '5'},
-    'arduino:avr:micro': {'digital': 14, 'analog': 12, 'led': 13, 'logic': '5'},
-    'arduino:avr:pro': {'digital': 54, 'analog': 16, 'led': 13, 'logic': '5'},
-    'arduino:renesas_uno:unor4': {'digital': 27, 'analog': 12, 'led': 13, 'logic': '3.3'},
+    'arduino:avr:micro': {'digital': 20, 'analog': 12, 'led': 13, 'logic': '5'},
+    'arduino:avr:pro': {'digital': 14, 'analog': 8, 'led': 13, 'logic': '5'},
+    'arduino:avr:pro:cpu=8MHzatmega328': {
+        'digital': 14, 'analog': 8, 'led': 13, 'logic': '3.3',
+    },
+    'arduino:renesas_uno:unor4': {'digital': 14, 'analog': 6, 'led': 13, 'logic': '3.3'},
 }
+
+
+def _board_row(board: str) -> dict[str, object]:
+    """The board's row in ``_BOARD_PINS``: exact FQBN first, then its base.
+
+    The exact match comes first so a variant can carry its own facts; a board
+    named with a selector nobody filed a variant row under still resolves
+    through ``board_base_fqbn`` instead of reporting no pin map at all.
+    """
+    fqbn = board_fqbn(board)
+    return dict(_BOARD_PINS.get(fqbn) or _BOARD_PINS.get(board_base_fqbn(fqbn)) or {})
 
 
 def _board_pins(fqbn: str) -> dict[str, object]:
     """The pin map for a board, or an empty map for one we do not know."""
-    return dict(_BOARD_PINS.get(fqbn, {}))
+    return _board_row(fqbn)
 
 
 def board_pin_list(board: str) -> list[dict[str, object]]:
@@ -885,15 +952,16 @@ def board_pin_list(board: str) -> list[dict[str, object]]:
     ``led`` on the pin the on-board LED sits on.
 
     The numbers follow the Arduino convention: the digital pins are 0..n-1
-    and the analog pins continue the count (A0 is digital pin n). That is
-    exact for every AVR8 board in the table — Uno, Nano, Mega, Pro, Micro —
-    and the firmware bridge is AVR8-only anyway, because the emulator's pin
-    map is the ATmega328P's. The 32u4 (Leonardo) and the Renesas R4 number
-    their analog pins differently; they are not the boards this bridge
-    emulates, and the tool says which board it was asked about rather than
-    quietly renumbering a pin.
+    and the analog pins continue the count, so A0 is digital pin n. Checked
+    against the installed cores, that is exactly what ``PIN_A0`` says for
+    Uno, Nano, Pro, Mega (14, 14, 14, 54) and for the UNO R4 (14). STATED
+    LIMIT: the two 32u4 rows are not — the Leonardo header numbers A0 as 18
+    while its silkscreen carries 20 digital pins, because A0/A1 double as
+    D18/D19. Nothing can reach that discrepancy through this table: the
+    firmware bridge is AVR8-only, because the emulator's pin map is the
+    ATmega328P's, so no timeline arrives speaking 32u4 numbers.
     """
-    pins = _BOARD_PINS.get(board_fqbn(board))
+    pins = _board_row(board)
     if not pins:
         return []
     digital = pins.get('digital')
@@ -922,12 +990,26 @@ def board_pin_name(board: str, number: int) -> str | None:
 
 
 def board_fqbns() -> list[str]:
-    """The FQBNs that have a pin map — the boards a deck can name.
+    """The boards that have a pin map — the boards a deck can name.
 
     The one table, listed rather than re-described: a second list of
     boards would be a second place for a board to be added to and missed.
+    Variant rows resolve through the table but are not listed here, because
+    the answer a caller needs is which BOARD it can name, not every spelling
+    of it — ``arduino:avr:pro`` is said once, not twice with its menu tail.
     """
-    return sorted(_BOARD_PINS)
+    return sorted({board_base_fqbn(key) or key for key in _BOARD_PINS})
+
+
+def board_names() -> str:
+    """The boards a caller can name, as one comma-separated phrase.
+
+    Every tool description that lists boards interpolates this. Written by
+    hand, the list went stale the moment a row was added: `micro` and `pro`
+    both have correct pin maps now and were still absent from all six
+    descriptions, so a model was told they did not exist.
+    """
+    return ', '.join(board_short_name(f) for f in board_fqbns())
 
 
 def _as_board_list(value: object) -> list[dict[str, object]]:

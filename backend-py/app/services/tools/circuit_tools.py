@@ -827,18 +827,25 @@ def render_schematic(
 # node, so the board's pins ARE the deck's nodes, not a copy of them.
 #
 # The pin list is NOT written here. It comes from `firmware_tools`, which
-# owns the one pin table (`_BOARD_PINS`) and the one board→logic-level map
-# (`_BOARD_LOGIC_LEVELS`) — the same two the firmware→SPICE bridge reads,
-# so the deck's node names and the board's pin names cannot drift apart.
+# owns the one pin table (`_BOARD_PINS`, whose rows carry the rail) plus a
+# `_BOARD_LOGIC_LEVELS` fallback for the boards that have no pin map — the
+# same two the firmware→SPICE bridge reads, so the deck's node names, the
+# board's pin names and the PWL step cannot drift apart.
 
 
 def _board_block_name(fqbn: str) -> str:
-    """The board's SPICE block name: the FQBN's last segment, upper-cased.
+    """The board's SPICE block name: the board segment, upper-cased.
 
     ``arduino:avr:uno`` -> ``ARDUINO_UNO``. A block name has to be a legal
-    SPICE identifier and the FQBN's segments already are.
+    SPICE identifier and the FQBN's segments already are. The BOARD segment,
+    not the last one: ``arduino:avr:pro:cpu=8MHzatmega328`` is a Pro Mini with
+    a variant selector, and reading the tail as the board put the menu where
+    the board should be on the schematic.
     """
-    tail = (fqbn or '').rsplit(':', 1)[-1]
+    from app.services.tools import firmware_tools
+
+    base = firmware_tools.board_base_fqbn(fqbn)
+    tail = (base or fqbn or '').rsplit(':', 1)[-1]
     return re.sub(r'[^A-Za-z0-9_]', '_', tail).upper() or 'BOARD'
 
 

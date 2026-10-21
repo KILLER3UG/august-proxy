@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 
 from app.services import tool_registry
-from app.services.tools import circuit_tools, ic_detect
+from app.services.tools import circuit_tools, firmware_tools, ic_detect
 
 
 def _session() -> object | None:
@@ -553,6 +553,11 @@ def _is_circuit_gate_tool(name: str) -> bool:
 
 def register() -> None:
     """Register the gated circuit tools."""
+    # Every board-shaped description interpolates this ONE list. Hand-written,
+    # it went stale the moment a row was added: the table carries seven boards
+    # and all six descriptions named four, so a model was told `micro` and
+    # `pro` do not exist.
+    boards = firmware_tools.board_names()
     tool_registry.register(
         'circuit_create_netlist',
         'Create a SPICE netlist file (.cir/.net/.ckt/.sp) in the workspace. '
@@ -690,7 +695,7 @@ def register() -> None:
             'properties': {
                 'board': {
                     'type': 'string',
-                    'description': 'Board: uno/nano/mega/leonardo/unor4, or a full FQBN (default "uno")',
+                    'description': f'Board: {boards}, or a full FQBN (default "uno")',
                 },
                 'pins': {
                     'anyOf': [{'type': 'string'}, {'type': 'array', 'items': {'type': 'string'}}],
@@ -720,7 +725,7 @@ def register() -> None:
                 },
                 'board': {
                     'type': 'string',
-                    'description': 'Board: uno/nano/mega/leonardo/unor4, or a full FQBN (default "uno")',
+                    'description': f'Board: {boards}, or a full FQBN (default "uno")',
                 },
                 'ref': {
                     'type': 'string',
@@ -965,7 +970,7 @@ def register() -> None:
         'firmware_compile',
         'Compile microcontroller firmware to a HEX artifact: Arduino sketches '
         '(setup()/loop(), .ino) via arduino-cli, plain C via avr-gcc. board is a '
-        'friendly name (uno/nano/mega/leonardo/unor4) or a full FQBN. The hexFile '
+        f'friendly name ({boards}) or a full FQBN. The hexFile '
         'feeds firmware_run (emulated execution + serial capture) and the pin '
         'timeline → PWL stimulus export into ngspice decks. Returns flash/RAM '
         'usage and the build log tail; install guidance when the toolchain is '
@@ -979,7 +984,7 @@ def register() -> None:
                     'description': 'Inline sketch/C code OR a workspace .ino sketch-folder / .c file path',
                 },
                 'name': {'type': 'string', 'description': 'Artifact basename (default "firmware")'},
-                'board': {'type': 'string', 'description': 'Board: uno, nano, mega, leonardo, unor4, or a full FQBN'},
+                'board': {'type': 'string', 'description': f'Board: {boards}, or a full FQBN'},
             },
             'required': ['source'],
         },
@@ -1024,7 +1029,9 @@ def register() -> None:
         'Convert a firmware_run pin timeline (<name>_pins.json — pass '
         'timeline=<name> to firmware_run) into ngspice PWL sources: each '
         'toggling pin becomes Vp<pin> <node> 0 PWL(...) stepping 0 → '
-        'logic-level at the real edge times (board=uno 5V / unor4·esp32 3.3V). '
+        f'logic-level at the real edge times, at the BOARD\'s own rail '
+        f'({boards} have a pin map, and each row carries its rail: uno 5V, '
+        'unor4 3.3V, and the 8 MHz Pro Mini 3.3V against the 16 MHz one at 5V). '
         'The node is the BOARD\'s name for that pin (D5 for Arduino pin 5), '
         'so the deck says "D5 drives this filter" and lands on the board '
         'component\'s own pin; a board with no pin map falls back to N<pin>. '
@@ -1049,7 +1056,7 @@ def register() -> None:
                     'anyOf': [{'type': 'string'}, {'type': 'array', 'items': {'type': 'string'}}],
                     'description': 'Arduino pin numbers to convert (e.g. "13" or "5,6"); default = every pinned timeline entry',
                 },
-                'board': {'type': 'string', 'description': 'Logic level: uno/nano/mega (5V), unor4/esp32/pico (3.3V)'},
+                'board': {'type': 'string', 'description': f'Board that sets the PWL rail: {boards}, or a full FQBN'},
                 'name': {'type': 'string', 'description': 'Basename for the merged .cir deck (default "stim")'},
             },
             'required': ['timeline'],
@@ -1089,7 +1096,7 @@ def register() -> None:
                     'type': 'string',
                     'description': 'Inline sketch text OR a workspace .ino sketch-folder path',
                 },
-                'board': {'type': 'string', 'description': 'Board: uno, nano, mega, leonardo, unor4, or a full FQBN'},
+                'board': {'type': 'string', 'description': f'Board: {boards}, or a full FQBN'},
                 'port': {'type': 'string', 'description': 'Serial port (e.g. COM3). Omit when exactly one board is attached'},
                 'name': {'type': 'string', 'description': 'Build basename (default "firmware")'},
             },
