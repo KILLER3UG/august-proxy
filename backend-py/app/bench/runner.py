@@ -63,6 +63,10 @@ class BenchOptions:
     # Shrink the window the compressor measures against, so an overflow is reached
     # by lowering a number (DS Bot's dev/bench.sh). 0 = use the model's real window.
     context_window: int = 0
+    #: Path to a JSON script of canned assistant rounds. When set, the loop talks
+    #: to `bench.scripted_provider` instead of a network, so a multi-round tool
+    #: turn can be driven with no API credit and every request body is recorded.
+    script_path: str = ''
     output_schema: dict[str, Any] | None = None
     trajectory_path: str = 'trajectory.json'
     events_path: str = '-'  # '-' = stdout
@@ -139,6 +143,26 @@ async def run_bench(opts: BenchOptions) -> int:
     # ── headless stance BEFORE anything session-related runs ─────────────
     os.environ['AUGUST_HEADLESS'] = '1'
 
+    if opts.script_path:
+        # Installed for the life of this process on purpose: a bench run IS the
+        # sandbox, and the seam (`app.providers.clients.getClient`) is resolved
+        # at call time by every caller, so patching it here reaches the real
+        # loop without the loop knowing it is being driven.
+        from app.bench.scripted_provider import arm_providers_store, install, load_script
+
+        try:
+            scripted_client = load_script(opts.script_path)
+        except (OSError, ValueError) as exc:
+            print(f'august-bench: cannot read --script: {exc}', file=sys.stderr)
+            return EXIT_INPUT
+        arm_providers_store()
+        install(scripted_client)
+        print(
+            f'august-bench: scripted provider armed with {len(scripted_client.rounds)} round(s) '
+            f'from {opts.script_path} — no request leaves this process',
+            file=sys.stderr,
+        )
+
     from app.bench.integrity import register_integrity_hook
     from app.services.workbench import workbench as wb
 
@@ -160,6 +184,14 @@ async def run_bench(opts: BenchOptions) -> int:
         provider=opts.provider,
     )
     register_integrity_hook(trajectory.integrity_violations)
+
+    # The app's lifespan registers the tool families; a bench run has no
+    # lifespan, so without this every tool call comes back `Tool "x" not found`
+    # — which reads like a loop bug and is a bootstrap gap. Idempotent by
+    # construction (the registry keys by name).
+    from app.services.tool_registrations import register_all
+
+    register_all()
 
     writer.write(
         'run/start',

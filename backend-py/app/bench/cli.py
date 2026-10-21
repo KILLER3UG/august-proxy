@@ -79,10 +79,34 @@ def build_parser() -> argparse.ArgumentParser:
             'big enough to overflow a real model.'
         ),
     )
+    parser.add_argument(
+        '--script',
+        default='',
+        help=(
+            'path to a JSON script of canned assistant rounds (see '
+            'app/bench/scripted_provider.py). When set the loop talks to a scripted '
+            'provider instead of a network: a multi-round tool turn can be driven '
+            'with no API credit, and every request body the loop built is recorded '
+            'so an assertion is about what would have gone to the provider.'
+        ),
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
+    # The event stream is JSON on stdout, and a workbench event routinely
+    # contains a character cp1252 cannot encode — an arrow in a tool receipt, a
+    # ± in a measure, box-drawing in a diff. On a Windows console that raised
+    # UnicodeEncodeError inside the writer and the run died as
+    # "bench run crashed", which looks like a loop bug and is a stream bug.
+    # Reconfigure both streams before anything can write to them.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, 'reconfigure', None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding='utf-8', errors='replace')
+            except (OSError, ValueError):
+                pass
     args = build_parser().parse_args(argv)
 
     opts = BenchOptions(
@@ -103,6 +127,7 @@ def main(argv: list[str] | None = None) -> int:
         events_path=args.events,
         run_id=args.run_id,
         context_window=args.context_window,
+        script_path=args.script,
     )
     if args.output_schema:
         try:
