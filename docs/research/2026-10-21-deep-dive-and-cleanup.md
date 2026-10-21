@@ -30,10 +30,14 @@ so the findings above are not read as the current state.
 - **Finding 8:** the secret-guard matcher now covers `edit_lines`,
   `delete_file`, `move_file`, `mkdir` and every MCP tool.
 
-**Still open, and deliberately an owner decision rather than a silent code
-change:** Finding 5 (the default guard mode is `full`) and Finding 6 (the
-Windows sandbox is soft unless AppContainer is opted into). The packaged
-NSIS update matrix also remains unrun; it needs a signed installer.
+**Owner decisions (2026-10-21):** keep Finding 5's `full` default, keep
+Finding 6's soft Windows sandbox with AppContainer opt-in, and keep the
+gateway key as the `/v1` boundary with the full tool surface. These are
+recorded rather than silently changed.
+
+The packaged NSIS update matrix remains unrun. It needs a throwaway Windows
+account or VM by its own header, and 0.18.19 is the signed build to run it
+against.
 
 ---
 

@@ -832,6 +832,8 @@ so the card still renders.
   `_checkToolGuard` as the live authority.
 - Tool arguments are scrubbed at both brain-write boundaries, and the
   secret-guard matcher covers the four missing write tools and MCP.
-- Still open, and an owner decision: the default guard mode (`full`), the
-  Windows sandbox default (soft unless AppContainer is opted into), and
-  the packaged NSIS update matrix.
+- Owner decision (2026-10-21): keep the `full` default guard mode, keep the
+  soft Windows sandbox with AppContainer opt-in, and keep the gateway key as
+  the `/v1` boundary with the full tool surface. The packaged NSIS matrix
+  remains unrun; 0.18.19 is the signed build to run it against, on a
+  throwaway Windows account or VM.
