@@ -630,16 +630,95 @@ _BOARD_LOGIC_LEVELS = {
     'esp32': 3.3, 'esp8266': 3.3, 'pico': 3.3,
 }
 
+_MENU_VOLTS_RE = re.compile(r'(\d+(?:\.\d+)?)\s*V\b', re.I)
+# (boards.txt mtime_ns, size) → volts, so a core upgrade cannot leave a stale
+# rail cached. Only a POSITIVE read is stored: no-platform and no-voltage are
+# both "ask again later", not facts about this board.
+_menu_volts_cache: dict[str, tuple[tuple[int, int], float]] = {}
+
+
+def _packages_roots() -> list[Path]:
+    """The directories arduino-cli may keep installed platforms under."""
+    roots: list[Path] = []
+    env = os.environ.get('ARDUINO_DIRECTORIES_DATA', '').strip()
+    if env:
+        roots.append(Path(env) / 'packages')
+    local = os.environ.get('LOCALAPPDATA', '').strip()
+    if local:
+        roots.append(Path(local) / 'Arduino15' / 'packages')
+    roots.append(Path.home() / 'Arduino15' / 'packages')
+    return [r for r in roots if r.is_dir()]
+
+
+def _version_key(name: str) -> tuple:
+    """Sort a platform version dir so 1.8.10 beats 1.8.8."""
+    return tuple((0, int(p)) if p.isdigit() else (1, p) for p in name.split('.'))
+
+
+def _menu_volts(fqbn: str) -> float | None:
+    """Volts a menu option's OWN label claims, read from the installed core.
+
+    ``arduino:avr:pro:cpu=8MHzatmega328`` is a 3.3 V board because the platform
+    says so — ``pro.menu.cpu.8MHzatmega328=ATmega328P (3.3V, 8 MHz)``. Reading
+    the label is what keeps ``_BOARD_PINS`` an override rather than the only
+    source: a variant nobody has typed into the table still gets the rail its own
+    platform declares, which is the SimulIDE lesson (its chip definitions are
+    data the tool loads, not facts the code re-describes).
+
+    ``None`` means "the label answers nothing here" — no menu in the string, no
+    platform installed, or a label with no voltage in it (``ATmega328P (Old
+    Bootloader)``). Every one of those falls through to the declared row instead
+    of guessing a rail.
+    """
+    raw = str(fqbn or '').strip()
+    menus = [seg for seg in raw.split(':') if '=' in seg]
+    if not menus:
+        return None
+    parts = board_base_fqbn(raw).split(':')
+    if len(parts) < 3:
+        return None
+    vendor, arch, board = parts[0], parts[1], parts[2]
+    for root in _packages_roots():
+        hw = root / vendor.lower() / 'hardware' / arch.lower()
+        if not hw.is_dir():
+            continue
+        try:
+            versions = sorted((p for p in hw.iterdir() if p.is_dir()),
+                              key=lambda p: _version_key(p.name), reverse=True)
+        except OSError:
+            continue
+        for version in versions:
+            txt = version / 'boards.txt'
+            try:
+                stamp = txt.stat()
+            except OSError:
+                continue
+            cached = _menu_volts_cache.get(raw)
+            if cached and cached[0] == (stamp.st_mtime_ns, stamp.st_size):
+                return cached[1]
+            try:
+                lines = txt.read_text(encoding='utf-8', errors='replace').splitlines()
+            except OSError:
+                continue
+            for seg in menus:
+                key, _, value = seg.partition('=')
+                needle = f'{board}.menu.{key}.{value}='
+                label = next((ln[len(needle):] for ln in lines if ln.startswith(needle)), '')
+                found = _MENU_VOLTS_RE.search(label)
+                if found:
+                    volts = float(found.group(1))
+                    _menu_volts_cache[raw] = ((stamp.st_mtime_ns, stamp.st_size), volts)
+                    return volts
+    return None
+
 
 def board_logic_level(board: str) -> float:
     """Volts at logic 1 for a board.
 
-    The board's own row answers first: ``_BOARD_PINS`` carries ``logic``, and
-    ``_board_row`` resolves a menu-qualified FQBN to the variant row before
-    falling back to the base board — ``arduino:avr:pro:cpu=8MHzatmega328`` is
-    the 3.3 V Pro Mini and must not read as the 5 V one. Boards with no pin map
-    (esp32 and friends) take ``_BOARD_LOGIC_LEVELS`` by short name, and a board
-    in neither is 5 V, the Arduino default.
+    Most specific fact first: a variant row filed under the exact FQBN in
+    ``_BOARD_PINS``, then the menu label the installed core declares
+    (``_menu_volts``), then the base board's own row, then the short-name map
+    for the boards with no pin map, then 5 V — the Arduino default.
 
     Reading a board at the wrong rail is not cosmetic: every PWL step the
     stimulus writes is scaled by it, so the deck looks right and simulates
@@ -647,6 +726,14 @@ def board_logic_level(board: str) -> float:
     recorded in ``docs/ROADMAP.md``); a menu-qualified FQBN missing both tables
     and landing on the 5 V default was the same failure a second way.
     """
+    fqbn = board_fqbn(board)
+    exact = _BOARD_PINS.get(fqbn)
+    exact_logic = (exact or {}).get('logic')
+    if exact_logic not in (None, ''):
+        return float(str(exact_logic))
+    from_menu = _menu_volts(fqbn)
+    if from_menu is not None:
+        return from_menu
     logic = _board_row(board).get('logic')
     if logic not in (None, ''):
         return float(str(logic))
