@@ -2607,6 +2607,19 @@ function FlatEntryRow({
           replaces {entry.replaces.length}
         </span>
       ) : null}
+      {/* M-8: `verified_at` is stamped only by a HUMAN write or import now,
+          so a badge is an honest statement about the entry. It is separate
+          from the lineage chain above: a fact can be current and still have
+          been confirmed by the person, or carry no confirmation at all. */}
+      {entry.verifiedAt ? (
+        <span
+          className="shrink-0 text-2xs text-muted-foreground/60"
+          title={`Last confirmed by a human write on ${entry.verifiedAt}.`}
+          data-testid="memory-verified-badge"
+        >
+          verified
+        </span>
+      ) : null}
       <span
         className="shrink-0 text-2xs tabular-nums text-muted-foreground/55 transition-opacity group-hover:opacity-0 group-focus-within:opacity-0"
         title={absoluteDate(asUtc(entry.updated)) || entry.updated}

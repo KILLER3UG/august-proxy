@@ -161,8 +161,8 @@ def save_fact(
     kindParam = kind if kind in _FACT_KINDS else ''
     conn.execute(
         """
-        INSERT INTO facts (fact_key, fact_value, title, kind, description, category, source, confidence, expires_at, scope, updated_at)
-        VALUES (?, ?, ?, COALESCE(NULLIF(?, ''), 'fact'), ?, ?, ?, ?, ?, ?, datetime('now'))
+        INSERT INTO facts (fact_key, fact_value, title, kind, description, category, source, confidence, expires_at, scope, verified_at, updated_at)
+        VALUES (?, ?, ?, COALESCE(NULLIF(?, ''), 'fact'), ?, ?, ?, ?, ?, ?, CASE WHEN ? THEN datetime('now') ELSE NULL END, datetime('now'))
         -- The conflict target is the row's IDENTITY, scope + key, not the key
         -- alone. `fact_key` unique store-wide (pre-055) meant one key had one
         -- home in the whole install, which is why per-scope memory had to be
@@ -181,11 +181,12 @@ def save_fact(
             expires_at = excluded.expires_at,
             status = 'active',
             -- M-8: a RE-STATEMENT is the only verification this store can
-            -- observe. `verified` is the caller's claim that a HUMAN
-            -- restated the fact (the Settings write and the bulk import
+            -- observe. `verified` is the caller's claim that a HUMAN wrote
+            -- or restated the fact (the Settings write and the bulk import
             -- pass it); a model's `remember`, a consolidation merge and a
-            -- rollback restore leave the existing stamp alone. An INSERT
-            -- leaves it NULL — nothing has confirmed the fact yet.
+            -- rollback restore leave the existing stamp alone. A human
+            -- INSERT stamps it; a machine INSERT leaves it NULL — nothing
+            -- has confirmed the fact yet.
             verified_at = CASE WHEN ? THEN datetime('now') ELSE facts.verified_at END,
             updated_at = datetime('now')
         """,
@@ -200,6 +201,7 @@ def save_fact(
             confidence,
             expires_at,
             normalize_scope(scope),
+            1 if verified else 0,
             1 if verified else 0,
         ),
     )

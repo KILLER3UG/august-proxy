@@ -821,3 +821,17 @@ so the card still renders.
   route every path through `exec.py` - and the individual MCP items
   (the lifecycle hooks and the mutating classification) are the
   smallest high-value change in it.
+
+### Resolved after the deep-dive (2026-10-21)
+
+- MCP calls now run PRE/POST lifecycle hooks and are classified as
+  mutating; `/v1` managed tools route through `_executeTool` and get the
+  hook stack and timeout (guard modes/approvals remain a gateway-key
+  surface).
+- `needs_approval_in` was deleted; `docs/ARCHITECTURE_FLOW.md` now names
+  `_checkToolGuard` as the live authority.
+- Tool arguments are scrubbed at both brain-write boundaries, and the
+  secret-guard matcher covers the four missing write tools and MCP.
+- Still open, and an owner decision: the default guard mode (`full`), the
+  Windows sandbox default (soft unless AppContainer is opted into), and
+  the packaged NSIS update matrix.

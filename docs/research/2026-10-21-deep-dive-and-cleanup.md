@@ -7,6 +7,34 @@
 
 > **Note on a moving target.** While the review was in flight, another session committed the in-flight artifact work and advanced `master` to `cd976795` ("docs(roadmap): the reference's OWN capture of the same job"), two commits ahead of the revision this review was written against. The delta is `docs/ROADMAP.md`, `scripts/lint-budget.json`, and 9 files under `frontend/desktop/src` — **no backend change**. Every finding below was re-verified against `cd976795`: `proxy_tools.py:381` still calls `tool_registry.dispatch` directly, `exec.py:81` still returns for MCP before the hook emit at `:167`/`:173`, `needs_approval_in` still has zero call sites, and both `lib/produced-files.ts` and `lib/produced-artifacts.ts` still coexist. All findings stand. `origin/master` had also been updated to match.
 
+## Resolution (2026-10-21, after the review)
+
+The code items were acted on the same day; this section records what changed
+so the findings above are not read as the current state.
+
+- **Finding 1 (`/v1` bypass):** the proxy's managed tools now route through
+  `loop/exec.py::_executeTool` with a synthetic session, so they get the
+  PRE/POST hook stack, the stale-write hash gate and the tool timeout. The
+  guard-mode/approval layer still does not apply: the proxy has no workbench
+  session, and the gateway key is the boundary for that surface.
+- **Findings 2 and 3 (MCP):** MCP calls no longer return before the hooks;
+  they execute after PRE_TOOL_USE and go through POST_TOOL_USE and
+  post-observation. Every `mcp__*` tool is classified as mutating, so plan
+  and ask modes gate it.
+- **Finding 4:** `needs_approval_in` was deleted and
+  `docs/ARCHITECTURE_FLOW.md` now names `_checkToolGuard` as the live
+  authority instead of concluding the guards are unwired.
+- **Finding 7:** tool arguments (and message content) are scrubbed of this
+  install's credential values at both brain-write boundaries, so a denied
+  call's secret no longer becomes durable.
+- **Finding 8:** the secret-guard matcher now covers `edit_lines`,
+  `delete_file`, `move_file`, `mkdir` and every MCP tool.
+
+**Still open, and deliberately an owner decision rather than a silent code
+change:** Finding 5 (the default guard mode is `full`) and Finding 6 (the
+Windows sandbox is soft unless AppContainer is opted into). The packaged
+NSIS update matrix also remains unrun; it needs a signed installer.
+
 ---
 
 ## 0. Scope, method, and limits
