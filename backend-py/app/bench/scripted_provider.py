@@ -155,7 +155,7 @@ def arm_providers_store() -> None:
         'id': SCRIPTED_PROVIDER_ID,
         'name': 'Scripted (no network)',
         'baseUrl': 'http://127.0.0.1:9',
-        'apiFormat': 'chat/completions',
+        'apiFormat': 'openaiChat',
         'apiKey': 'scripted-key-not-a-secret',
         'enabled': True,
         'defaultModel': SCRIPTED_MODEL,
