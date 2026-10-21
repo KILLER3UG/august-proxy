@@ -957,3 +957,21 @@ new turned out to be shipped already (length-stop fails the whole tool batch at
 The open list from both dives lives in
 `docs/research/2026-10-21-simulide-and-pi-harness.md`.
 
+## The round that worked the dive list down (2026-10-22)
+
+Five commits, each gated on its own measurement.
+
+| Item from the dive list | State |
+|---|---|
+| **Provider-boundary orphan repair** (pi `transform-messages.ts:180-256`) | **done** — `workbench/message_pairing.py` gives a call with no result a synthetic result that names its own cause, drops a result whose call is gone, and is idempotent. Applied at the three workbench seams (OpenAI chat round, Responses round, the per-round body of the OpenAI-as-Anthropic bridge) and deliberately NOT at the `/v1` proxy, which passes a client's body through. It is the deterministic arm in front of `_stuckRequestEscape`'s strike ladder — the first repairable request no longer has to fail twice before the loop reacts. |
+| **Circuits as fixtures** (SimulIDE `BatchTest`/`TestUnit`) | **done** — `circuit_batch_test` walks a folder of decks, runs each through the real engine and asserts the deck's own `* expect v(out) ~= 5.0 ±0.05` cards. A deck with no card is counted, never passed. Measured against the bundled ngspice: the wrong expectation fails with `got 5 (|5 - 6| <= 0.01)`. |
+| **Signals keyed to sim time** (SimulIDE's `DataChannel`) | **done** — `_signal_edges` change-samples a trace off the FULL run (before thinning), with a digital lane gated on a real swing AND most samples parked near a rail, because a ramp crosses each threshold exactly once and a 0.2 mV ripple crosses 30 %/70 % of itself forever. The first pass emitted a logic lane for both; that is the false claim the two tests exist to stop. |
+| **Merge contract / file-op ledger across compaction** (pi) | **already shipped** — `schemaSummarize` folds prior notes into Context with carried `<read-files>` tags stripped and keeps the ledger across compactions, deterministically and with no extra LLM call. Recorded so a future dive stops re-proposing it. |
+| **Parallel tool execution** (pi's dual-order batch) | **NOT done, on purpose.** The round body is one ~600-line inline `for tu in toolUses:` block that owns guard checks, approval cards, hooks, code mode, plan mode, error-family tracking and the stall counters in source order. Splitting it into preflight-then-gather is a refactor, not a patch, and this install has no scripted provider to validate it with — the seam exists (`getClient`, which the deleted `test_stuck_request_escape.py` drove), but rebuilding it is the prerequisite, not an afterthought. An unverified change to the tool loop is the one thing this repo's history argues against; the first commit there should be the stub provider, not the concurrency. |
+
+Also landed: the 3D stage now diffs the deck instead of rebuilding it (so parts
+move, leave and wires draw in — and the motion constants that were deleted for
+being unread are back because they are read), and a subckt with more than two
+nets draws as an outline with every pin named, in both the exported artifact and
+the drawer's own symbol switch.
+
