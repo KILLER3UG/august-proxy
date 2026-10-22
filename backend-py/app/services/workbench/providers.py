@@ -530,7 +530,16 @@ async def call_anthropic_workbench(
     if not apiKey:
         return {'error': 'API key not configured'}
     from app.adapters.anthropic import translateMessagesToAnthropic
+    from app.services.workbench.message_pairing import repair_tool_pairing
 
+    # The native Claude door is the one most workbench turns and subagents use;
+    # leave the orphan in and every later turn fails the same 400.
+    messages, _synthesized, _dropped = repair_tool_pairing(messages)
+    if _synthesized or _dropped:
+        logger.warning(
+            'provider boundary: %d orphaned tool call(s) given a synthetic result, %d stray result(s) dropped',
+            _synthesized, _dropped,
+        )
     anthropicMessages = translateMessagesToAnthropic(messages)
     # max_tokens is the model's output ceiling; effort only sizes thinking within it.
     model_out = model_max_output_tokens(provider, model)
