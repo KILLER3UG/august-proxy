@@ -5284,6 +5284,7 @@ async def _sendWorkbenchMessageStreamImpl(
 
                             async def _run_command_with_stream() -> str:
                                 last_emit = time.monotonic()
+                                stream_started = last_emit
                                 # Cumulative live-preview budget. Every chunk
                                 # also lands in the durable event log (one
                                 # tool_progress event each), so an uncapped
@@ -5350,6 +5351,7 @@ async def _sendWorkbenchMessageStreamImpl(
                                                 if beat_count == 1
                                                 else 'Still working…'
                                             )
+                                            _beat_now = time.monotonic()
                                             emit(
                                                 {
                                                     'type': 'tool_progress',
@@ -5357,6 +5359,15 @@ async def _sendWorkbenchMessageStreamImpl(
                                                     'name': toolName,
                                                     'phase': 'running',
                                                     'message': msg,
+                                                    # The beat's evidence, not just a
+                                                    # ping: how long the command has
+                                                    # run, and how long since it last
+                                                    # produced a byte. A wedged tool
+                                                    # and a slow one stop looking
+                                                    # identical to a client that reads
+                                                    # these two numbers.
+                                                    'elapsedSec': int(_beat_now - stream_started),
+                                                    'idleSec': int(_beat_now - last_emit),
                                                 }
                                             )
 
@@ -5386,6 +5397,7 @@ async def _sendWorkbenchMessageStreamImpl(
                                     }
                                 )
                             _tool_stop = asyncio.Event()
+                            _tool_started = time.monotonic()
 
                             async def _tool_heartbeat() -> None:
                                 while not _tool_stop.is_set():
@@ -5402,6 +5414,12 @@ async def _sendWorkbenchMessageStreamImpl(
                                                 'name': toolName,
                                                 'phase': 'running',
                                                 'message': f'Still working on {toolName}…',
+                                                # Elapsed only: this path has no
+                                                # visibility into a tool's output
+                                                # flow, so an `idleSec` here would
+                                                # be invented. The command path
+                                                # above reports both.
+                                                'elapsedSec': int(time.monotonic() - _tool_started),
                                             }
                                         )
 

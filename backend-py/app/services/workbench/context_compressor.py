@@ -656,10 +656,21 @@ def schemaSummarize(
             'ask before acting as though none was given.'
         )
     lines += memoryLines
+    # `(uncaptured)` was TRUE of the decision text but false of the position:
+    # the loop's own phase/step is right there and survives compaction, so the
+    # next turn was told "nothing known about what is next" while the harness
+    # held the exact resume point. Extraction, not invention.
+    resume = (
+        f'resume at phase={lastPhase} step={lastStep}'
+        if lastPhase and lastStep is not None
+        else f'resume at phase={lastPhase}'
+        if lastPhase
+        else '(uncaptured)'
+    )
     lines += [
         '',
         '## Next',
-        '(uncaptured)',
+        resume,
         '',
         '## Pitfalls',
         f'- Latest failure: {critical}' if critical else '(none recorded)',

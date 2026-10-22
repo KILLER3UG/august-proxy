@@ -30,6 +30,25 @@ import json
 
 from app.services.workbench.tool_protocol import receipt_tone
 
+
+def _tone_for(text: str, is_error: bool) -> str:
+    """Presentation tone for a tool receipt that is KNOWN to have failed.
+
+    `receipt_tone` reads the receipt's TEXT, and a failure whose wording the
+    table does not recognise returns 'none' — so a producer that set
+    `is_error: True` structurally still lost its failure styling in the
+    transcript. The verdict is the field, not the prose: when the durable row
+    says failed, an unrecognised wording is a `failure`, not nothing. Matching
+    the other direction is deliberately NOT done — a passing receipt whose text
+    happens to look like an error keeps tone 'none' until a producer says
+    otherwise."""
+    if not is_error:
+        return 'none'
+    # `receipt_tone` returns the STRING 'none', which is truthy — an `or`
+    # fallback here silently kept it, which the probe caught. Compare.
+    tone = receipt_tone(text)
+    return 'failure' if tone == 'none' else tone
+
 # UI-shaped structured fields carried on a chat message. Persisted verbatim
 # when the caller supplies them; derived from the model transcript when it
 # does not (see derive_blocks).
@@ -170,7 +189,7 @@ def derive_blocks(message: dict[str, object]) -> list[dict[str, object]]:
                             'status': 'error' if raw.get('is_error') else 'done',
                             # Presentation only — `status` stays 'error' so
                             # mining keeps seeing the denial as a failure.
-                            'tone': receipt_tone(result) if raw.get('is_error') else 'none',
+                            'tone': _tone_for(result, bool(raw.get('is_error'))),
                             'result': result,
                         },
                     )
@@ -222,7 +241,7 @@ def derive_blocks(message: dict[str, object]) -> list[dict[str, object]]:
                     'id': tool_id or 'b_tool_result',
                     'name': name,
                     'status': status,
-                    'tone': receipt_tone(result) if status == 'error' else 'none',
+                    'tone': _tone_for(result, status == 'error'),
                     'result': result,
                 },
             )
@@ -252,11 +271,7 @@ def structured_fields(message: dict[str, object]) -> dict[str, object]:
             'name': str(message.get('name') or ''),
             'result': _text(message.get('content')),
             'status': 'error' if message.get('is_error') else 'done',
-            'tone': (
-                receipt_tone(_text(message.get('content')))
-                if message.get('is_error')
-                else 'none'
-            ),
+            'tone': _tone_for(_text(message.get('content')), bool(message.get('is_error'))),
         }
     return fields
 
