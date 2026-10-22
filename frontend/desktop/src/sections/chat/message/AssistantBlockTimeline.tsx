@@ -101,6 +101,10 @@ function isGroupableToolBlock(block: DisplayBlock): boolean {
   if (isSubagentToolName(tool.name)) return false;
   if (normalizeToolName(tool.name) === 'update_state') return false;
   if (tool.pendingApproval || tool.actionNeeded) return false;
+  // Provider/integration setup widgets are interactive forms; the reference's
+  // rule is that an action widget stays on its own. `actionNeeded` is only one
+  // of the three widgets a tool result can carry.
+  if (tool.providerSetup || tool.integrationSetup) return false;
   return true;
 }
 
@@ -732,6 +736,7 @@ export function AssistantBlockTimeline({
               showFull={thoughtExpanded}
               onToggle={() => toggleExpand(thoughtId, !thoughtExpanded)}
               collapsedDefault={isCollapseThinkingEnabled()}
+              durationLabel={sequenceDurationLabel ?? undefined}
             />
           ),
         });

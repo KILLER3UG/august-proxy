@@ -21,7 +21,7 @@
 
 import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Clock, Loader2 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, fmtElapsed } from '@/lib/utils';
 import {
   splitThinkingSentences,
   summarizeThoughtHeader,
@@ -41,6 +41,8 @@ export function ThoughtStep({
   showFull = false,
   onToggle,
   collapsedDefault = false,
+  duration,
+  durationLabel,
   className,
 }: {
   content: string;
@@ -53,6 +55,12 @@ export function ThoughtStep({
    *  Only applies while clamped and not generating; "Show full reasoning"
    *  expands, "Show less" returns to the summary. */
   collapsedDefault?: boolean;
+  /** The thought's own elapsed time, in milliseconds. The reference names the
+   *  card "Thought for 49s"; when absent the header says "Thought". */
+  duration?: number;
+  /** Preformatted elapsed label (the activity's own duration), for callers
+   *  that do not have a per-thought duration. */
+  durationLabel?: string;
   className?: string;
 }) {
   const reactId = useId();
@@ -142,6 +150,12 @@ export function ThoughtStep({
   ) : (
     <Clock className="process-thought-clock" aria-hidden />
   );
+  const thoughtLabel =
+    durationLabel
+      ? `Thought for ${durationLabel}`
+      : typeof duration === 'number' && duration > 0
+        ? `Thought for ${fmtElapsed(duration)}`
+        : 'Thought';
 
   return (
     <div
@@ -157,6 +171,9 @@ export function ThoughtStep({
       </div>
 
       <div className="process-thought-body">
+        <div className="mb-1 text-2xs font-medium leading-4 text-muted-foreground/60">
+          {thoughtLabel}
+        </div>
         {summaryCollapsed ? (
           <>
             <div

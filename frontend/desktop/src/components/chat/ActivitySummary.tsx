@@ -168,6 +168,11 @@ export function ActivitySummary({
     wasLiveRef.current = live;
     if (collapseWhen || turnEnded) setOpen(false);
   }, [collapseWhen, live]);
+  // A failed step must not stay behind a collapsed summary. The group itself
+  // opens on failure, but only the parent controls whether its body exists.
+  useEffect(() => {
+    if (errors > 0) setOpen(true);
+  }, [errors]);
   const segments = buildActivityCountSegments({
     thoughtCount,
     toolsCount,

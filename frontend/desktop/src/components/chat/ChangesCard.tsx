@@ -72,19 +72,28 @@ export function ChangesCard({
      is not a row here, so the count in the header has to count the same
      set. A header that said "2 files changed" above an empty list was
      worse than no header at all. */
-  const ownedPaths = useMemo(
-    () =>
-      paths.filter(
-        (p) => !artifactOwned.has(p.replace(/\\/g, '/').toLowerCase()),
-      ),
-    [paths, artifactOwned],
-  );
-
   const diffMap = useMemo(() => {
     const m = new Map<string, GitDiffFile>();
-    for (const f of changedFiles?.files ?? []) m.set(f.path, f);
+    for (const f of changedFiles?.files ?? []) {
+      m.set(f.path, f);
+      m.set(f.path.replace(/\\/g, '/'), f);
+    }
     return m;
   }, [changedFiles]);
+
+  const ownedPaths = useMemo(
+    () =>
+      paths.filter((p) => {
+        const normalized = p.replace(/\\/g, '/').toLowerCase();
+        // A path git reports as changed is a diff, even when the tool that
+        // wrote it was `write_file` (which the artifact card otherwise treats
+        // as a create). Hiding the diff of an overwritten source file was the
+        // artifact card owning a change it did not create.
+        if (diffMap.has(p) || diffMap.has(p.replace(/\\/g, '/'))) return true;
+        return !artifactOwned.has(normalized);
+      }),
+    [paths, artifactOwned, diffMap],
+  );
 
   // Totals come only from the git diff; omitted entirely until it lands.
   const totals = useMemo(() => {
