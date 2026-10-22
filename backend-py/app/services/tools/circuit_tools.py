@@ -4242,7 +4242,7 @@ def render_board_3d(
 # something the model can write, read back and extend inside the workspace.
 
 _EXPECT_RE = re.compile(
-    r'^\s*\*\s*expect\s+(?P<expr>[A-Za-z][\w().+]*)\s*'
+    r'^\s*\*\s*expect\s+(?P<expr>[A-Za-z][\w().+]*(?:\s+[A-Za-z][\w().+]*)?)\s*'
     r'(?P<op>~=|==|<=|>=|<|>)\s*'
     r'(?P<value>[-+]?[\d.]+(?:[eE][-+]?\d+)?)'
     r'(?:\s*(?:±|\+-|\+/-)\s*(?P<tol>[\d.]+(?:[eE][-+]?\d+)?))?\s*$',

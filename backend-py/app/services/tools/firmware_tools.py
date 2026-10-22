@@ -22,6 +22,7 @@ import re
 import shutil
 from pathlib import Path
 
+from app.json_narrowing import as_dict
 from app.services.sandbox.paths import bind_path
 
 
@@ -234,6 +235,13 @@ async def _spawn(
     read when the child was killed for running too long - the serial
     monitor is stopped on purpose, and "compile timed out" would be a lie
     about what happened.
+
+    Reads line by line instead of ``communicate()``. A killed child's output
+    lives only in the pipe buffer, and cancelling ``communicate()`` throws
+    everything it had accumulated away — so ``board_monitor``, which is
+    DESIGNED to end on the timeout, discarded the whole serial window every
+    single time and returned the stop notice as if it were the data. The
+    partial read is the result here, with the notice appended.
     """
     proc = await asyncio.create_subprocess_exec(
         exe, *args,
@@ -241,12 +249,34 @@ async def _spawn(
         stderr=asyncio.subprocess.STDOUT,
         cwd=cwd,
     )
+    chunks: list[bytes] = []
+
+    async def _drain() -> None:
+        stream = proc.stdout
+        if stream is None:  # pragma: no cover -- PIPE above guarantees it
+            return
+        while True:
+            line = await stream.readline()
+            if not line:
+                break
+            chunks.append(line)
+
+    reader = asyncio.create_task(_drain())
+    timed_out = False
     try:
-        out_b, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        await asyncio.wait_for(reader, timeout=timeout)
     except asyncio.TimeoutError:
+        timed_out = True
+        reader.cancel()
         proc.kill()
-        return None, timeout_message
-    return proc.returncode, out_b.decode('utf-8', errors='replace')
+    # Await the child even after the kill: the previous path returned without
+    # reaping, which left the process holding the COM port it was monitoring.
+    await proc.wait()
+
+    text = b''.join(chunks).decode('utf-8', errors='replace')
+    if timed_out:
+        return None, f'{text}\n{timeout_message}' if text else timeout_message
+    return proc.returncode, text
 
 
 def _resolve_source(
@@ -1124,6 +1154,41 @@ def _as_board_list(value: object) -> list[dict[str, object]]:
     return [b for b in value if isinstance(b, dict)]
 
 
+def _port_entries(payload: dict[str, object]) -> tuple[list[object], str | None]:
+    """The port array of a `board list` payload, and the key it came from.
+
+    arduino-cli renamed this envelope: 1.5.1 answers `detected_ports` where the
+    older CLI answered `ports`. Reading one key alone made a real board inventory
+    return `count: 0` with rc=0 — a successful call claiming there was no
+    hardware, which is indistinguishable from "nothing is plugged in". The
+    cascade tries both, and reports the key it hit so an unrecognised shape is a
+    named condition instead of a silent zero.
+    """
+    for key in ('detected_ports', 'ports'):
+        raw = payload.get(key)
+        if isinstance(raw, list):
+            return raw, key
+    return [], None
+
+
+def _entry_board(entry: dict[str, object]) -> dict[str, object]:
+    """The board behind one port, in whichever shape this CLI version uses.
+
+    `board` (a single object) is the old shape; 1.5.1 answers `matching_boards`,
+    a list ordered by confidence whose first member is what arduino-cli would
+    upload to. An empty dict means the port is real and nothing matched it.
+    """
+    direct = entry.get('board')
+    if isinstance(direct, dict) and direct:
+        return direct
+    matched = entry.get('matching_boards')
+    if isinstance(matched, list):
+        for cand in matched:
+            if isinstance(cand, dict) and cand:
+                return cand
+    return {}
+
+
 async def board_list() -> dict[str, object]:
     """Enumerate the boards attached to this machine, and the cores installed.
 
@@ -1156,9 +1221,14 @@ async def board_list() -> dict[str, object]:
         payload = json.loads(out or '{}')
     except (ValueError, TypeError):
         payload = {}
-    for entry in (payload.get('ports') or []):
-        port = entry.get('port') or {}
-        board = entry.get('board') or {}
+    if not isinstance(payload, dict):
+        payload = {}
+    entries, shape = _port_entries(payload)
+    for raw_entry in entries:
+        if not isinstance(raw_entry, dict):
+            continue
+        port = as_dict(raw_entry.get('port'), {})
+        board = _entry_board(raw_entry)
         fqbn = str(board.get('fqbn') or '')
         boards.append({
             'port': str(port.get('address') or port.get('label') or ''),
@@ -1175,22 +1245,37 @@ async def board_list() -> dict[str, object]:
     rc2, out2 = await _spawn(cli, 'core', 'list', '--format', 'json', timeout=45.0)
     if rc2 in (0, None):
         try:
-            for core in (json.loads(out2 or '{}').get('platforms') or []):
+            core_payload = json.loads(out2 or '{}')
+        except (ValueError, TypeError):
+            core_payload = {}
+        if isinstance(core_payload, dict):
+            raw_cores = core_payload.get('platforms')
+            if not isinstance(raw_cores, list):
+                # `core list` is the other command with a renamed envelope.
+                raw_cores = core_payload.get('installed')
+            for core in raw_cores if isinstance(raw_cores, list) else []:
+                if not isinstance(core, dict):
+                    continue
                 cores.append({
                     'id': str(core.get('id') or ''),
-                    'version': str(core.get('installed_version') or ''),
+                    'version': str(core.get('installed_version') or core.get('version') or ''),
                     'name': str(core.get('name') or ''),
                 })
-        except (ValueError, TypeError):
-            pass
 
-    return {
+    result: dict[str, object] = {
         'installed': True,
         'ok': True,
         'boards': boards,
         'count': len(boards),
         'cores': cores,
     }
+    if shape is None and payload:
+        # Zero boards because the payload was a shape this reader does not know,
+        # which is NOT the same claim as zero boards. Name it, and hand back the
+        # keys, so the next CLI rename is one glance instead of a code audit.
+        result['unknownShape'] = True
+        result['payloadKeys'] = sorted(str(k) for k in payload)[:20]
+    return result
 
 
 def _resolve_port(boards: list[dict[str, object]], port: str) -> tuple[str, str]:
@@ -1327,13 +1412,22 @@ async def board_monitor(
         }
 
     window = max(200, min(int(duration_ms or 3000), 30000))
+    notice = '(monitor stopped after the read window)'
     rc, out = await _spawn(
         cli, 'monitor', '--port', chosen_port,
         '--config', f'baudrate={int(baud or 9600)}',
         timeout=window / 1000.0,
-        timeout_message='(monitor stopped after the read window)',
+        timeout_message=notice,
     )
+    # The monitor ALWAYS ends on the timeout — that is the design — so `rc is
+    # None` is not a failure and must not read as one. It is its own verdict:
+    # the window closed, and what came back is a prefix of the stream. The stop
+    # notice is `_spawn`'s tail, so it is separated out here rather than being
+    # counted as a serial line the sketch printed.
+    truncated = rc is None
     text = (out or '').strip()
+    if truncated and text.endswith(notice):
+        text = text[: -len(notice)].strip()
     # arduino-cli's monitor prints its own banner before the serial data.
     if text.startswith('---'):
         text = '\n'.join(text.splitlines()[1:]).strip()
@@ -1344,5 +1438,6 @@ async def board_monitor(
         'baud': int(baud or 9600),
         'durationMs': window,
         'output': text,
+        'truncated': truncated,
         'lineCount': len([ln for ln in text.splitlines() if ln.strip()]),
     }

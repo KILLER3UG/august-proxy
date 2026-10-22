@@ -172,7 +172,7 @@ _PROMPT_DESTRUCTIVE = frozenset({
     'circuit_delete_netlist',
 })
 
-_PROMPT_SHELL = frozenset({'run_command', 'run_commands', 'simulate_circuit', 'circuit_simulate', 'circuit_test', 'circuit_export_vcd', 'circuit_annotate', 'firmware_compile', 'firmware_run', 'hdl_lint', 'hdl_simulate', 'hdl_test', 'fpga_compile', 'kicad_checks', 'board_monitor'})
+_PROMPT_SHELL = frozenset({'run_command', 'run_commands', 'simulate_circuit', 'circuit_simulate', 'circuit_test', 'circuit_batch_test', 'circuit_export_vcd', 'circuit_annotate', 'firmware_compile', 'firmware_run', 'hdl_lint', 'hdl_simulate', 'hdl_test', 'fpga_compile', 'kicad_checks', 'board_monitor'})
 
 _PROMPT_AGENT = frozenset({
     'create_agent', 'list_agents', 'list_daemons', 'spawn_daemon',

@@ -1117,7 +1117,10 @@ def register() -> None:
         "Read an attached board's serial output for a bounded window (default "
         '3 s) and return what it printed — the other half of "it works". The '
         'read is stopped after the window, so a board that never goes quiet '
-        'does not hang the turn. port is the serial port (omit when exactly '
+        'does not hang the turn, and what arrived BEFORE the window closed is '
+        'returned with `truncated: true`; an empty output with truncated true '
+        'means the board printed nothing in the window, not that the read '
+        'failed. port is the serial port (omit when exactly '
         'one board is attached); baud is the serial speed (default 9600). The '
         'serial line is whatever the sketch prints, so it can carry a '
         'credential — treat it like any other tool output.',
@@ -1379,8 +1382,9 @@ def register() -> None:
         'passed/failed/engine-error/no-expectations with the failing '
         'comparisons and the measures that were seen. A deck with no expect '
         'card is COUNTED, never passed: a fixture that asserts nothing is how a '
-        'suite goes green around a broken circuit. Read-only — nothing is '
-        'written, and each deck is simulated from its text. Use it after '
+        'suite goes green around a broken circuit. It changes no deck, but it '
+        'runs each deck through circuit_simulate, so the usual simulated '
+        'artifacts (savedTo / tracesFile) are written like any simulation. Use it after '
         'touching a shared subcircuit, a part value or the rendering/parse path, '
         'and before claiming a design still works.',
         _batchTest,
