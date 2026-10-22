@@ -1,0 +1,233 @@
+packages/shell/bash-local/package.json	read	ESM manifest for @deepseek-ai/dsh-bash-local v0.2.1-rc.2; peer-deps dsh-shell/dsh-subprocess/dsh-timeout/cordis, sole runtime dep schemastery; exports "." plus "./src/*".
+packages/shell/bash-local/README.i18n.yaml	read	Bilingual pairing record: per-heading-section hashes of the English and Chinese README blocks (19 section hashes) plus the re-record command.
+packages/shell/bash-local/README.md	read	Executor reference: budget table, request/spec split, first-cause timeout-vs-abort classification, background-handle ownership, per-package KV-cache effect section.
+packages/shell/bash-local/README.zh.md	read	Chinese translation of README.md; read front matter and heading census (26 headings, same section order) rather than every translated line.
+packages/shell/bash-local/src/index.ts	read	LocalBashExecutor: resolve() caps budgets, executeArgv() fuses one deadline, provider failure becomes the stderr stream, consuming readOutput() beside non-consuming observed readers.
+packages/shell/bash-local/tests/executor.spec.ts	read	563-line behavioural spec read in full: budget caps, first-cause classification, kill escalation, provider-failure note, ownership across executor reload.
+packages/shell/bash-local/tests/settings.spec.ts	read	Live-config spec: changed budgets apply without remount, and an unusable stored value fails at the next command rather than at the profile write.
+packages/shell/bash-local/tsconfig.json	read	TS project: src -> lib/types, references cordis/schemastery/timeout/brand/shell/subprocess.
+packages/shell/bash-sandbox/locale/en.json	read	UI locale, English: only meta.title "bash-sandbox" (no description).
+packages/shell/bash-sandbox/locale/zh.json	read	UI locale, Chinese: meta.title plus meta.description for the Bash sandbox executor.
+packages/shell/bash-sandbox/package.json	read	ESM manifest; no runtime deps, peer-deps dsh-shell/dsh-bash-local/dsh-sandbox/dsh-sandbox-policy; ships locale/*.json.
+packages/shell/bash-sandbox/README.i18n.yaml	read	Bilingual pairing record with 31 per-section hashes for the en/zh README pair.
+packages/shell/bash-sandbox/README.md	read	Confining executor reference: per-mode file effects, fail-closed SANDBOX_UNAVAILABLE, denial-as-fact, runner failure outranking denial.
+packages/shell/bash-sandbox/README.zh.md	read	Chinese translation; heading census (37 headings) matches the English section structure.
+packages/shell/bash-sandbox/src/helpers.ts	read	Thin classifier: classifyDenial() over the shared sandbox signature matcher; re-exports the runner-failure helpers from @deepseek-ai/dsh-sandbox.
+packages/shell/bash-sandbox/src/index.ts	read	SandboxBashExecutor: confines the exact bash argv via ctx.sandbox, keeps per-process facts, stamps denial/enforcement/runnerFailed, decorates result() in place.
+packages/shell/bash-sandbox/tests/bwrap.e2e.ts	read	bwrap end-to-end: read-only write denial, workspace-write root, background denial, escalated retry landing the denied write.
+packages/shell/bash-sandbox/tests/fixtures/async-confinement-failure.ts	read	Snapshot fixture: a refusing sandbox provider plus a subprocess/terminal allocation tripwire writing confinement-audit.json.
+packages/shell/bash-sandbox/tests/fixtures/pending-confinement.ts	read	Snapshot fixture: confinement that never settles until the abort signal, with a process-allocation tripwire for the preparation-timeout case.
+packages/shell/bash-sandbox/tests/foreground-timeout.spec.ts	read	Preparation-deadline spec: remaining budget is passed to native execution, upstream cancellation is preserved, timeout stays the first cause.
+packages/shell/bash-sandbox/tests/landlock.e2e.ts	read	Landlock end-to-end mirror of the bwrap suite: denial text, workspace root, background denial, escalated retry.
+packages/shell/bash-sandbox/tests/partial-landlock.spec.ts	read	Partial-Landlock runner-failure classification: fatal line vs informational notice, and a child "Permission denied" classified as denial rather than runner failure.
+packages/shell/bash-sandbox/tests/sandbox.spec.ts	read	Large unit spec (40+ cases): provider hand-off, fail-closed paths, danger-full-access bypass, per-call policy, denial dialects, per-task sandbox facts.
+packages/shell/bash-sandbox/tests/seatbelt.e2e.ts	read	Seatbelt end-to-end: EPERM denial text, BASH_ENV evaluated only after confinement, escalated retry.
+packages/shell/bash-sandbox/tsconfig.json	read	TS project for the sandbox executor; references cordis/sandbox/sandbox-policy/bash-local and the native system entry.
+packages/shell/pwsh-local/package.json	read	ESM manifest for @deepseek-ai/dsh-pwsh-local; peer-deps dsh-shell/dsh-subprocess/dsh-timeout; runtime dep schemastery.
+packages/shell/pwsh-local/README.i18n.yaml	read	Bilingual pairing record with 20 per-section hashes.
+packages/shell/pwsh-local/README.md	read	PowerShell executor reference: pwsh resolution order, UTF-8 output pinning, one-argv-element -Command domain, Windows exit-1-without-signal limit.
+packages/shell/pwsh-local/README.zh.md	read	Chinese translation; heading census (25 headings) mirrors the English structure.
+packages/shell/pwsh-local/src/index.ts	read	PwshLocalExecutor: call-for-call mirror of bash-local with a pwsh argv seam, ENCODING_PREAMBLE, and lazy pwshPath re-resolution.
+packages/shell/pwsh-local/src/resolve.ts	read	Dependency-free pwsh resolution: candidatePwshPaths()/resolvePwshPath() as pure functions of (configured, env, platform), lstat instead of stat.
+packages/shell/pwsh-local/tests/executor.spec.ts	read	~790-line spec: path resolution, spawn construction, provider rejection handling, first-cause classification, background handles, ownership across reload.
+packages/shell/pwsh-local/tests/settings.spec.ts	read	Live-config spec: changed budgets and a changed pwsh path apply without remounting the executor.
+packages/shell/pwsh-local/tsconfig.json	read	TS project: src -> lib/types with cordis/schemastery/brand/timeout/shell/subprocess references.
+packages/shell/pwsh-sandbox/locale/en.json	read	UI locale, English: meta.title "pwsh-sandbox" only.
+packages/shell/pwsh-sandbox/locale/zh.json	read	UI locale, Chinese: title plus description for the PowerShell sandbox executor.
+packages/shell/pwsh-sandbox/package.json	read	ESM manifest; peer-deps dsh-shell/dsh-pwsh-local/dsh-sandbox/dsh-sandbox-policy; ships locale/*.json.
+packages/shell/pwsh-sandbox/README.i18n.yaml	read	Bilingual pairing record with 23 per-section hashes.
+packages/shell/pwsh-sandbox/README.md	read	Pwsh confining executor reference: platform-neutral confinement, Windows ACL mode effects, deny-only seam, fail-closed contract.
+packages/shell/pwsh-sandbox/README.zh.md	read	Chinese translation; heading census (30 headings) mirrors the English structure.
+packages/shell/pwsh-sandbox/src/helpers.ts	read	Full classification dialect: isRunnerSpawnFailure (argv[0]-attributing ENOENT/EACCES), classifyRunnerFailure (exit-gated fatal signatures vs informational lines), matchesSignature.
+packages/shell/pwsh-sandbox/src/index.ts	read	SandboxPwshExecutor: confines the exact pwsh argv, per-process confinement facts, denial/enforcement/runnerFailed stamping, in-place result() decoration.
+packages/shell/pwsh-sandbox/tests/acl.e2e.ts	read	Windows ACL end-to-end: read-only write denial with reads allowed, workspace-write private temp, ambient temp and escape denied.
+packages/shell/pwsh-sandbox/tests/foreground-timeout.spec.ts	read	Preparation-deadline spec for the pwsh twin: remaining budget passed on, cancellation preserved, timeout first.
+packages/shell/pwsh-sandbox/tests/sandbox.spec.ts	read	~45-case unit spec: helper predicates, asynchronous confinement, fail-closed SANDBOX_UNAVAILABLE, per-call policy, background facts.
+packages/shell/pwsh-sandbox/tsconfig.json	read	TS project for the pwsh sandbox executor; references sandbox/sandbox-policy/pwsh-local and the native system entry.
+packages/shell/README.i18n.yaml	read	Bilingual pairing record for the shell group map: 7 per-section hashes.
+packages/shell/README.md	read	Group map for the bash capability family: the ten package rows with their ctx keys and the profile-layer selection rule.
+packages/shell/README.zh.md	read	Chinese translation of the group map; front matter and heading census read (5 sections).
+packages/shell/shell-env/locale/en.json	read	UI locale, English: meta.title "shell-env" only.
+packages/shell/shell-env/locale/zh.json	read	UI locale, Chinese: title plus description for the managed shell environment.
+packages/shell/shell-env/package.json	read	ESM manifest; peer-deps cordis/app-boot/home-paths/shell/tools; runtime dep schemastery.
+packages/shell/shell-env/README.i18n.yaml	read	Bilingual pairing record with 18 per-section hashes.
+packages/shell/shell-env/README.md	read	Managed DSH_* environment reference: reserved built-ins, contributor registration, effect-scoped disposal, and the note that the environment never enters the request prefix.
+packages/shell/shell-env/README.zh.md	read	Chinese translation; heading census (24 headings) mirrors the English structure.
+packages/shell/shell-env/src/index.ts	read	ShellEnvRegistry: declared-key ownership with loud conflicts, per-execution collect() into a frozen key-sorted snapshot, built-in facts reserved.
+packages/shell/shell-env/tests/shell-env.spec.ts	read	Registry spec: built-in collection, profile context, contributor resolution, duplicate/undeclared/non-string rejection, effect-scoped disposal.
+packages/shell/shell-env/tsconfig.json	read	TS project for the shell-env registry with cordis/schemastery/shell/home-paths/tools/app-boot references.
+packages/shell/shell/package.json	read	ESM manifest for the abstract @deepseek-ai/dsh-shell seam; peer-deps dsh-subprocess/dsh-sandbox/cordis, no runtime deps.
+packages/shell/shell/README.i18n.yaml	read	Bilingual pairing record with 21 per-section hashes.
+packages/shell/shell/README.md	read	Seam reference: foreground vs background as projections of one spawn, the request/spec split, the shared exit-status contract, and the stated known limits.
+packages/shell/shell/README.zh.md	read	Chinese translation; heading census (25 headings) mirrors the English structure.
+packages/shell/shell/src/index.ts	read	Abstract ShellExecutor service: resolve()/execute() contract, the semantics each implementation must honour, duplicate-service behaviour.
+packages/shell/shell/src/render.ts	read	parseExitStatus(): the shared inverse of the "[exit code: N]" / "[killed by signal: X]" markers the tool renderers append.
+packages/shell/shell/src/types.ts	read	The seam vocabulary: ShellExecRequest vs resolved ShellExecSpec, first-cause timedOut/aborted, ShellProcess/ShellExecution, non-consuming observed streams.
+packages/shell/shell/tests/render.spec.ts	read	36-line spec pinning the exit-marker parse edges: marker-like output is not a marker, timeout markers stay in the body.
+packages/shell/shell/tests/service.spec.ts	read	Seam spec: a stub subclass registers as ctx.shell, one execution with two projections, no default sandbox mode, second registration throws.
+packages/shell/shell/tsconfig.json	read	TS project for the abstract seam with cordis/subprocess/sandbox references.
+packages/shell/tool-bash-persistent/locale/en.json	read	UI locale, English: meta.title "tool-bash-persistent" only.
+packages/shell/tool-bash-persistent/locale/zh.json	read	UI locale, Chinese: title plus description for the persistent Bash tool.
+packages/shell/tool-bash-persistent/package.json	read	ESM manifest; peer-deps dsh-agent/output-retention/terminal/timeout/tools/working-directory; exports no "./src/*".
+packages/shell/tool-bash-persistent/README.i18n.yaml	read	Bilingual pairing record with 25 per-section hashes.
+packages/shell/tool-bash-persistent/README.md	read	Persistent Bash tool reference: marker-anchored extraction, reset-never-repair, owner-scoped lifecycle, per-agent serialisation.
+packages/shell/tool-bash-persistent/README.zh.md	read	Chinese translation; heading census (24 headings) mirrors the English structure.
+packages/shell/tool-bash-persistent/src/index.ts	read	Persistent bash tool: per-owner shell registry, nonce marker wrapping, scrollback paging/extraction, per-owner serialisation queue, reset on any uncertain state.
+packages/shell/tool-bash-persistent/tests/loader-composition.spec.ts	read	Loader-composition spec: cwd and environment are preserved across calls through a real composition.
+packages/shell/tool-bash-persistent/tests/tools.spec.ts	read	~18-case spec: shell reuse, inferred-idle vs stdin_read, shell exit paths, surrogate-pair clipping, scrollback assembly, cancellation and spawn rollback.
+packages/shell/tool-bash-persistent/tsconfig.json	read	TS project for the persistent bash tool with cordis/output-retention/agent/tools/terminal/timeout/working-directory references.
+packages/shell/tool-bash/locale/en.json	read	UI locale, English: meta.title "tool-bash" only.
+packages/shell/tool-bash/locale/zh.json	read	UI locale, Chinese: title plus description for the Bash command tool.
+packages/shell/tool-bash/package.json	read	ESM manifest; peer-deps dsh-shell/shell-env/jobs/sandbox/sandbox-policy/system-prompt/tools/user-approval/working-directory.
+packages/shell/tool-bash/README.i18n.yaml	read	Bilingual pairing record with 41 per-section hashes (the largest in the shard).
+packages/shell/tool-bash/README.md	read	Model-facing bash tool reference: foreground-as-job promotion, one-shot sandbox escalation, the full marker vocabulary, and a per-section KV-cache effect analysis.
+packages/shell/tool-bash/README.zh.md	read	Chinese translation; heading census (37 headings) mirrors the English structure including every Model Experience subsection.
+packages/shell/tool-bash/src/background.ts	read	Job-runtime adaptation: processOutcome() maps killed/completed, processSources() exposes lazy non-consuming readers, ringDelta() renders the ring read, processJob() owns async preparation.
+packages/shell/tool-bash/src/index.ts	read	The bash tool: schema advertisement, escalation through ctx.approval, per-call workdir/sandbox/env resolution, foreground promotion to a background job, UI card presentation.
+packages/shell/tool-bash/src/render.ts	read	Model-facing rendering: stdout then a marked stderr section, then sandbox/timeout/stopped/signal/exit markers; renderPromoted and renderJobRead.
+packages/shell/tool-bash/tests/background-start.spec.ts	read	Ownership spec during asynchronous shell startup: observation stays empty, abort kills a late process, startup failure reports through job completion.
+packages/shell/tool-bash/tests/background.spec.ts	read	Background spec: streaming into the job ring, killed detail merge, the stderr note, foreground-as-job promotion and hand-over, registry-refused fallback.
+packages/shell/tool-bash/tests/integration.spec.ts	read	Agent-loop integration: session cwd routing, scrubbed DSH_* namespace, non-zero exit as result text, background ack then job_output collection.
+packages/shell/tool-bash/tests/tools.spec.ts	read	~65-case tool spec: result rendering, schema gating, HMR disposal, escalation pairing and approval routing, session-cwd routing, processOutcome mapping.
+packages/shell/tool-bash/tsconfig.json	read	TS project for the bash tool with 15 project references (tools, jobs, sandbox, system-prompt, working-directory, shell-env).
+packages/shell/tool-pwsh-persistent/locale/en.json	read	UI locale, English: meta.title "tool-pwsh-persistent" only.
+packages/shell/tool-pwsh-persistent/locale/zh.json	read	UI locale, Chinese: title plus description for the persistent PowerShell tool.
+packages/shell/tool-pwsh-persistent/package.json	read	ESM manifest; peer-deps dsh-agent/output-retention/terminal/timeout/tools/working-directory; exports no "./src/*".
+packages/shell/tool-pwsh-persistent/README.i18n.yaml	read	Bilingual pairing record with 25 per-section hashes.
+packages/shell/tool-pwsh-persistent/README.md	read	Persistent pwsh tool reference: backtick escaping, PSReadLine echo stripping, backend-owned prompt readiness, and the stated Windows-specific limits.
+packages/shell/tool-pwsh-persistent/README.zh.md	read	Chinese translation; heading census (24 headings) mirrors the English structure.
+packages/shell/tool-pwsh-persistent/src/index.ts	read	Pwsh twin of the persistent bash tool: backtick-escaped wrapper, PSReadLine echo stripping, $LASTEXITCODE status extraction, marker-based reset.
+packages/shell/tool-pwsh-persistent/tests/loader-composition.spec.ts	read	Loader-composition spec: cwd and environment preserved across calls through a real pwsh composition.
+packages/shell/tool-pwsh-persistent/tests/readiness-timeline.spec.ts	read	Spec for the readiness timeline helper: prompt-evidence replay rules and one-millisecond send handover timing.
+packages/shell/tool-pwsh-persistent/tests/readiness-timeline.ts	read	354-line diagnostic helper (read its first 120 lines): records every chunk, poll, write and spawn with timestamps so a lost prompt fast path names the state that lost it.
+packages/shell/tool-pwsh-persistent/tests/tools.spec.ts	read	~19-case spec: shell reuse, echoed-wrapper stripping, exit paths, clipping, scrollback assembly, cancellation and spawn rollback.
+packages/shell/tool-pwsh-persistent/tsconfig.json	read	TS project for the persistent pwsh tool with cordis/output-retention/agent/tools/terminal/timeout/working-directory references.
+packages/shell/tool-pwsh/locale/en.json	read	UI locale, English: meta.title "tool-pwsh" only.
+packages/shell/tool-pwsh/locale/zh.json	read	UI locale, Chinese: title plus description for the PowerShell command tool.
+packages/shell/tool-pwsh/package.json	read	ESM manifest; peer-deps dsh-shell/shell-env/jobs/sandbox/sandbox-policy/system-prompt/tools/user-approval/working-directory.
+packages/shell/tool-pwsh/README.i18n.yaml	read	Bilingual pairing record with 40 per-section hashes.
+packages/shell/tool-pwsh/README.md	read	Model-facing pwsh tool reference: Windows restricted-token contracts taught in the description, exit-1-after-interruption reading, per-section KV-cache analysis.
+packages/shell/tool-pwsh/README.zh.md	read	Chinese translation; heading census (36 headings) mirrors the English structure.
+packages/shell/tool-pwsh/src/background.ts	read	Pwsh twin of the bash background adaptation: job outcome mapping, lazy non-consuming pull sources, ring rendering.
+packages/shell/tool-pwsh/src/index.ts	read	The pwsh tool: PowerShell-dialect schema, the ConstrainedLanguage and named-pipe EPERM contracts taught in the tool description, escalation and background promotion.
+packages/shell/tool-pwsh/src/render.ts	read	Pwsh renderer: RenderablePwshResult shape plus renderPwshResult/renderPwshPromoted/renderPwshJobRead as the bash renderer's twin.
+packages/shell/tool-pwsh/tests/background-start.spec.ts	read	Pwsh twin of the asynchronous-startup ownership spec (identical seven cases).
+packages/shell/tool-pwsh/tests/background.spec.ts	read	Pwsh background spec: observed channels into the job ring, a failing reader warns once, foreground-as-job promotion, registry-refused fallback.
+packages/shell/tool-pwsh/tests/fixtures/loader/cordis.yml	read	Minimal Loader composition YAML for the tool-pwsh smoke: system-prompt, fs, projections, working-directory, tools, subprocess, pwsh-local, shell-env, jobs, tool-jobs, tool-pwsh.
+packages/shell/tool-pwsh/tests/fixtures/loader/driver.ts	read	Smoke driver: boots the composition, runs one real foreground and one real background pwsh command, and writes pwsh-loader-report.json for the spec to inspect.
+packages/shell/tool-pwsh/tests/integration.spec.ts	read	Integration spec: clean exit with no marker, stderr section plus nonzero marker, session-relative paths, timeout marker, abort, background via the real job_output tool.
+packages/shell/tool-pwsh/tests/loader.spec.ts	read	Loader smoke spec: the composition registers the pwsh surface and renders real foreground and background results.
+packages/shell/tool-pwsh/tests/tools.spec.ts	read	~80-case tool spec: registration, validation, execution through the seam, sandbox policy and escalation, background through the job runtime, UI presentation and round-trip exit parsing.
+packages/shell/tool-pwsh/tsconfig.json	read	TS project for the pwsh tool with 16 project references (note shell-env listed twice).
+packages/subprocess/README.i18n.yaml	read	Bilingual pairing record for the subprocess group map: 7 per-section hashes.
+packages/subprocess/README.md	read	Group map: the subprocess service, the local host provider and the Win32 library, with their roles and ctx keys.
+packages/subprocess/README.zh.md	read	Chinese translation of the group map; front matter and heading census (5 sections).
+packages/subprocess/subprocess-local/locale/en.json	read	UI locale, English: meta.title "subprocess-local" only.
+packages/subprocess/subprocess-local/locale/zh.json	read	UI locale, Chinese: title plus description for the local subprocess provider.
+packages/subprocess/subprocess-local/package.json	read	ESM manifest with runtime deps koffi 3.1.1 and node-pty 1.2.0-beta.15, a postinstall chmod script, and separate ./runner and ./output exports.
+packages/subprocess/subprocess-local/README.i18n.yaml	read	Bilingual pairing record with 22 per-section hashes.
+packages/subprocess/subprocess-local/README.md	read	Provider reference: managed-range selection (systemd scope vs Windows Job vs fallback), tail-keep collection with spill, control transport, terminal sessions, shutdown behaviour, and an unusually detailed limitations section.
+packages/subprocess/subprocess-local/README.zh.md	read	Chinese translation; heading census (25 headings) mirrors the English structure.
+packages/subprocess/subprocess-local/scripts/ensure-spawn-helper.mjs	read	Postinstall script: chmod 0755 on node-pty's prebuilt spawn-helper under prebuilds/<platform>-<arch> or build/Release.
+packages/subprocess/subprocess-local/src/bin.ts	read	Thin runner entry: consumes the private selector and runs the runner core, or exits 127 when no selector was supplied.
+packages/subprocess/subprocess-local/src/control-spawn.ts	read	Parent-side control pipe setup: reads Node's extra stdio slot for fd 7 and stamps the private launch marker, rejecting a caller-supplied one.
+packages/subprocess/subprocess-local/src/index.ts	read	LocalSubprocessRuntime: live-handle ownership, host-exit finalisation, executable lookup, containment-mode selection, and PTY allocation through node-pty.
+packages/subprocess/subprocess-local/src/linux-execve.ts	read	Lazy libc execve/fcntl through koffi: clears FD_CLOEXEC on fds 0-2 (and 7), then replaces the process image.
+packages/subprocess/subprocess-local/src/linux-scope-selector.ts	read	Linux containment decision state machine: probe once, re-probe only on a scope-not-started, a new manager listener, or a changed systemd-run binary.
+packages/subprocess/subprocess-local/src/linux-scope.ts	read	724 lines of systemd transient-scope mechanics: capability probes, manager confirmation via /proc/net/unix, scope signalling, empty-range proof, and the launch path.
+packages/subprocess/subprocess-local/src/managed-owner.ts	read	Minimal managed-range owner interface plus waitWithAbort(), the shared cancellable range wait.
+packages/subprocess/subprocess-local/src/output.ts	read	Bounded tail-keep OutputCollector with an optional private spill file: byte-exact tail window, O_EXCL 0600 spill, best-effort failure that never interrupts collection.
+packages/subprocess/subprocess-local/src/process-inspector.ts	read	Platform process-table inspection: one snapshot per poll, PID+start-time identity fencing, and an exact Linux stdin-wait probe via /proc syscall and fdinfo.
+packages/subprocess/subprocess-local/src/runner-launch.ts	read	Parent-side runner invocation: source/built/packaged entry selection, bootstrap environment, Windows search-path resolution, and null-byte validation of argv/cwd/env.
+packages/subprocess/subprocess-local/src/runner-protocol.ts	read	Closed private transports: strictly parsed Linux launch-request files and Windows IPC messages, bounded serialised errors, and private-directory cleanup.
+packages/subprocess/subprocess-local/src/shell-activity.ts	read	Optional bash/zsh shell-lifecycle integration: private rc/zshenv files that record idle/busy state, with prompt-evidence fencing against input.
+packages/subprocess/subprocess-local/src/spawn-runner.ts	read	One-shot Linux exec bootstrap and the Windows Job-owning runner: strict IPC, start cancellation, job polling, and failure reporting.
+packages/subprocess/subprocess-local/src/spawn.ts	read	Shared process plumbing: childEnv, spec validation, SIGTERM->SIGKILL escalation, the fallback process-group owner, and bindManagedProcess lifecycle.
+packages/subprocess/subprocess-local/src/terminal.ts	read	LocalTerminalHandle: node-pty backpressure, descendant adoption fenced by shell identity, activity inspection, Windows taskkill tiers, and settle-on-missing-exit.
+packages/subprocess/subprocess-local/src/windows-inspector.ts	read	Windows process table via koffi Toolhelp32: lazy snapshot, creation-time identity, wait-state liveness, and taskkill tree signalling.
+packages/subprocess/subprocess-local/src/windows-job.ts	read	Windows Job launch through the private IPC runner: capability re-probe per spawn, strict result parsing, and range quiescence proof.
+packages/subprocess/subprocess-local/tests/control.spec.ts	read	Control-pipe spec: paused endpoint disposal, caller-endpoint closure, absent channel on an ordinary spawn, rejection of a caller-authored marker.
+packages/subprocess/subprocess-local/tests/fixtures/control-child.ts	read	Fixture child that opens the inherited control channel at fd 7 and echoes binary bytes independently of stdio.
+packages/subprocess/subprocess-local/tests/fixtures/hold-linux-bootstrap.ts	read	Fixture that keeps the Linux launch request unconsumed (stdin resumed) until the parent terminates it.
+packages/subprocess/subprocess-local/tests/fixtures/managed-tree.ts	read	Fixture spawning a TERM/SIGHUP-ignoring descendant and publishing both pids atomically through a renamed state file.
+packages/subprocess/subprocess-local/tests/fixtures/process-exit-host.ts	read	Fixture host that spawns a managed tree and then exits directly, via uncaught exception, via unhandled rejection, or by disposing the fiber.
+packages/subprocess/subprocess-local/tests/linux-execve.spec.ts	read	Spec for the two libc failure paths: unreadable descriptor flags and a failed close-on-exec clear.
+packages/subprocess/subprocess-local/tests/linux-scope-selector.spec.ts	read	Spec that the selector consults only the observations each verdict needs (probe, listener, launcher identity, manager confirmation).
+packages/subprocess/subprocess-local/tests/linux-scope.spec.ts	read	~1100-line spec: capability selection, establishment vs absence, poll backoff, kill failure proof, empty-range release, malformed manager state.
+packages/subprocess/subprocess-local/tests/local.spec.ts	read	~1400-line provider spec: host-exit finalisation ordering, executable resolution, Linux scope selection and re-probe, Windows Job re-probe, disposal semantics.
+packages/subprocess/subprocess-local/tests/native-containment.spec.ts	read	Linux native containment e2e: abort before bootstrap consumption, setsid descendant termination, no replay on ENOENT/EACCES, PTY identity preserved.
+packages/subprocess/subprocess-local/tests/native-windows.spec.ts	read	Windows native e2e: hidden console windows, raw stdin writability, null-device stdin semantics, direct exit before descendant termination.
+packages/subprocess/subprocess-local/tests/process-exit.spec.ts	read	Host-exit cleanup spec: normal terminate-and-join disposal preserved and the exit listener removed.
+packages/subprocess/subprocess-local/tests/process-inspector.spec.ts	read	Inspector spec: unreadable /proc, zombie-only groups, stat parsing, rooted tree capture, exact kernel-ABI stdin waits, macOS identity fencing.
+packages/subprocess/subprocess-local/tests/shell-activity-files.spec.ts	read	Shell-activity file spec: only fresh complete records from the original shell count, unsupported launches untouched, private files removed on disposal.
+packages/subprocess/subprocess-local/tests/shell-activity.spec.ts	read	Shell-activity behaviour spec: busy detection for silent work and background jobs, vared/multi-line prompts, stopped jobs, custom signal traps.
+packages/subprocess/subprocess-local/tests/spawn-runner-built.e2e.ts	read	Artifact smoke: executes the source runner entry through the provider-owned core.
+packages/subprocess/subprocess-local/tests/spawn-runner.spec.ts	read	~1000-line runner spec: strict protocol parsing, bootstrap environment hygiene, NUL validation, Windows path search, exec bootstrap, Job runner ownership.
+packages/subprocess/subprocess-local/tests/spawn.spec.ts	read	~1600-line spawn spec: stdio dispositions, env tombstones, signal escalation, output caps and spill behaviour, and every OutputCollector failure path.
+packages/subprocess/subprocess-local/tests/terminal.spec.ts	read	~800-line terminal spec: backpressure, managed-range TERM/KILL tiers, descendant adoption and PID-reuse refusal, Windows Ctrl-C and taskkill tiers.
+packages/subprocess/subprocess-local/tests/windows-inspector.spec.ts	read	Windows inspector spec: lazy enumeration, children-first tree walk, cycle termination, pseudo foreground group, taskkill signal mapping.
+packages/subprocess/subprocess-local/tests/windows-job.spec.ts	read	Windows Job spec: capability re-probe per spawn, strict runner IPC, direct-outcome vs range-quiescence mapping, fail-closed malformed results.
+packages/subprocess/subprocess-local/tsconfig.json	read	TS project for the local provider with cordis/subprocess/win32-process/timeout/lazy-require references.
+packages/subprocess/subprocess-local/tsdown.config.ts	read	tsdown build config: three entries (index, runner, output) emitted to lib as ESM, target es2024, no dts, no clean.
+packages/subprocess/subprocess/package.json	read	ESM manifest for the abstract @deepseek-ai/dsh-subprocess seam; peer-deps cordis/dsh-http-proxy, no runtime deps; exports "./control".
+packages/subprocess/subprocess/README.i18n.yaml	read	Bilingual pairing record with 23 per-section hashes.
+packages/subprocess/subprocess/README.md	read	Seam reference: fully explicit spawn requests, the three output dispositions, the control pipe, managed-range lifetime, and the environment scrub.
+packages/subprocess/subprocess/README.zh.md	read	Chinese translation; heading census (26 headings) mirrors the English structure.
+packages/subprocess/subprocess/src/control.ts	read	Inherited control channel helper: consumes the private marker and opens a byte-mode duplex at fd 7.
+packages/subprocess/subprocess/src/index.ts	read	Abstract SubprocessRuntime seam plus scrubbedParentEnv(): credential-shaped and DSH_* names dropped, proxy variables restored for children.
+packages/subprocess/subprocess/src/types.ts	read	The subprocess vocabulary: spawn spec with no defaults, stdio modes, offset-based non-consuming readers, outcomes, and the terminal primitive types.
+packages/subprocess/subprocess/tests/control.spec.ts	read	Control channel spec: the marker is consumed and the descriptor opened exactly once.
+packages/subprocess/subprocess/tests/egress.spec.ts	read	Child egress spec: a child Node honours the proxy the user exported, including ALL_PROXY-only and per-scheme filling.
+packages/subprocess/subprocess/tests/service.spec.ts	read	Seam spec: a stub subclass registers as ctx.subprocess, a second registration throws, and scrubbedParentEnv drops credential/DSH_ names case-insensitively.
+packages/subprocess/subprocess/tsconfig.json	read	TS project for the abstract seam with cordis/http-proxy/launch-environment references.
+packages/subprocess/subprocess/tsdown.config.ts	read	tsdown build config: two entries (index, control) emitted to lib as ESM, no dts.
+packages/subprocess/win32-process/package.json	read	ESM manifest for the @deepseek-ai/dsh-win32-process library; runtime dep koffi 3.1.1, no cordis service.
+packages/subprocess/win32-process/README.i18n.yaml	read	Bilingual pairing record with 13 per-section hashes.
+packages/subprocess/win32-process/README.md	read	Library reference: restricted-token and ordinary Job creation, settlement operations, the inherited fd-7 CRT descriptor, and the header-probe verification procedure.
+packages/subprocess/win32-process/README.zh.md	read	Chinese translation; heading census (17 headings) mirrors the English structure.
+packages/subprocess/win32-process/src/abi.ts	read	Win32 constants and x64 layout sizes/offsets for STARTUPINFOW, PROCESS_INFORMATION and the Job accounting records.
+packages/subprocess/win32-process/src/control-stdio.ts	read	Encodes the child's CRT descriptor table so fd 7 carries the inherited control pipe before Node allocates descriptors.
+packages/subprocess/win32-process/src/errors.ts	read	Win32Error carrying the failing API name and the exact error code.
+packages/subprocess/win32-process/src/ffi.ts	read	Lazy koffi binding table for kernel32/advapi32 plus uv_get_osfhandle, with module-load struct-size assertions and error formatting.
+packages/subprocess/win32-process/src/index.ts	read	Barrel re-export of the ABI constants, errors, binding table, and the process/Job primitives.
+packages/subprocess/win32-process/src/koffi.ts	read	One-line lazy require of Koffi's CommonJS entry, so non-Windows processes never load the native library.
+packages/subprocess/win32-process/src/process.ts	read	Typed Win32 process operations: CommandLineToArgvW-correct quoting, restricted-token and current-token suspended spawn into a kill-on-close Job, pipe draining, job polling.
+packages/subprocess/win32-process/tests/ffi.spec.ts	read	ABI spec: x64 structure sizes match, NULL out-parameters handled, the exact Win32 error formatted and thrown.
+packages/subprocess/win32-process/tests/fixtures/console-state.ts	read	Fixture that reports the inherited console's attachment and visibility from a real Windows child via koffi.
+packages/subprocess/win32-process/tests/ordinary-process.spec.ts	read	Ordinary Job spec: suspended create, Job assignment, resume, carrier descriptor resolution, polling, and Job accounting.
+packages/subprocess/win32-process/tests/process-allocation-failure.spec.ts	read	Allocation-cleanup spec: startup/process-info/pipe-slot/exit-code-slot allocation failures all free their native memory.
+packages/subprocess/win32-process/tests/process-failure-paths.spec.ts	read	Failure-path spec: every pipe, Job, inheritance and resume failure closes exactly the handles it owns.
+packages/subprocess/win32-process/tests/process.spec.ts	read	Restricted-token spec: control carrier inheritance, create-assign-resume order, GetStdHandle/CreateProcess error capture before cleanup changes last-error.
+packages/subprocess/win32-process/tests/quote.spec.ts	read	Spec that quoteArg() builds one CreateProcess command line that round-trips back to the original argv.
+packages/subprocess/win32-process/tsconfig.json	read	TS project for the Win32 library with cordis/lazy-require references.
+packages/subprocess/win32-process/verify/abi-probe.cpp	read	63-line MinGW probe: prints every recorded constant, size and offset and static_asserts the values the TypeScript constants duplicate.
+packages/terminal/README.i18n.yaml	read	Bilingual pairing record for the terminal group map: 7 per-section hashes.
+packages/terminal/README.md	read	Group map: the owner-scoped terminal session service and the shell backend that registers the "shell" type.
+packages/terminal/README.zh.md	read	Chinese translation of the group map; front matter and heading census (5 sections).
+packages/terminal/terminal-bash/locale/en.json	read	UI locale, English: meta.title "terminal-bash" only.
+packages/terminal/terminal-bash/locale/zh.json	read	UI locale, Chinese: title plus description for the persistent shell backend.
+packages/terminal/terminal-bash/package.json	read	ESM manifest; runtime deps @xterm/headless, schemastery, dsh-lazy-require, dsh-pwsh-local; peer-deps terminal/sandbox/subprocess/session-projections.
+packages/terminal/terminal-bash/README.i18n.yaml	read	Bilingual pairing record with 29 per-section hashes.
+packages/terminal/terminal-bash/README.md	read	Backend reference: the three readiness tiers, the prompt-tail grace, the sandbox-mode fence, and the line-oriented output contract.
+packages/terminal/terminal-bash/README.zh.md	read	Chinese translation; heading census (30 headings) mirrors the English structure.
+packages/terminal/terminal-bash/src/config.ts	read	Resolved config and validation: dialect defaults, positive-safe-integer bounds, and the rule that a nonzero grace must contain one readiness poll.
+packages/terminal/terminal-bash/src/index.ts	read	Backend registration: sandbox-mode fence on the owner, dialect argv/env assembly, and the bash vs pwsh startup sequence with one absolute deadline.
+packages/terminal/terminal-bash/src/sanitize.ts	read	Streaming terminal sanitizer: strips CSI/OSC/short escapes with split-sequence carry, and recognises the owned OSC 133;D prompt marker.
+packages/terminal/terminal-bash/src/session.ts	read	793 lines: incremental bounded scrollback buffer, send lifecycle, three-tier readiness polling, terminal-protocol reply draining, and cancellation/teardown.
+packages/terminal/terminal-bash/tests/config.spec.ts	read	Config spec: bound validation, the handoff-grace floor, and dialect resolution including the empty-array-as-unset rule.
+packages/terminal/terminal-bash/tests/index.spec.ts	read	Backend spec: startup rollback and cleanup aggregation, confined argv wrapping, the pwsh prompt bootstrap, and the sandbox-mode fence.
+packages/terminal/terminal-bash/tests/local.spec.ts	read	Local e2e: cwd and environment persistence, PS1 override restoration, confined argv wrapping, foreground signalling, and UTF-8 output pinning.
+packages/terminal/terminal-bash/tests/sanitize.spec.ts	read	Sanitizer spec: split CSI/OSC removal, unrelated OSC and BEL removal, CR normalisation across chunks, and bounded unterminated sequences.
+packages/terminal/terminal-bash/tests/session-buffer.spec.ts	read	Incremental-retention spec: exact tail across the 4 MiB limit, trailing empty-line counting, split UTF-8 decoding, and surrogate-pair preservation.
+packages/terminal/terminal-bash/tests/session.spec.ts	read	~1350-line session spec: readiness tiers, prompt-tail grace, cancellation ownership, protocol reply draining, and the many "does not release early" cases.
+packages/terminal/terminal-bash/tsconfig.json	read	TS project for the shell backend with cordis/schemastery/pwsh-local/agent/session/terminal/sandbox/subprocess/lazy-require/working-directory references.
+packages/terminal/terminal/locale/en.json	read	UI locale, English: meta.title "terminal" only.
+packages/terminal/terminal/locale/zh.json	read	UI locale, Chinese: title plus description for the persistent terminal service.
+packages/terminal/terminal/package.json	read	ESM manifest for the @deepseek-ai/dsh-terminal seam; peer-deps dsh-agent/dsh-brand/cordis, no runtime deps.
+packages/terminal/terminal/README.i18n.yaml	read	Bilingual pairing record with 25 per-section hashes.
+packages/terminal/terminal/README.md	read	Service reference: exact-owner fencing, machine-routable error codes, send reservation, and the ownership/cleanup rules.
+packages/terminal/terminal/README.zh.md	read	Chinese translation; heading census (27 headings) mirrors the English structure including the undecided-directions subsection.
+packages/terminal/terminal/src/index.ts	read	TerminalSessionService: backend registry, publish-after-spawn, per-owner reservations, exact-owner operation fencing, and awaited disposal.
+packages/terminal/terminal/src/types.ts	read	PTY contracts: backend/session interfaces, wait reasons, signal set, scrollback page shape, and the branded session id.
+packages/terminal/terminal/tests/service.spec.ts	read	~30-case service spec: backend registry disposal, owner fencing, name reservations, cancellation preservation, rollback failure reporting, disposal aggregation.
+packages/terminal/terminal/tsconfig.json	read	TS project for the terminal service with cordis/agent/brand references.

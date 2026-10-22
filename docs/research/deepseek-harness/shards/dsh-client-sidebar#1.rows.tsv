@@ -1,0 +1,115 @@
+packages/client/ui-renderer/locale/en.json	read	Package meta dictionary only (meta.title = "ui-renderer"); the package ships no end-user copy.
+packages/client/ui-renderer/locale/zh.json	read	Chinese package meta: 界面渲染 plus a meta.description that en.json does not carry.
+packages/client/ui-renderer/package.json	read	Browser-only client plugin (dsh.client.platform web, immediately true); exports . / ./client / ./src/*; React + uSES are devDependencies, cordis a peer.
+packages/client/ui-renderer/README.i18n.yaml	read	Per-heading EN/ZH content hashes for README.md, re-recordable with pnpm run verify-translation-pairing --write.
+packages/client/ui-renderer/README.md	read	Package reference: mount() hydrates the framework-free boot DOM and switches to React before the next paint; first frame waits for the whole roster; no Suspense.
+packages/client/ui-renderer/README.zh.md	read	Chinese mirror of README.md; same two limits (whole-roster first frame, no per-entry lazy loading).
+packages/client/ui-renderer/src/client/app.tsx	read	buildRenderApp returns the single ctx-level renderSlot('root', {}) closure; the whole layout tree hangs from the built-in root slot.
+packages/client/ui-renderer/src/client/bind.ts	read	The ONE uSES bridge in the client stack: subscribe/getSnapshot captured once per source into stable closures so components never resubscribe.
+packages/client/ui-renderer/src/client/bindings.tsx	read	Host/root/scope React contexts, the per-source hook WeakMap cache, and the keyed hook supporting (key,member) / (key,sel,eq) / (sel,eq) call forms.
+packages/client/ui-renderer/src/client/errors.ts	read	One class only: SlotAssemblyError, the category that must ESCAPE entry error boundaries (assembly failures fail loud).
+packages/client/ui-renderer/src/client/index.ts	read	Plugin apply(): builds the SlotRegistry, installs the renderer, reflects ctx.uiRenderer.mount; BootHandoff preserves the boot DOM for one frame before switching.
+packages/client/ui-renderer/src/client/registry.ts	read	Cordis service over SlotCore: slots/changed bridge, inject() with declaration epochs, boot-once install/installLocale, store-instance axis, atomic root standard-source roster.
+packages/client/ui-renderer/src/client/scoped-slots.tsx	read	The React renderer: outlets with stable data-slot anchors, per-entry boundaries with abdication, chain election, factory occurrences, session-maybe adoption identity, identity-stable caches.
+packages/client/ui-renderer/src/client/use-sync-external-store.d.ts	read	Ambient typings for use-sync-external-store/shim/with-selector.js; the runtime package ships no types of its own.
+packages/client/ui-renderer/src/index.ts	read	Host loader entry: apply() is a no-op (the package is browser-only).
+packages/client/ui-renderer/tests/app.client.spec.tsx	read	buildRenderApp fails loud when no registry exists and renders the root slot tree through SlotTestRuntime.
+packages/client/ui-renderer/tests/bind.client.spec.tsx	read	uSES bridge contract: Object.is bail-out, custom equality, no resubscribe across re-renders, StrictMode-safe unsubscribe, method-style sources, selector memoisation.
+packages/client/ui-renderer/tests/factory-slots.client.spec.tsx	read	Factory occurrences: per-occurrence exclusive stores, caller-selected local components, crash attribution (definition vs caller), recursion refusal, duplicate-prop rejection.
+packages/client/ui-renderer/tests/inline-slots.client.spec.tsx	read	Inline slots anchor with span; an exhausted cell keeps the inline anchor; a disposed factory's child anchor is retained but renders empty.
+packages/client/ui-renderer/tests/keyed-hook-member.client.spec.tsx	read	The keyed hook's (key, member) form plus the absent source family returning undefined for every call form.
+packages/client/ui-renderer/tests/reconnect.client.spec.tsx	read	The mounted root DOM node survives a transport reconnect (new connection generation, same root element).
+packages/client/ui-renderer/tests/registry.client.spec.ts	read	SlotRegistry terminal-design account: three load-time throws, install contract, store-instance lifecycle per scope key, injection epochs, entry-unload cascade.
+packages/client/ui-renderer/tests/scoped-slots-real-core.client.spec.tsx	read	Integration over the real SlotCore: microtask-batched notifications, mutation-stable entries() references, stale bindings raised by the real ledger.
+packages/client/ui-renderer/tests/scoped-slots.client.spec.tsx	read	createSlotRenderer over a fake host: per-kind outlets, chain election, overlay chains, standard-kit synthesis, inject caching, session-maybe adoption identity.
+packages/client/ui-renderer/tests/session-provider.client.spec.tsx	read	SessionProvider semantics: explicit absence, nested providers bound independently, a same-id replacement generation resets local state.
+packages/client/ui-renderer/tests/stale-authorization.client.spec.tsx	read	A retained render binding dies with its entry; an HMR re-registration mints a fresh binding and the old closure stays dead.
+packages/client/ui-renderer/tests/ui-renderer.client.spec.tsx	read	Plugin apply(): mounts the app, hydrates the boot page without mutating it, returns an unmount disposer, retracts the service with its fiber.
+packages/client/ui-renderer/tests/use-projection.client.spec.tsx	read	useProjection arrives through the standard kit, keyed by projection key, undefined for unresolved keys, selector overload over the whole value.
+packages/client/ui-renderer/tsconfig.json	read	TS project: rootDir src, references the vendored cordis and the ui-slots package.
+packages/client/ui-renderer/tsdown.config.ts	read	Three-line bundle config delegating to the shared clientBundle helper.
+packages/client/ui-session/locale/en.json	read	Package meta dictionary only (meta.title = "ui-session").
+packages/client/ui-session/locale/zh.json	read	Chinese package meta: 会话界面连接 plus a description.
+packages/client/ui-session/package.json	read	Client plugin injecting remote-access, remotes, session-controller and ui-renderer; publishes the ./client entry.
+packages/client/ui-session/README.i18n.yaml	read	Per-heading EN/ZH hashes for the ui-session README.
+packages/client/ui-session/README.md	read	Package reference: the access hooks (useSessionAccess vs useAccess vs useRemoteAccess) and the stated limit that pending interactions are process-local projections.
+packages/client/ui-session/README.zh.md	read	Chinese mirror of the ui-session README.
+packages/client/ui-session/src/client/index.ts	read	UiSession service: per-binding standard-source materialisation, pending-interaction domains with precedence, running/completion-unread status, apply() wiring root hooks and the session scope adapter.
+packages/client/ui-session/src/client/session-provider.tsx	read	renderSessionArea: the empty branch when the binding has no session key, otherwise the children.
+packages/client/ui-session/src/index.ts	read	Host loader entry: apply() is a no-op.
+packages/client/ui-session/tests/status-controller.client.spec.ts	read	Running-state ownership across the real controller catalog: subagent catalog rows do not establish running status; the main view acknowledges completions.
+packages/client/ui-session/tests/ui-session.client.spec.ts	read	UiSession account: main-view retention watcher, stable per-generation sources, absent projection, contribution roster validation, status transitions, pending-interaction precedence and teardown.
+packages/client/ui-session/tsconfig.json	read	TS project with references to cordis, the three api client projects, session core, values, store, ui-renderer and ui-slots.
+packages/client/ui-session/tsdown.config.ts	read	Three-line bundle config delegating to the shared clientBundle helper.
+packages/client/ui-sidebar-browser/locale/en.json	read	Package meta dictionary only (meta.title = "ui-sidebar-browser").
+packages/client/ui-sidebar-browser/locale/zh.json	read	Chinese package meta: 浏览器面板 plus a description.
+packages/client/ui-sidebar-browser/package.json	read	Client plugin injecting workspace-controller, sidebar-right and ui-session; also exports a /types entry shared with the desktop shell.
+packages/client/ui-sidebar-browser/README.i18n.yaml	read	Per-heading EN/ZH hashes for the browser README.
+packages/client/ui-sidebar-browser/README.md	read	Package reference: the protocol policy, the iframe sandbox flags, the navigation state machine, and an honest list of isolation limits.
+packages/client/ui-sidebar-browser/README.zh.md	read	Chinese mirror of the browser README (first 60 of 120 lines read; the rest is the mirrored limitations section).
+packages/client/ui-sidebar-browser/src/client/browser/BrowserController.ts	read	Carrier-independent tab controller: address validation, four navigation commands, explicit restore, checkpoint persistence, and a per-tab controller registry.
+packages/client/ui-sidebar-browser/src/client/browser/BrowserFrame.ts	read	Carrier-neutral navigation state contract (BrowserFrameState) with the empty initial state factory.
+packages/client/ui-sidebar-browser/src/client/browser/BrowserNavigation.ts	read	Bounded application-known history (100 entries) and the load/known/unknown navigation state machine keyed by revision.
+packages/client/ui-sidebar-browser/src/client/browser/BrowserPage.ts	read	Two-face composition contract: a BrowserFrame (navigation) plus a BrowserPresentation (DOM attachment), with a lazy page factory.
+packages/client/ui-sidebar-browser/src/client/browser/BrowserPersistence.ts	read	Serializable tab state: history entries, index, request revision, navigation status and failure, plus the address-only checkpoint helper.
+packages/client/ui-sidebar-browser/src/client/browser/IframeImpl.ts	read	Iframe navigation provider: revision-scoped load/failure handling, transient sandbox toggle, snapshot derivation from the navigation state.
+packages/client/ui-sidebar-browser/src/client/browser/store.ts	read	Session-scoped persisted store (dsh.sidebar-browser.v1) keyed by tab id, with replace and forget actions.
+packages/client/ui-sidebar-browser/src/client/browser/url.ts	read	The address allowlist: HTTP/HTTPS only, credentials refused, the DSH application origin refused, 16 KiB cap, typed failure reasons.
+packages/client/ui-sidebar-browser/src/client/definition.tsx	read	Static Browser tab type (multiple, builtin priority) and its guide entry pointing at the browser.new command.
+packages/client/ui-sidebar-browser/src/client/electron/ElectronWebViewImpl.ts	read	Electron navigation and guest lifetime: lease acquisition, native event translation, bootstrap-document history clearing, superseded-promise suppression, crash recovery.
+packages/client/ui-sidebar-browser/src/client/electron/ElectronWebviewPresentation.ts	read	Owns the <webview> tag: creates a detached element bound to the approved partition/lease and attaches it to the mounted container.
+packages/client/ui-sidebar-browser/src/client/electron/pages.ts	read	Assembles the Electron page and wires mount/unmount to frame.attach()/frame.detach().
+packages/client/ui-sidebar-browser/src/client/electron/workspace.ts	read	Resolves the storage partition by canonical workspace CWD (not workspace id), waiting for the authoritative baseline and honouring abort.
+packages/client/ui-sidebar-browser/src/client/index.ts	read	Plugin apply(): registers the shortcut, the locale, the tab type (keepMounted only on desktop), the body slot with a per-session controller map, and the title slot.
+packages/client/ui-sidebar-browser/src/client/locales.ts	read	zh/en dictionaries (zh is the key-set source of truth) with the LocaleNamespaceMap merge for sidebarBrowser.
+packages/client/ui-sidebar-browser/src/client/pages.ts	read	Assembles the iframe page: presentation callbacks feed the frame, and a remount triggers a reload.
+packages/client/ui-sidebar-browser/src/client/view/Browser.module.css	read	Stylesheet for the browser chrome: toolbar, address box with the unknown-address treatment, viewport, restore panel, failure and sandbox-warning strips.
+packages/client/ui-sidebar-browser/src/client/view/BrowserBody.tsx	read	Common browser chrome: Back/Forward/Reload/Go/external, the sandbox toggle with its amber warning, the restore panel, and the failure notices.
+packages/client/ui-sidebar-browser/src/client/view/BrowserPresentation.ts	read	One-method contract: mount(viewportId) returns the end of physical attachment without disposing the navigation model.
+packages/client/ui-sidebar-browser/src/client/view/BrowserTitle.tsx	read	Tab title reads the current page title from the persisted store and falls back to the tab title.
+packages/client/ui-sidebar-browser/src/client/view/IframePresentation.ts	read	Creates the iframe with the fixed sandbox string, no-referrer, and revision-tagged load/error events; never reads cross-origin content.
+packages/client/ui-sidebar-browser/src/css-modules.d.ts	read	Ambient declaration for *.module.css default export.
+packages/client/ui-sidebar-browser/src/index.ts	read	Host companion entry: apply() is a no-op; the browser is a client-only plugin.
+packages/client/ui-sidebar-browser/src/types.ts	read	Shared type-only desktop bridge: branded lease id, reservation (lease+partition), and the origin-scoped acquire/release/onOpenRequested face.
+packages/client/ui-sidebar-browser/tests/apply.client.spec.ts	read	Real registries: type registration, keepMounted only for desktop protocol 1, per-session controller reuse and rebinding, shortcut defaults per platform, full disposal.
+packages/client/ui-sidebar-browser/tests/apply.host.spec.ts	read	One-liner asserting the host loader entry stays inert.
+packages/client/ui-sidebar-browser/tests/browser-body.client.spec.tsx	read	BrowserBody behaviour: refresh accelerator, saved title/URL shown without loading, native error details, parser failures, sandbox toggling, the unknown-address toolbar lockdown, loopback, remount reload.
+packages/client/ui-sidebar-browser/tests/browser-controller.client.spec.ts	read	Controller account: restore only on request, rebinding to a replacement store, provider open-request validation, post-disposal inertness, sandbox reload revisions.
+packages/client/ui-sidebar-browser/tests/browser-frame.client.spec.ts	read	IframeImpl account: transient sandbox mode, revision-scoped load/failure, idempotent dispose, and full inertness after disposal.
+packages/client/ui-sidebar-browser/tests/browser-navigation.client.spec.ts	read	History bounded to 100 entries with branch replacement, the first-load-is-known/second-load-is-unknown classification, and ignoring pre-request observations.
+packages/client/ui-sidebar-browser/tests/browser-title.client.spec.tsx	read	Title shows the current page title and falls back to the tab title.
+packages/client/ui-sidebar-browser/tests/electron-frame.client.spec.ts	read	A failed Electron load is cleared by a main-frame navigation start, and the recovered target/title are observed.
+packages/client/ui-sidebar-browser/tests/electron-harness.client.ts	read	Shared fixture that fakes the native webview methods and lets each test emit native events.
+packages/client/ui-sidebar-browser/tests/electron-lifecycle.client.spec.ts	read	Electron guest lifecycle: native history/title/open-request observation, releasing an acquisition that finishes after cancellation, guest recreation after crash, failure containment, superseded/aborted load promises ignored.
+packages/client/ui-sidebar-browser/tests/store.client.spec.ts	read	Persisted store replaces snapshots and forgets only the closed tab.
+packages/client/ui-sidebar-browser/tests/url.client.spec.ts	read	Address policy: normalisation, loopback and IPv6 acceptance, and refusal of javascript:, file:, ftp:, credentials, the app origin and over-long input.
+packages/client/ui-sidebar-browser/tests/workspace.client.spec.ts	read	Workspace storage grouping by canonical CWD, waiting for the ready baseline, and abort rejection with no listener retained.
+packages/client/ui-sidebar-browser/tsconfig.client.json	read	Client-side TS project (src/client, src/types.ts, css-modules.d.ts) with references to the sidebar-right, renderer, session and slots packages.
+packages/client/ui-sidebar-browser/tsconfig.host.json	read	Host-side TS project limited to src/index.ts and src/types.ts.
+packages/client/ui-sidebar-browser/tsconfig.json	read	Solution file referencing the host and client projects.
+packages/client/ui-sidebar-browser/tsdown.config.ts	read	Three-line bundle config delegating to the shared clientBundle helper.
+packages/client/ui-sidebar/locale/en.json	read	Package meta dictionary only (meta.title = "ui-sidebar").
+packages/client/ui-sidebar/locale/zh.json	read	Chinese package meta: 会话侧栏 plus a description.
+packages/client/ui-sidebar/package.json	read	Client plugin injecting workspace-controller, ui-renderer, ui-layout, ui-session, ui-workspace, locale and shortcuts; ships clsx.
+packages/client/ui-sidebar/README.i18n.yaml	read	Per-heading EN/ZH hashes for the sidebar README.
+packages/client/ui-sidebar/README.md	read	Package reference: brand row, New Session fallback chain, panel entries, collapse behaviour, Windows caption and macOS rules, and the pointer-revealed scrollbar contract.
+packages/client/ui-sidebar/README.zh.md	read	Chinese mirror of the sidebar README (first 60 of 117 lines read; the remainder mirrors the implementation and limitations sections).
+packages/client/ui-sidebar/src/client/contract/slots.ts	read	The slot contract: the seven declared child seats with their owner props, the panel metadata shape, and the injected share.
+packages/client/ui-sidebar/src/client/HeaderLeadingControls.module.css	read	Layout-only stylesheet for the two window-chrome buttons; the frame owns placement.
+packages/client/ui-sidebar/src/client/HeaderLeadingControls.tsx	read	The macOS occupant for the shell.leading seat: open-sidebar and New Session controls reusing the shell's injected actions.
+packages/client/ui-sidebar/src/client/index.ts	read	Plugin apply(): registers the sidebar entry with its seven child seats, projects panel-list registrations into a snapshot, and registers the shell.leading occupant with the same inject face.
+packages/client/ui-sidebar/src/client/locales.ts	read	zh/en dictionaries for the five sidebar strings; zh is the key-set source of truth and en satisfies Record<SidebarKey, string>.
+packages/client/ui-sidebar/src/client/SidebarRoot.module.css	read	613-line stylesheet holding the collapse choreography (frozen width, .fading, .railIn), the rail geometry, the quietBars scrollbar indirection and the reduced-motion switch.
+packages/client/ui-sidebar/src/client/SidebarRoot.tsx	read	The sidebar shell: crossfade-then-rail collapse, pointer-revealed scrollbars with a 2 s linger, brand row, New Session, panel rows and the bottom-pinned foot.
+packages/client/ui-sidebar/src/css-modules.d.ts	read	Ambient declarations for *.module.css (and a bare *.css module declaration).
+packages/client/ui-sidebar/src/index.ts	read	Host loader entry: apply() is a no-op.
+packages/client/ui-sidebar/tests/__snapshots__/sidebar-snapshot.client.spec.tsx.snap	skipped	Generated Vitest DOM snapshot (630 lines, 5 snapshot entries: zh/en expanded, collapsed rail, Windows expanded/collapsed); opened the first 120 lines to confirm it is serialised sidebar shell DOM, not read line by line.
+packages/client/ui-sidebar/tests/apply.client.spec.tsx	read	Sidebar apply: declared child seats, the shared inject face across sidebar and shell.leading, panel-list projection, and teardown removing the entry and its declarations.
+packages/client/ui-sidebar/tests/panel-list.client.spec.tsx	read	Global panel rows through the production renderer: late registrations, per-plugin removal, ordering, icon sizes, locale refresh without re-registration, and focus not changing selection.
+packages/client/ui-sidebar/tests/pointer-scrollbars.client.spec.tsx	read	Pointer-revealed scrollbar state: drawn while inside, 2 s linger on the way out, geometric detection for fixed overlays, and timer cleanup on unmount.
+packages/client/ui-sidebar/tests/scrollbar-quiet-styles.client.spec.ts	read	Asserts the stylesheet's quiet-column rule rebinds both scrollbar indirection variables to transparent and leaves scrollbar-gutter to the scrolling region.
+packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx	read	Shell behaviour: New Session routing from wordmark and capsule, build-badge assembly, wide flag handed to the region/foot, cold collapsed render, and Windows caption tooltip sides.
+packages/client/ui-sidebar/tests/sidebar-snapshot.client.spec.tsx	read	DOM snapshot suite over the real assembly path, pinning expanded/collapsed chrome in zh and en and the Windows caption states.
+packages/client/ui-sidebar/tests/sidebar-styles.client.spec.ts	read	Stylesheet-as-contract assertions: shared padding token, the rail-in vs rail-fade-in split, common rail anchor, and brand row geometry.
+packages/client/ui-sidebar/tsconfig.json	read	TS project with references to cordis, workspace-controller, ui-slots, store, ui-primitives, ui-conversation, ui-renderer, ui-session, ui-layout, locale, shortcuts and product-analytics.
+packages/client/ui-sidebar/tsdown.config.ts	read	Three-line bundle config delegating to the shared clientBundle helper.

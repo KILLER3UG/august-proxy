@@ -1,0 +1,133 @@
+packages/ptc-runtime/ptc-runtime-node/locale/en.json	read	English locale stub for the package UI: only meta.title "ptc-runtime-node", no description key.
+packages/ptc-runtime/ptc-runtime-node/locale/zh.json	read	Chinese locale stub: meta.title "Node PTC 运行时" plus a meta.description the English file lacks.
+packages/ptc-runtime/ptc-runtime-node/package.json	read	Published manifest for @deepseek-ai/dsh-ptc-runtime-node 0.2.1-rc.2; ships lib/index.js, lib/process.js and lib/persistent-process.js (the two child bundles remote hosts run).
+packages/ptc-runtime/ptc-runtime-node/README.i18n.yaml	read	Heading-hash record pairing the English and Chinese Node backend READMEs; 14 hashed sections.
+packages/ptc-runtime/ptc-runtime-node/README.md	read	Package reference for the Node backend: config table, per-call vs persistent-in-memory modes, deadline semantics, failure mapping, and the stated limits.
+packages/ptc-runtime/ptc-runtime-node/README.zh.md	read	Chinese mirror of the Node backend README (181 lines); its source-map table omits src/output-ledger.ts, which the English one lists.
+packages/ptc-runtime/ptc-runtime-node/src/bindings.ts	read	Validates binding namespaces and error-class names against the seam's shared exclusion sets before a process starts, and encodes a host binding's lossless-JSON result into a reply frame.
+packages/ptc-runtime/ptc-runtime-node/src/bootstrap.ts	read	Child-side evaluator: LogBuffer, five-method console shim, stream-write capture, lossless completion/exception preparation, binding namespaces and the AsyncFunction program invocation.
+packages/ptc-runtime/ptc-runtime-node/src/channel.ts	read	Length-prefixed JSON transport with per-frame and queued-byte caps, fatal UTF-8 decoding, corked writes and io-vs-protocol failure classification.
+packages/ptc-runtime/ptc-runtime-node/src/config.ts	read	Schemastery config schema (executionMode, limits, launch union) plus validateConfig, which names the offending key and enforces the 32-bit frame-length ceiling.
+packages/ptc-runtime/ptc-runtime-node/src/environment.ts	read	The only environment file: the six retained native OS variables and the scrubber that empties the program-visible process.env into a null-prototype object.
+packages/ptc-runtime/ptc-runtime-node/src/index.ts	read	The host execution loop: resolve, sandbox confinement, spawn, control-frame validation, binding dispatch, deadline/abort, output admission and the failure taxonomy.
+packages/ptc-runtime/ptc-runtime-node/src/json-wire.ts	read	Lossless-JSON boundary: captured-intrinsic snapshot, flat bounded-depth token encode/decode, and rejection of exotic containers, sparse arrays, cycles and foreign-realm forgeries.
+packages/ptc-runtime/ptc-runtime-node/src/launch.ts	read	Chooses the worker executable and bootstrap in the execution world; maps the source bootstrap through fs.processPathFromHostPath and refuses an unmappable or packaged-persistent launch.
+packages/ptc-runtime/ptc-runtime-node/src/output-json.ts	read	Exact JSON serialized-byte accounting and code-point-aligned truncation, computed without materialising the escaped form and using module-captured intrinsics.
+packages/ptc-runtime/ptc-runtime-node/src/output-ledger.ts	read	Combined outer-output ledger for one run: admits logs against one byte cap, then retains a fitting prefix and a fixed diagnostic on overflow.
+packages/ptc-runtime/ptc-runtime-node/src/output-stream.ts	read	Bounded drain of raw process output and terminate-and-drain of a managed process; a false drain becomes a worker-exit failure.
+packages/ptc-runtime/ptc-runtime-node/src/persistent-process-entry.ts	read	Four-line built entry for the retained REPL bundle: opens the inherited control channel and calls runPersistentMain with argv[2] as the message limit.
+packages/ptc-runtime/ptc-runtime-node/src/persistent-process.ts	read	Child-side Node REPL serving sequential evaluations: AsyncLocalStorage attribution, replaced process object, redefined _ and _error globals, and the leading-brace workaround.
+packages/ptc-runtime/ptc-runtime-node/src/persistent.ts	read	In-memory retained mode: one Kernel per stateOwner (WeakMap), per-owner concurrency refusal, the cleanupPending barrier, and policy-change refusal until release.
+packages/ptc-runtime/ptc-runtime-node/src/policy-processes.ts	read	Tracks admitted processes against a Session and invalidates them on a sandbox/mode change; wait() blocks the next program until the previous cleanup is observed.
+packages/ptc-runtime/ptc-runtime-node/src/process-entry.ts	read	Four-line built entry for the per-call child bundle: opens the inherited control channel and calls runNodeMain.
+packages/ptc-runtime/ptc-runtime-node/src/process.ts	read	Per-call child main: ready/boot handshake, program run, terminal frame flush, and a deliberate wait for the host to close the channel so a late reply is not lost.
+packages/ptc-runtime/ptc-runtime-node/src/protocol.ts	read	Wire vocabulary for the control channel: call/log/output-limit/done frames plus replies; logs stream eagerly so output survives a mid-run kill.
+packages/ptc-runtime/ptc-runtime-node/tests/bindings.spec.ts	read	Pins binding validation: unusable globals, reserved names, duplicate globals and injected constructors, and that a null-prototype functions object is preserved by identity.
+packages/ptc-runtime/ptc-runtime-node/tests/bootstrap.spec.ts	read	Exercises the child evaluator in-process with the test playing the host: lossy completions, huge thrown values, typed rejections, clone failures and the LogBuffer prefix rule.
+packages/ptc-runtime/ptc-runtime-node/tests/built-lib.e2e.ts	read	Skipped-unless-built smoke test of the published lib/index.js path, importing the package by name through its exports map.
+packages/ptc-runtime/ptc-runtime-node/tests/channel.spec.ts	read	Pins framing, byte caps, invalid UTF-8, oversized writes, blocked-write settlement and that a channel-closing receiver raises no failure.
+packages/ptc-runtime/ptc-runtime-node/tests/execution-mode.spec.ts	read	Pins the per-call/persistent-in-memory switch: programFormat flip, rejection of unsupported mode strings, and state discarded on a provider reload.
+packages/ptc-runtime/ptc-runtime-node/tests/host-failures.spec.ts	read	The largest host-failure matrix: config rejection, sandbox classification by runner evidence, protocol violations, cancellation races, output limits and environment scrubbing.
+packages/ptc-runtime/ptc-runtime-node/tests/json-wire.spec.ts	read	Differential test against the canonical snapshotJsonValue plus an adversarial container zoo (Map, subclasses, sparse, spoofed and revoked prototypes) and a 5000-deep round trip.
+packages/ptc-runtime/ptc-runtime-node/tests/launch.spec.ts	read	Pins launch selection and bootstrap mapping, including an explicit remote bootstrap used verbatim and the packaged-host default.
+packages/ptc-runtime/ptc-runtime-node/tests/output-json.spec.ts	read	Pins exact byte accounting against JSON.stringify's own length and proves the measurement is unchanged after eight JavaScript intrinsics are mutated.
+packages/ptc-runtime/ptc-runtime-node/tests/output-ledger.spec.ts	read	Pins the combined output cap at four budgets and the rule that an oversized diagnostic is replaced rather than truncated.
+packages/ptc-runtime/ptc-runtime-node/tests/output-stream.spec.ts	read	Pins drain semantics: already-ended returns true, destroyed returns false, and a retained descriptor is bounded by the grace timer.
+packages/ptc-runtime/ptc-runtime-node/tests/persistent-built.e2e.ts	read	Skipped-unless-built smoke test of the retained mode through lib/index.js plus lib/persistent-process.js, including the release that drops the state.
+packages/ptc-runtime/ptc-runtime-node/tests/persistent-host.spec.ts	read	Host-side failure matrix for the retained mode: three policy-change races, protocol violations, the cleanup barrier that blocks reuse, and idle-crash cleanup tracking.
+packages/ptc-runtime/ptc-runtime-node/tests/persistent-process.spec.ts	read	Exercises the child REPL over an in-memory channel: injected process isolation, per-evaluation output attribution, leading-brace blocks and completed-evaluation refusals.
+packages/ptc-runtime/ptc-runtime-node/tests/persistent-sandbox.spec.ts	read	Pins the retained mode's file policy: retained variables under read-only, a one-shot escalation that sees no standing variables, fail-closed confinement and policy-change invalidation.
+packages/ptc-runtime/ptc-runtime-node/tests/persistent.spec.ts	read	The behavioural spec of the retained REPL: what survives across evaluations, what is destroyed by a timeout, current-binding dispatch, and release semantics.
+packages/ptc-runtime/ptc-runtime-node/tests/policy-processes.spec.ts	read	Pins the policy-invalidation bookkeeping: cleanup without a new execution, a failed cleanup retried, temporary-escalation separation and disposal joining.
+packages/ptc-runtime/ptc-runtime-node/tests/process-main.spec.ts	read	Pins the per-call child's handshake, null-prototype environment scrub, late-reply tolerance and exit-code semantics after a malformed frame.
+packages/ptc-runtime/ptc-runtime-node/tests/process.spec.ts	read	Boots the unbuilt source closure outside the workspace over a real inherited fd 7 socket, proving the bootstrap has no sibling built exports.
+packages/ptc-runtime/ptc-runtime-node/tests/runtime.spec.ts	read	End-to-end per-call behaviour against a real Node process and a real local sandbox: empty env, nested processes, deadlines, heap cap, hostile fd-7 traffic and symlink escape.
+packages/ptc-runtime/ptc-runtime-node/tests/setup.ts	read	Shared harness that mounts the local session/fs/subprocess/sandbox providers and the Node PTC runtime into a fresh Context.
+packages/ptc-runtime/ptc-runtime-node/tsconfig.json	read	Project reference for the Node backend, listing the session, timeout, fs, subprocess, sandbox, sandbox-policy and ptc-runtime projects it compiles against.
+packages/ptc-runtime/ptc-runtime-node/tsdown.config.ts	read	Three-bundle tsdown config; the two child bundles inline dsh-subprocess/control with noExternal because a remote host cannot resolve a workspace package.
+packages/ptc-runtime/ptc-runtime/package.json	read	Published manifest for @deepseek-ai/dsh-ptc-runtime; no runtime dependencies at all, only cordis and dsh-sandbox peers.
+packages/ptc-runtime/ptc-runtime/README.i18n.yaml	read	Heading-hash record pairing the seam README's English and Chinese, 18 sections including the Dev Note.
+packages/ptc-runtime/ptc-runtime/README.md	read	Package reference for the abstract seam: resolve/run, the portable identifier rules, the eight failure kinds and the stated limitations.
+packages/ptc-runtime/ptc-runtime/README.zh.md	read	Chinese mirror of the seam README; its limitations section states the same limits as current contract rather than a backlog.
+packages/ptc-runtime/ptc-runtime/src/index.ts	read	The Service Definition: the abstract PtcRuntime service plus the four shared portable-identifier exclusion sets, each with a stated reason.
+packages/ptc-runtime/ptc-runtime/src/types.ts	read	The seam's whole vocabulary, including the orthogonal eight-kind failure taxonomy and the rule that a failure is a field on a resolved result.
+packages/ptc-runtime/ptc-runtime/tests/reserved.spec.ts	read	Pins the shared exclusion sets' membership, including that __ and ____ are not dunder forms and that lambda is refused for portability.
+packages/ptc-runtime/ptc-runtime/tests/service.spec.ts	read	Exercises the abstract seam through a StubRuntime: registration, error-as-field, pre-aborted signal, HMR disposal and duplicate-service rejection.
+packages/ptc-runtime/ptc-runtime/tsconfig.json	read	Project reference for the seam package, referencing cosmokit, cordis and the sandbox project.
+packages/ptc-runtime/README.i18n.yaml	read	Heading-hash record for the PTC package-group README, 5 sections.
+packages/ptc-runtime/README.md	read	Package-group map naming the three PTC packages and which one owns the ctx.ptcRuntime key and the fd-3 Python wire.
+packages/ptc-runtime/README.zh.md	read	Chinese mirror of the PTC package-group map.
+packages/ssh/fs-ssh/package.json	read	Published manifest for @deepseek-ai/dsh-fs-ssh; zod is pinned exactly at 4.4.3 because the remote wire schemas are a compatibility surface.
+packages/ssh/fs-ssh/README.i18n.yaml	read	Heading-hash record pairing the fs-ssh README's English and Chinese, 9 sections.
+packages/ssh/fs-ssh/README.md	read	Package reference for the remote filesystem provider: no configuration fields, undefined processPathFromHostPath, 8 MiB transfer caps and no watch.
+packages/ssh/fs-ssh/README.zh.md	read	Chinese mirror of the fs-ssh README; states the no-auto-retry rule as a semantic guarantee.
+packages/ssh/fs-ssh/src/index.ts	read	Remote ctx.fs: every operation is one schema-validated ssh.request; contains() uses posix.relative so a sibling prefix is not inside, and error codes are mapped by a whitelist.
+packages/ssh/fs-ssh/tests/provider.spec.ts	read	Pins the remote filesystem provider against a fake connection that parses with the real schemas: file URLs, containment, error codes, cancellation and stream closing.
+packages/ssh/fs-ssh/tsconfig.json	read	Project reference for fs-ssh, referencing cordis, schemastery, the ssh package, fs, sandbox and sandbox-policy.
+packages/ssh/README.i18n.yaml	read	Heading-hash record for the SSH group README, 5 sections including the Dev Note's path invariant.
+packages/ssh/README.md	read	Package-group map for the POSIX SSH family: four services across five packages, and the rule that local access must never be inferred from a remote path string.
+packages/ssh/README.zh.md	read	Chinese mirror of the SSH group README, stating the path invariant as an absolute rule.
+packages/ssh/sandbox-ssh/package.json	read	Published manifest for @deepseek-ai/dsh-sandbox-ssh; it does not peer-depend on sandbox-policy because the policy is passed per call.
+packages/ssh/sandbox-ssh/README.i18n.yaml	read	Heading-hash record pairing the sandbox-ssh README's English and Chinese, 9 sections.
+packages/ssh/sandbox-ssh/README.md	read	Package reference for the remote sandbox provider: the remote host selects its own backend, and the SSH host and helper are trusted infrastructure.
+packages/ssh/sandbox-ssh/README.zh.md	read	Chinese mirror of the sandbox-ssh README, keeping the trusted-infrastructure caveat.
+packages/ssh/sandbox-ssh/src/index.ts	read	Remote ctx.sandbox: confines argv on the far host over a strict facts schema; every failure becomes a SandboxUnavailableError and cancellation is checked before and after.
+packages/ssh/sandbox-ssh/tests/provider.spec.ts	read	Pins the remote confinement provider: it awaits the remote answer, rejects malformed facts before exposing argv, and sends a failed request exactly once.
+packages/ssh/sandbox-ssh/tsconfig.json	read	Project reference for sandbox-ssh, referencing one project fewer than fs-ssh because it needs no sandbox-policy.
+packages/ssh/ssh-helper-runtime/package.json	read	Private manifest for the helper runtime; its dependency list is the authoritative spec of what the pkg --sea binary embeds.
+packages/ssh/ssh-helper-runtime/README.i18n.yaml	read	Heading-hash record pairing the helper-runtime README's English and Chinese, 10 sections.
+packages/ssh/ssh-helper-runtime/README.md	read	Build, verify, install and publish guide for the self-contained helper executable: four native targets, a digest manifest and two verifier lanes.
+packages/ssh/ssh-helper-runtime/README.zh.md	read	Chinese mirror of the helper-runtime README, same targets and glibc 2.28 baseline.
+packages/ssh/ssh-helper-runtime/src/index.ts	read	SEA dispatcher for the packaged binary: a module-resolution hook redirects the native package to the co-shipped directory, and both selector env vars are deleted before dispatch.
+packages/ssh/ssh-helper-runtime/tests/fixtures/direct-helper.ts	read	Loader-mounted fixture that talks to a real helper executable over local sockets using the production SshRpcPeer, helloSchema and authenticateStream.
+packages/ssh/ssh-helper-runtime/tests/fixtures/driver.ts	read	Artifact-verification driver: a real Loader composition exercising files, processes, cancellation, native PTY, embedded PTC, native flock and the sandbox lanes.
+packages/ssh/ssh-helper-runtime/tests/fixtures/sshd/Dockerfile	read	AlmaLinux 8.10 image (glibc 2.28) with openssh-server and no Node, for the SSH portability lane.
+packages/ssh/ssh-helper-runtime/tests/fixtures/sshd/sshd_config	read	Key-only, PAM-free sshd configuration with Unix-socket forwarding enabled and VERBOSE logging.
+packages/ssh/ssh-helper-runtime/tests/fixtures/sshd/start.sh	read	Container entrypoint that generates a per-run host key, installs the disposable public key and execs sshd in the foreground.
+packages/ssh/ssh-helper-runtime/tsconfig.json	read	Project reference for the helper runtime, listing exactly the four modules the SEA dispatcher can import.
+packages/ssh/ssh/package.json	read	Published manifest for @deepseek-ai/dsh-ssh; ./protocol and ./schemas are public exports so sibling providers share the wire without reaching into src.
+packages/ssh/ssh/README.i18n.yaml	read	Heading-hash record pairing the SSH package README's English and Chinese, 8 sections.
+packages/ssh/ssh/README.md	read	Package reference for the SSH connection: deployment prerequisites, the config table, per-stream TLS-PSK isolation, and the never-replay rule.
+packages/ssh/ssh/README.zh.md	read	Chinese mirror of the SSH package README; keeps the SIGUSR1 hardening as its own paragraph.
+packages/ssh/ssh/src/helper-entry.ts	read	OpenSSH-side helper entry: accepts no command arguments, aborts the transport on TERM/HUP/INT, and reports every failure on stderr with exit code 127.
+packages/ssh/ssh/src/helper-processes.ts	read	Remote process ownership: prepare-then-start reservations, per-channel TLS endpoints, the 30-second reservation expiry, the collected-output forwarder and cleanup that joins native quiescence.
+packages/ssh/ssh/src/helper.ts	read	The remote helper: serves the administrative RPC by delegating to the local providers installed beside it, with a client lease, a one-shot handshake and bounded text iterators.
+packages/ssh/ssh/src/index.ts	read	The OpenSSH connection owner: hardened non-interactive ssh argv, digest/kind/bootstrap verification before readiness, heartbeat lease, per-stream forwarding and SIGUSR1 disabled.
+packages/ssh/ssh/src/protocol.ts	read	The bounded versioned RPC: reserved capacity per request class, cancellation that keeps the credit until the far side replies, and a never-replay rule.
+packages/ssh/ssh/src/schemas.ts	read	Strict zod schemas for every request and observation, with branded UUID identities, a remotePath rule and a null environment tombstone.
+packages/ssh/ssh/src/stream-security.ts	read	TLS-PSK authentication for forwarded streams: pinned cipher and TLS version, no unauthenticated fallback, a handshake deadline, and a paused returned socket.
+packages/ssh/ssh/tests/collection.spec.ts	read	Pins the collected-output contract: the bounded tail and the whole-stream totalBytes reported separately, and the spill file surviving helper shutdown.
+packages/ssh/ssh/tests/connection-disposal.spec.ts	read	Pins client disposal ordering: requests refused without being sent, a heartbeat still admitted under ordinary load, control commands force-killed and joined, and listener removal.
+packages/ssh/ssh/tests/fixtures/helper.ts	read	Shared harness serving a real helper over an in-memory transport, reusing the production SshRpcPeer and authenticateStream, with a realpath'd root.
+packages/ssh/ssh/tests/helper-boundaries.spec.ts	read	Pins lease expiry, the double-checked text-stream capacity, the 8 MiB transfer bounds, iterator cancellation and cleanup failure surfacing through the serving lifetime.
+packages/ssh/ssh/tests/helper-cleanup-join.spec.ts	read	Proves helper shutdown joins a completed process's directory removal rather than racing it, and that a late done returns the identical outcome object.
+packages/ssh/ssh/tests/helper-failure-settlement.spec.ts	read	Proves a failed native launch releases the single-process capacity while the original error object is preserved for later done reads.
+packages/ssh/ssh/tests/helper-finalization.spec.ts	read	Proves an authenticated TLS fault destroys the native control endpoint and that a release still observing the range keeps ownership of the completion.
+packages/ssh/ssh/tests/helper-lifecycle.spec.ts	read	Pins reservation ownership: capacity reserved before the async allocation, a close during prepare rejecting it, and a termination that prevents the process from ever being published.
+packages/ssh/ssh/tests/helper-processes.spec.ts	read	The remote process settlement matrix: terminal operations, a bounded completed-result cache, fd-7 absence, socket-path length limits, live snapshots and native cleanup failures.
+packages/ssh/ssh/tests/helper-runtime.spec.ts	read	Pins the helper's real behaviour over the wire: no chdir, guarded writes, symlink identity, text iterator closure, unconfined sandbox refusal and name-based error-code mapping.
+packages/ssh/ssh/tests/identifiers.spec.ts	read	Pins the branded identity types: SshProcessId and SshTextStreamId are not assignable to each other even though the wire value is one UUID.
+packages/ssh/ssh/tests/inspector-signal.spec.ts	read	Proves a same-user sandboxed process can attach a Node inspector unless --disable-sigusr1 is set; the probe runs both ways and asserts the difference.
+packages/ssh/ssh/tests/live.e2e.ts	read	Opt-in acceptance against a real disposable SSH host: a same-user TLS attacker, fd-7 binary round trip, control progress while stdout is paused, and disconnect cleanup.
+packages/ssh/ssh/tests/management-capacity.spec.ts	read	Proves each request class has its own capacity so heartbeat and close stay available under a full ordinary load, and that cancellation keeps the credit.
+packages/ssh/ssh/tests/protocol-boundaries.spec.ts	read	Pins the protocol's framing, queueing and inbound admission: zero-byte rejection before transmission, reentrant close, fragmented chunks and refused inbound requests.
+packages/ssh/ssh/tests/protocol-disposal.spec.ts	read	Proves queued requests settle after a peer close, output close or input EOF even with no drain event, and that no listeners are left behind.
+packages/ssh/ssh/tests/protocol.spec.ts	read	Small high-level protocol spec: typed remote errors, response schema failures, cancellation without replay, and an unknown outcome after a disconnect.
+packages/ssh/ssh/tests/startup-behavior.spec.ts	read	The client startup matrix: eleven invalid configs refused before spawn, identity verification, quoted remote commands, cancellation races, forwarding and disposal.
+packages/ssh/ssh/tests/stream-capability.spec.ts	read	Pins the per-stream capability: a wrong TLS identity is refused without consuming the reservation, only one client is published, and forged admin bytes are opaque.
+packages/ssh/ssh/tests/stream-lifetime.spec.ts	read	Pins cancellation ownership after TLS takes over the socket, including a primitive abort reason propagated verbatim.
+packages/ssh/ssh/tests/stream-rebind.spec.ts	read	Adversarial test: a confined process renames the socket and relays the TLS bytes, and still learns neither the plaintext nor the capability key.
+packages/ssh/ssh/tests/stream-timeout.spec.ts	read	Pins the TLS authentication deadline: a peer that accepts the connection but never handshakes is closed after 25 ms.
+packages/ssh/ssh/tsconfig.json	read	Project reference for the SSH package, listing exactly the providers the helper mounts in its private Context.
+packages/ssh/ssh/tsdown.config.ts	read	Single tsdown pass producing four bundles, with helper bundled separately because the remote host runs it with no workspace to resolve from.
+packages/ssh/subprocess-ssh/package.json	read	Published manifest for @deepseek-ai/dsh-subprocess-ssh; it peer-depends on subprocess-local to reuse the same OutputCollector client-side.
+packages/ssh/subprocess-ssh/README.i18n.yaml	read	Heading-hash record pairing the subprocess-ssh README's English and Chinese, 9 sections.
+packages/ssh/subprocess-ssh/README.md	read	Package reference for the remote subprocess provider: the handle is usable before allocation, done and waitForExit are different facts, and ambiguous work is never replayed.
+packages/ssh/subprocess-ssh/README.zh.md	read	Chinese mirror of the subprocess-ssh README, keeping the done-versus-waitForExit distinction explicit.
+packages/ssh/subprocess-ssh/src/index.ts	read	Remote ctx.subprocess: RemoteProcess and the provider, absolute collected-output offsets with rewind rejection, and disposal that raises when cleanup cannot be confirmed.
+packages/ssh/subprocess-ssh/tests/lifecycle.spec.ts	read	Proves the provider joins an unpublished terminal allocation before disposal completes and still sends process.terminate for a reservation whose stream was never opened.
+packages/ssh/subprocess-ssh/tests/process-behavior.spec.ts	read	The ordinary-process contract: inherit mode without ending host streams, independent channels, absolute offsets, snapshot rejection, at most one termination, and refusals after disposal.
+packages/ssh/subprocess-ssh/tests/shell-discovery.spec.ts	read	Pins the remote shell facts and the code-based (not class-based) distinction between a lookup miss and a transport failure, plus a real-helper PTY resize.
+packages/ssh/subprocess-ssh/tests/stream-wait-lifecycle.spec.ts	read	Pins caller-owned stream closure and the bounded range observation across every stage, including abort-listener detachment and the real failure preserved.
+packages/ssh/subprocess-ssh/tests/terminal-behavior.spec.ts	read	Pins the terminal contract: memoised termination, retry after a cleanup failure, a failed done still terminable, and both errors reported when allocation and cleanup both fail.
+packages/ssh/subprocess-ssh/tsconfig.json	read	Project reference for subprocess-ssh, referencing subprocess-local for the OutputCollector import rather than for local execution.

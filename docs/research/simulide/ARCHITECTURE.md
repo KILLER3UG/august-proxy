@@ -228,30 +228,33 @@ changes the ranking. What is available:
 | | simulide |
 |---|---|
 | Tracked files (`git ls-files`) | 1 359 |
-| In manifest | 1 359 (0 missing, 0 extra, 0 duplicate) |
+| In manifest | 1 359 — **0 missing, 0 extra, 0 duplicate**, every file in exactly one shard |
 | Shards | 10 |
-| Files marked `read` | 1 247 |
-| Files marked `skipped` (with a stated reason) | 11 |
-| Unresolved | 101 — **all in `src/components/`**, see below |
 | Shard reports | 10 / 10 |
-| `path:line` citations in the reports, re-checked against the clone | **399 checked, 2 bad** |
-| Reports spot-checked by reopening the source | 4 of 10 (40 % — above the 10 % floor) |
+| Files marked `read` | **1 348** |
+| Files marked `skipped` (each with a one-line justification) | **11** |
+| **Unresolved** | **0** |
+| Rows with no note | 0 |
+| Skipped rows with no reason | 0 |
+| `path:line` citations in the reports, re-checked against the clone | **613 checked, 0 bad** |
+| Reports spot-checked by reopening the source | 4 of 10 (40 % — above the 10 % floor), plus every citation in every report |
 
 ### The gaps, and why they happened
 
 Two independent defects, both recorded rather than guessed:
 
-1. **`components-analog` is short by 101 files.** The same manifest corruption
-   that cost pi two shards reached this one: the worker read a `manifest.tsv`
-   whose `owner-shard` column had been rewritten into a different partition, so
-   it resolved 82 files where the ledger names 183. The manifest was restored
-   from git and all six ledger files were set read-only; the shard was
-   re-dispatched against the restored partition.
-2. **Two bad citations.** `gui` cites `src/gui/properties/proputils.cpp:99` in
-   a file that has 78 lines; `resources#2` cites
+1. **`components-analog` first came back short by 101 files.** The same
+   manifest corruption that cost pi two shards reached this one: the worker
+   read a `manifest.tsv` whose `owner-shard` column had been rewritten into a
+   different partition, so it resolved 82 files where the ledger names 183.
+   The manifest was restored from git, all six ledger files were set
+   read-only, and the shard was re-dispatched against the restored
+   partition. It now stands at 183 rows.
+2. **Two bad citations.** `gui` cited `src/gui/properties/proputils.cpp:99`
+   in a file that has 78 lines; `resources#2` cited
    `src/components/component.cpp:1260` in a file that has 722 lines. Both
-   shards were re-dispatched to correct the reference.
+   shards were re-dispatched to correct the reference, and both now verify.
 
 **Every skipped file has a stated reason** — the seven Qt-Linguist
-translation catalogues and the compiled-in resource blobs — and none was
-skipped silently.
+translation catalogues, the compiled-in resource blobs, the binary TrueType
+faces and the macOS icon containers — and none was skipped silently.

@@ -1,0 +1,260 @@
+snapshots/session/session-sandbox-root/cordis.snapshot.yml	read	Live overlay pinning deepseek-v4-flash, inserting the llm-replay provider, and reproducing the /tmp sandbox fallback root behind a passthrough sandbox runner.
+snapshots/session/session-sandbox-root/cordis.yml	read	Live overlay pointing the sandbox policy at /tmp as a process-level fallback while the generated session cwd lives outside the temp grants; mode from DSH_PERMISSION_MODE with a snapshot-time danger-full-access default.
+snapshots/session/session-sandbox-root/replay.override.json	read	Two scripted model turns: a write tool call for session-root.txt, then a DONE text turn, each with usage and a finish reason.
+snapshots/session/session-sandbox-root/session.v2.jsonl	read	Format-v2 parent: the system prompt travels in the request header, the write tool result is a user-role message with tool-result content, the turn ends completed after two steps.
+snapshots/session/session-sandbox-root/session.v3.jsonl	read	Format-v3 parent: the system prompt becomes a system/message record in the surface and leaves the request header; the tool result gains meta.operation=create.
+snapshots/session/session-sandbox-root/session.v4.jsonl	read	Format-v4 parent: system message sourced system-prompt, runtime context becomes its own runtime-context source with named sections, tool result is a role=tool message with toolCallId and meta.path.
+snapshots/session/session-sandbox-root/snapshot.yml	read	Scenario manifest: pins the session-sandbox-root header class, reuses text-turn prompt and tool-schema sidecars, requires a replay override, workspace-write permission and a final workspace oracle.
+snapshots/session/session-sandbox-root/workspace.expected/session-root.txt	read	Independent oracle: the file the write tool must leave behind, containing exactly the text session root.
+snapshots/session/skill-load/session.v2.jsonl	read	Format-v2 skill turn: a skill-catalog user message lists available skills before the model calls the skill tool, and the result is a user-role message carrying the skill_content block.
+snapshots/session/skill-load/session.v3.jsonl	read	Format-v3 twin of the skill turn; the only structural change from v2 is the system-message record and the request header dropping the system field.
+snapshots/session/skill-load/session.v4.jsonl	read	Format-v4 twin; system message sourced system-prompt, runtime context its own source, and the skill tool result is a role=tool message.
+snapshots/session/skill-load/snapshot.yml	read	Scenario manifest pinning the skill header class and reusing text-turn sidecars; workspace seeded by the editing-cordis-skill setup.
+snapshots/session/skill-load/workspace/.dsh/skills/model-only-skill/SKILL.md	read	Skill seed marked user-invocable false whose whole job is to prove a user-disabled skill is still advertised to the model.
+snapshots/session/skill-load/workspace/.dsh/skills/snapshot-skill/SKILL.md	read	Plain project skill seed with no invocation flag, exercising discovery and loading of a workspace .dsh/skills entry.
+snapshots/session/skill-load/workspace/.dsh/skills/user-only-skill/SKILL.md	read	Skill seed marked disable-model-invocation true whose job is to prove a model-disabled skill stays out of the model catalog.
+snapshots/session/subagent-acp-diagnostic/cordis.snapshot.yml	read	Keyless twin of the ACP overlay: only the external parent model adapter is swapped for llm-replay, the real ACP child denial path is retained.
+snapshots/session/subagent-acp-diagnostic/cordis.yml	read	Live overlay mounting the real subagent-acp provider against a mock ACP server with permission reject, exposed as the subagent_acp tool with provider-managed depth.
+snapshots/session/subagent-acp-diagnostic/replay.override.json	read	Three scripted parent turns: two subagent_acp calls (first and second failure) then a PARENT_OBSERVED_ACP_DIAGNOSTIC text turn.
+snapshots/session/subagent-acp-diagnostic/session.v2.jsonl	read	Format-v2 parent: the ACP denial arrives synchronously as an error tool result, and the background variant needs an explicit job_output collect.
+snapshots/session/subagent-acp-diagnostic/session.v3.jsonl	read	Format-v3 parent: adds the subagent/catalog record but keeps the synchronous cancellation error and the job_output collect.
+snapshots/session/subagent-acp-diagnostic/session.v4.jsonl	read	Format-v4 parent: subagent_acp always backgrounds, the tool result is only started subagent, and the denial arrives as a subagent-settled notice spliced into the next step inbox.
+snapshots/session/subagent-acp-diagnostic/settlement-order.mjs	read	Scenario plugin that awaits ctx.subagents.waitForChildren inside a tools/execute middleware so each ACP terminal record and notice lands BEFORE its delegation tool result.
+snapshots/session/subagent-acp-diagnostic/snapshot.yml	read	Scenario manifest for the ACP delegation diagnostic: pins its own header class and requires a replay override.
+snapshots/session/subagent-acp-diagnostic/system-prompt.expected.md	read	The exact parent system prompt: harness banner, persona, exit-code/read-edit/glob/grep/background-job/web-untrusted/goal/workflow rules, and the delegation line naming subagent_acp.
+snapshots/session/subagent-acp-diagnostic/tool-schemas.expected.json	read	Expected advertised tool-schema set, 27 tools including subagent_acp; read the file header and the complete tool-name list, not every schema body.
+snapshots/session/subagent-agent-preset/cordis.snapshot.yml	read	Replay twin of the preset overlay plus the llm-replay provider and the passthrough sandbox runner.
+snapshots/session/subagent-agent-preset/cordis.yml	read	Live overlay declaring a reviewer agent preset (persona plus fs and subagent tools) and pointing the parent subagent tool at it through allowedAgentPresets.
+snapshots/session/subagent-agent-preset/session.1.v4.jsonl	read	The child session: parentSession, origin subagent, delegationDepth 1, agentPreset reviewer, a subagent/descriptor v3 record, and a runtime context stating the depth ceiling for subagent, subagent_fork and reviewer_delegate.
+snapshots/session/subagent-agent-preset/session.v4.jsonl	read	The parent session: the subagent call carries agent_preset reviewer, the child is catalogued as continuable, and the child closing message later arrives as a subagent-settled notice that opens turn 2.
+snapshots/session/subagent-agent-preset/snapshot.yml	read	Scenario manifest declaring childSystemPrompts 1 and childToolSchemas 1, i.e. the child role has its own prompt and schema sidecars.
+snapshots/session/subagent-agent-preset/system-prompt.1.expected.md	read	The CHILD system prompt: the reviewer persona prefix replaces the coding-assistant one, and the delegation line names reviewer_delegate.
+snapshots/session/subagent-agent-preset/tool-schemas.1.expected.json	read	Expected child tool-schema set, 27 tools including reviewer_delegate; header and complete tool-name list read, schema bodies not transcribed.
+snapshots/session/subagent-agent-preset/tool-schemas.expected.json	read	Expected parent tool-schema set, the 26-tool baseline with no reviewer_delegate; header and complete tool-name list read, schema bodies not transcribed.
+snapshots/session/subagent-child-question-rejection/cordis.snapshot.yml	read	Keyless twin keeping the real interaction seam, the model-facing tool and the tripwire provider, replacing only DeepSeek with per-session replay.
+snapshots/session/subagent-child-question-rejection/cordis.yml	read	Live overlay mounting the ask_user_question tool and a tripwire provider for the user-questions service, so a runtime-owned child is rejected before any UI wait begins.
+snapshots/session/subagent-child-question-rejection/session.1.v2.jsonl	read	Format-v2 child: the ask_user_question call fails with the DELEGATED_CALLER message and the child answers with the unresolved question verbatim.
+snapshots/session/subagent-child-question-rejection/session.1.v3.jsonl	read	Format-v3 child: same refusal, plus the system-message record and a subagent/descriptor with mode one-shot.
+snapshots/session/subagent-child-question-rejection/session.1.v4.jsonl	read	Format-v4 child: the refusal is a role=tool result carrying error name UserQuestionError and code DELEGATED_CALLER.
+snapshots/session/subagent-child-question-rejection/session.v2.jsonl	read	Format-v2 parent: the child answer comes back inline in the synchronous tool result, then the parent answers PARENT_COMPLETED.
+snapshots/session/subagent-child-question-rejection/session.v3.jsonl	read	Format-v3 parent: adds the subagent/catalog record with mode one-shot before the same inline answer.
+snapshots/session/subagent-child-question-rejection/session.v4.jsonl	read	Format-v4 parent: the tool result is only started subagent; the child UNRESOLVED question arrives later as a subagent-settled notice that opens turn 2.
+snapshots/session/subagent-child-question-rejection/snapshot.yml	read	Scenario manifest for the child-question composition, pinning the child-question header class.
+snapshots/session/subagent-child-question-rejection/tool-schemas.expected.json	read	Expected tool-schema set, 27 tools including ask_user_question; header and complete tool-name list read, schema bodies not transcribed.
+snapshots/session/subagent-depth-context-disabled/runtime.cordis.yml	read	Runtime overlay setting includeRuntimeContext false on the system prompt and maxDepth 0 on the subagent tool, suppressing the optional depth hints while keeping the runtime enforcement.
+snapshots/session/subagent-depth-context-disabled/session.v4.jsonl	read	Format-v4 parent: the runtime context is reduced to the working-directory line only, and the subagent call is refused with subagent depth 1 exceeds maxDepth 0.
+snapshots/session/subagent-depth-context-disabled/snapshot.yml	read	Minimal scenario manifest: default composition, authored recording, default header class.
+snapshots/session/subagent-depth-two-rejection/cordis.snapshot.yml	read	Replay twin of the depth patch plus llm-replay and the passthrough sandbox runner.
+snapshots/session/subagent-depth-two-rejection/cordis.yml	read	Live overlay raising the subagent tool maxDepth to 2 so two generations of children are allowed.
+snapshots/session/subagent-depth-two-rejection/replay.override.json	read	Three scripted model turns: the root subagent call, then two ROOT_DONE text turns.
+snapshots/session/subagent-depth-two-rejection/session.1.v2.jsonl	read	Format-v2 depth-one child: its own subagent call returns the grandchild answer inline (DEPTH_REJECTED).
+snapshots/session/subagent-depth-two-rejection/session.1.v3.jsonl	read	Format-v3 depth-one child: the same inline answer plus a subagent/catalog record.
+snapshots/session/subagent-depth-two-rejection/session.1.v4.jsonl	read	Format-v4 depth-one child: the grandchild is catalogued as continuable and the child turn 2 fails loudly with llm-replay script exhausted, requesting model call 3 but its script has only 2.
+snapshots/session/subagent-depth-two-rejection/session.2.v2.jsonl	read	Format-v2 depth-two child: its subagent call is refused with subagent depth 3 exceeds maxDepth 2.
+snapshots/session/subagent-depth-two-rejection/session.2.v3.jsonl	read	Format-v3 depth-two child: same refusal under the v3 envelope.
+snapshots/session/subagent-depth-two-rejection/session.2.v4.jsonl	read	Format-v4 depth-two child: the refusal is a role=tool error result; the runtime context states depth 2 for subagent and 1 for subagent_fork.
+snapshots/session/subagent-depth-two-rejection/session.v2.jsonl	read	Format-v2 root: the depth-one child answer arrives inline in the tool result.
+snapshots/session/subagent-depth-two-rejection/session.v3.jsonl	read	Format-v3 root: adds the subagent/catalog record; the settlement is still inline.
+snapshots/session/subagent-depth-two-rejection/session.v4.jsonl	read	Format-v4 root: the tool result is only started subagent, and the child failure arrives later as a subagent-settled notice whose summary says the child FAILED before finishing.
+snapshots/session/subagent-depth-two-rejection/snapshot.yml	read	Scenario manifest for the depth-two composition, pinning the header class and the text-turn sidecars.
+snapshots/session/subagent-max-tokens-partial/session.1.v2.jsonl	read	Format-v2 child: writes partial one, calls todo_write, then ends its turn with reason max-tokens after a tool call with no text.
+snapshots/session/subagent-max-tokens-partial/session.1.v3.jsonl	read	Format-v3 child: same max-tokens ending, with the system-message record and a subagent/descriptor.
+snapshots/session/subagent-max-tokens-partial/session.1.v4.jsonl	read	Format-v4 child: the final assistant message carries empty content and the stream finish reason is max-tokens, which the turn end repeats.
+snapshots/session/subagent-max-tokens-partial/session.v2.jsonl	read	Format-v2 parent: the truncation surfaces as an inline error tool result quoting the partial output.
+snapshots/session/subagent-max-tokens-partial/session.v3.jsonl	read	Format-v3 parent: same inline error plus the catalog record.
+snapshots/session/subagent-max-tokens-partial/session.v4.jsonl	read	Format-v4 parent: the child truncation surfaces as a subagent-settled notice whose summary says it ran out of room before it finished.
+snapshots/session/subagent-max-tokens-partial/snapshot.yml	read	Minimal scenario manifest: default composition, authored recording.
+snapshots/session/subagent-multi/runtime.cordis.yml	read	Runtime overlay inserting a settlement-barrier fixture so late subagent settlement notices cannot add platform-dependent parent turns.
+snapshots/session/subagent-multi/session.1.jsonl	read	Format-v0 first child, the retained historical generation, whose assistant stream is stored as individual assistant/chunk and reasoning-chunks records rather than one message.
+snapshots/session/subagent-multi/session.2.jsonl	read	Format-v0 second child: same v0 chunk-per-delta shape, answering BETA.
+snapshots/session/subagent-multi/session.jsonl	read	Format-v0 parent: two sequential subagent calls whose results come back inline as ALPHA and BETA.
+snapshots/session/subagent-multi/snapshot.yml	read	Scenario manifest declaring sessionFormat version 0 with coverage multi-hop and shipped-profile, i.e. this scenario deliberately pins the old generation.
+snapshots/session/subagent-multi/writer.1.expected.jsonl	read	Native-writer oracle for child 1: the same run re-serialised in format v4 with mode continuable and the parent-reporting instruction appended to the child inbox.
+snapshots/session/subagent-multi/writer.2.expected.jsonl	read	Native-writer oracle for child 2: format-v4 twin of the BETA child.
+snapshots/session/subagent-multi/writer.expected.jsonl	read	Native-writer oracle for the parent: format-v4 re-serialisation showing each settlement arriving as a subagent-settled notice spliced into the NEXT STEP rather than a new turn.
+snapshots/session/subagent-no-message-tool/cordis.snapshot.yml	read	Replay twin of the preset overlay plus llm-replay and the passthrough sandbox runner.
+snapshots/session/subagent-no-message-tool/cordis.yml	read	Live overlay moving fs, web and subagent-control tools into the PARENT preset and giving the child an empty preset, so the child has no send_message and no file tools.
+snapshots/session/subagent-no-message-tool/session.1.v4.jsonl	read	The child: its inbox lacks the parent-reporting paragraph (no send_message) and a write call is refused with ToolNotFoundError and code UNKNOWN_TOOL.
+snapshots/session/subagent-no-message-tool/session.v4.jsonl	read	The parent: the same delegation shape as the agent-preset scenario but with no agent_preset argument; the settlement notice opens turn 2.
+snapshots/session/subagent-no-message-tool/snapshot.yml	read	Scenario manifest declaring child prompt and schema sidecars and pinning the header class.
+snapshots/session/subagent-no-message-tool/system-prompt.1.expected.md	read	The child system prompt: no read/edit/glob/grep/web lines at all because its preset has no fs or web tools, only the background-job, goal, workflow and delegation lines.
+snapshots/session/subagent-no-message-tool/tool-schemas.1.expected.json	read	Expected child tool-schema set, 14 tools with no read/write/edit/glob/grep/bash or web tools; the reduced surface is visible in the tool names alone.
+snapshots/session/subagent-parallel/execution-order.mjs	read	Scenario plugin turning "two children really overlap" into an assertion: it gates the second subagent call on the first tool result, checks both children are resident agents, and waits for the first to settle before releasing the second first step.
+snapshots/session/subagent-parallel/runtime.cordis.yml	read	One-line runtime overlay inserting the execution-order plugin.
+snapshots/session/subagent-parallel/session.1.v2.jsonl	read	Format-v2 first child: a single ALPHA text turn.
+snapshots/session/subagent-parallel/session.1.v3.jsonl	read	Format-v3 first child: same content under the v3 envelope.
+snapshots/session/subagent-parallel/session.1.v4.jsonl	read	Format-v4 first child: continuable descriptor and the parent-reporting instruction in the inbox.
+snapshots/session/subagent-parallel/session.2.v2.jsonl	read	Format-v2 second child: the other half of the parallel pair.
+snapshots/session/subagent-parallel/session.2.v3.jsonl	read	Format-v3 second child.
+snapshots/session/subagent-parallel/session.2.v4.jsonl	read	Format-v4 second child.
+snapshots/session/subagent-parallel/session.v2.jsonl	read	Format-v2 parent: two subagent calls in ONE assistant message, with both answers back inline.
+snapshots/session/subagent-parallel/session.v3.jsonl	read	Format-v3 parent: same parallel pair plus two subagent/catalog records.
+snapshots/session/subagent-parallel/session.v4.jsonl	read	Format-v4 parent: both children are catalogued before either settles, and BOTH settlement notices are spliced into the next step together (removedCount 2).
+snapshots/session/subagent-parallel/snapshot.yml	read	Minimal scenario manifest: default composition, authored recording.
+snapshots/session/subagent-published-run-failure/cordis.snapshot.yml	read	Replay twin that fails the provider-owned final child checkpoint while replacing only the model adapter.
+snapshots/session/subagent-published-run-failure/cordis.yml	read	Live overlay inserting a fixture that lets the child ordinary flush succeed while the provider-owned final confirmation fails deterministically.
+snapshots/session/subagent-published-run-failure/replay.override.json	read	Two scripted parent turns: one subagent call and a PARENT_OBSERVED_ERROR text turn.
+snapshots/session/subagent-published-run-failure/session.1.v2.jsonl	read	Format-v2 child: only the four header and policy records, because the child never produced a turn (publication failed).
+snapshots/session/subagent-published-run-failure/session.1.v3.jsonl	read	Format-v3 child: same four-record stub.
+snapshots/session/subagent-published-run-failure/session.1.v4.jsonl	read	Format-v4 child: the descriptor plus the delegation policies and nothing else; the child run never started.
+snapshots/session/subagent-published-run-failure/session.v2.jsonl	read	Format-v2 parent: the publication failure surfaces as an inline error tool result.
+snapshots/session/subagent-published-run-failure/session.v3.jsonl	read	Format-v3 parent: same inline error plus the catalog record.
+snapshots/session/subagent-published-run-failure/session.v4.jsonl	read	Format-v4 parent: the failure is a role=tool error result and the parent still answers PARENT_OBSERVED_ERROR.
+snapshots/session/subagent-published-run-failure/snapshot.yml	read	Scenario manifest for the durability-failure composition, including the DSH_SUBAGENT_PUBLISHED_FAILURE 1 environment switch.
+snapshots/session/subagent-spawn-in-process/session.1.v2.jsonl	read	Format-v2 child of the in-process spawn scenario.
+snapshots/session/subagent-spawn-in-process/session.1.v3.jsonl	read	Format-v3 child of the in-process spawn scenario.
+snapshots/session/subagent-spawn-in-process/session.1.v4.jsonl	read	Format-v4 child: continuable descriptor, and the parent own settlement notice opens parent turn 2.
+snapshots/session/subagent-spawn-in-process/session.v2.jsonl	read	Format-v2 parent: the child CHILD_OK comes back inline.
+snapshots/session/subagent-spawn-in-process/session.v3.jsonl	read	Format-v3 parent: inline answer plus the catalog record.
+snapshots/session/subagent-spawn-in-process/session.v4.jsonl	read	Format-v4 parent: the tool result is only started subagent; the settlement notice arrives after the turn ends and opens turn 2.
+snapshots/session/subagent-spawn-in-process/snapshot.yml	read	Minimal scenario manifest: default composition, LIVE recording.
+snapshots/session/subagent-structured-parent/cordis.snapshot.yml	read	Replay twin of the same overlay plus llm-replay and the passthrough sandbox runner.
+snapshots/session/subagent-structured-parent/cordis.yml	read	Live overlay inserting the structured-parent fixture plugin.
+snapshots/session/subagent-structured-parent/session.1.v4.jsonl	read	The child: its first structured_output (answer 41) is refused, the parent correction arrives as an agent-message notice, and the second structured_output (answer 42) succeeds.
+snapshots/session/subagent-structured-parent/session.v4.jsonl	read	The parent: the subagent_structured tool returns a settled notice carrying the structured payload, and the parent answers PARENT_RECEIVED_42.
+snapshots/session/subagent-structured-parent/snapshot.yml	read	Scenario manifest declaring child prompt and schema sidecars.
+snapshots/session/subagent-structured-parent/system-prompt.1.expected.md	read	The child system prompt, adding the closing line that the final answer MUST be reported by calling the structured_output tool and that only the tool call counts as the result.
+snapshots/session/subagent-structured-parent/tool-schemas.1.expected.json	read	Expected child tool-schema set, 28 tools including structured_output; header and complete tool-name list read.
+snapshots/session/subagent-structured-parent/tool-schemas.expected.json	read	Expected parent tool-schema set, 27 tools including subagent_structured; header and complete tool-name list read.
+snapshots/session/subagent-tool-filter/cordis.snapshot.yml	read	Replay twin of the preset overlay plus llm-replay and the passthrough sandbox runner.
+snapshots/session/subagent-tool-filter/cordis.yml	read	Live overlay that disables the fs and web tools on the host and puts them in the parent preset, leaving the child preset empty.
+snapshots/session/subagent-tool-filter/session.1.v3.jsonl	read	Format-v3 child: a write call is refused with Error: unknown tool write.
+snapshots/session/subagent-tool-filter/session.1.v4.jsonl	read	Format-v4 child: the same refusal, now a role=tool error with ToolNotFoundError and code UNKNOWN_TOOL.
+snapshots/session/subagent-tool-filter/session.v3.jsonl	read	Format-v3 parent: the child CHILD_OK comes back inline.
+snapshots/session/subagent-tool-filter/session.v4.jsonl	read	Format-v4 parent: the settlement notice arrives after the turn and opens turn 2.
+snapshots/session/subagent-tool-filter/snapshot.yml	read	Scenario manifest declaring child prompt and schema sidecars.
+snapshots/session/subagent-tool-filter/system-prompt.1.expected.md	read	The child system prompt: no read/edit/glob/grep/web lines, mirroring the child empty tool preset.
+snapshots/session/subagent-tool-filter/tool-schemas.1.expected.json	read	Expected child tool-schema set, 17 tools with no file or web tools; header and complete tool-name list read, schema bodies not transcribed.
+snapshots/session/system-prompt-in-history/cordis.snapshot.yml	read	Replay twin that declares the same in-history capability on the replay model.
+snapshots/session/system-prompt-in-history/cordis.yml	read	Live overlay declaring the systemPromptUpdate in-history capability on the model and inserting the fixture that changes the rendered prompt after the first read.
+snapshots/session/system-prompt-in-history/replay.override.json	read	Two scripted turns: a read call for task.txt, then DONE with cacheReadTokens 10, the cache-hit number the in-history route is meant to preserve.
+snapshots/session/system-prompt-in-history/session.v3.jsonl	read	Format-v3 parent: the prompt change appends a SECOND system/message record after the cached history instead of replacing node 0.
+snapshots/session/system-prompt-in-history/session.v4.jsonl	read	Format-v4 parent: the same append-a-second-system-message shape, with request/context carrying systemPromptUpdate in-history.
+snapshots/session/system-prompt-in-history/snapshot.yml	read	Scenario manifest declaring promptChanges 1 and a replay override.
+snapshots/session/system-prompt-in-history/system-prompt.expected.md	read	The expected system prompt for the in-history route.
+snapshots/session/system-prompt-in-history/tool-schemas.expected.json	read	Expected tool-schema set, the 26-tool baseline; header and complete tool-name list read, schema bodies not transcribed.
+snapshots/session/system-prompt-in-history/workspace/task.txt	read	Workspace seed the model is told to read before answering DONE.
+snapshots/session/team-direct-inbox/session.1.v4.jsonl	read	The teammate session: it touches team-ready, then a team message from the lead arrives as an inbox notice, and the blocking bash job is aborted with AbortError code ABORTED, ending the turn aborted.
+snapshots/session/team-direct-inbox/session.v4.jsonl	read	The lead session: spawn_teammate, a bash wait that becomes a registered job, send_message to the teammate, interrupt_agent, then TEAM_DIRECT_INBOX_OK.
+snapshots/session/team-direct-inbox/snapshot.yml	read	Scenario manifest borrowing the team-targets composition prompt and schema sidecars and requiring a final workspace oracle.
+snapshots/session/team-direct-inbox/workspace.expected/team-ready	read	Empty oracle file: the teammate must have created the empty team-ready marker in the workspace.
+snapshots/session/team-targets/cordis.snapshot.yml	read	Replay twin of the same overlay, additionally registering a second replay provider (deepseek-messages).
+snapshots/session/team-targets/cordis.yml	read	Live overlay disabling every single-agent subagent tool and mounting the experimental agent-team service and its tool surface instead.
+snapshots/session/team-targets/session.v3.jsonl	read	Format-v3 lead session: list_agents returns a roster JSON array describing the lead member.
+snapshots/session/team-targets/session.v4.jsonl	read	Format-v4 lead session: send_message to the lead itself is refused with TeamError and code TEAM_SELF_MESSAGE.
+snapshots/session/team-targets/snapshot.yml	read	Scenario manifest pinning the team-targets header class.
+snapshots/session/team-targets/system-prompt.expected.md	read	The team system prompt: a whole paragraph defining teammate roles, provisioning and inactive states, send_message semantics, the shared-task workflow, and the rule that write-scope overlap is advisory rather than a lock.
+snapshots/session/team-targets/tool-schemas.expected.json	read	Expected tool-schema set, 28 tools including spawn_teammate, wait_agent and four team_task tools; header and complete tool-name list read.
+snapshots/session/text-turn/cordis.snapshot.yml	read	Replay patch for the same composition: the live DeepSeek key and the session-title LLM are disabled and llm-replay supplies two providers.
+snapshots/session/text-turn/cordis.yml	read	Live-recording patch: thinking enabled with max reasoning effort, sandbox and approval policy derived from DSH_PERMISSION_MODE, raw uncompressed persistence, and both spawn and fork subagent providers at maxDepth 1.
+snapshots/session/text-turn/model.cordis.yml	read	Model-selection patch reading provider and model from environment variables, so the recorded request header is what selects the replay route.
+snapshots/session/text-turn/session.jsonl	read	Format-v0 parent session kept as the historical generation: the assistant stream is stored as individual chunk records and the request header still carries the system field.
+snapshots/session/text-turn/session.v1.jsonl	read	Format-v1 parent session: same chunk-per-delta stream shape under the v1 header.
+snapshots/session/text-turn/snapshot.yml	read	Scenario manifest for the canonical text turn, pinning the header class and the v1 session format with adjacent-migration coverage.
+snapshots/session/text-turn/system-prompt.expected.md	read	The canonical expected system prompt for the baseline headless turn.
+snapshots/session/text-turn/tool-schemas.expected.json	read	Expected baseline tool-schema set, 26 tools; header and complete tool-name list read, schema bodies not transcribed.
+snapshots/session/text-turn/writer.expected.jsonl	read	Native-writer oracle: the same PONG turn re-serialised in format v4, with the system message in the surface and the runtime context carrying the working-directory section.
+snapshots/session/todo-write/session.v2.jsonl	read	Format-v2 turn: todo_write with three todos, a dedicated todo/write record, and the result line Updated todo list: 1 pending, 2 in progress, 0 completed.
+snapshots/session/todo-write/session.v3.jsonl	read	Format-v3 twin of the todo_write turn.
+snapshots/session/todo-write/session.v4.jsonl	read	Format-v4 twin: the todo/write record carries the todo array and the result is a role=tool message.
+snapshots/session/todo-write/snapshot.yml	read	Minimal scenario manifest: default composition, LIVE recording.
+snapshots/session/tool-call-turn/session.v2.jsonl	read	Format-v2 tool-call turn: bash echo SNAPSHOT_OK whose result is the raw stdout, with no job records.
+snapshots/session/tool-call-turn/session.v3.jsonl	read	Format-v3 twin of the tool-call turn.
+snapshots/session/tool-call-turn/session.v4.jsonl	read	Format-v4 twin: the same bash call now emits job/registered and job/settled records around the result.
+snapshots/session/tool-call-turn/snapshot.yml	read	Scenario manifest pinning the header class and the text-turn sidecars.
+snapshots/session/web-fetch/cordis.snapshot.yml	read	Replay twin keeping the deterministic HTTP real and replacing only the model adapter.
+snapshots/session/web-fetch/cordis.yml	read	Live overlay inserting the deterministic fetch fixture, disabling the real HTTP provider, and exposing only fetch (search off).
+snapshots/session/web-fetch/session.v2.jsonl	read	Format-v2 fetch turn: the tool result opens with Fetched http://public.test:43117/menu.html (HTTP 200) and the untrusted-content warning.
+snapshots/session/web-fetch/session.v3.jsonl	read	Format-v3 twin of the fetch turn.
+snapshots/session/web-fetch/session.v4.jsonl	read	Format-v4 twin of the fetch turn.
+snapshots/session/web-fetch/snapshot.yml	read	Scenario manifest for the web composition under workspace-write permissions.
+snapshots/session/web-fetch/system-prompt.expected.md	read	The expected system prompt for the web composition: no web_search line, only the web_fetch untrusted-content rule.
+snapshots/session/web-fetch/tool-schemas.expected.json	read	Expected tool-schema set, 25 tools, the baseline minus web_search; header and complete tool-name list read.
+snapshots/session/web-fetch/web-fetch-fixture-server.mjs	read	Deterministic HTTP fixture: a real HttpFetchProvider bound to an OS-assigned loopback port behind a resolver mapping the recorded authority public.test to 127.0.0.1, serving a fixture HTML page with entities, a GFM table and nested formatting.
+snapshots/session/web-search-endpoint-guidance/cordis.snapshot.yml	read	Replay twin that also pins the flash model context window, default max tokens and reasoning-effort ladder.
+snapshots/session/web-search-endpoint-guidance/cordis.yml	read	Live overlay pointing the DeepSeek search provider at a local base URL with a placeholder key so the search failure is deterministic.
+snapshots/session/web-search-endpoint-guidance/session.v2.jsonl	read	Format-v2 search turn: a web/deepseek-search-llm-request record captures the endpoint, apiVersion and body, and the tool result is a 401 naming the endpoint.
+snapshots/session/web-search-endpoint-guidance/session.v3.jsonl	read	Format-v3 twin of the search turn.
+snapshots/session/web-search-endpoint-guidance/session.v4.jsonl	read	Format-v4 twin: the tool result is an error and the model answer reports the endpoint and says no retry was made.
+snapshots/session/web-search-endpoint-guidance/snapshot.yml	read	Scenario manifest for the search-endpoint-guidance composition.
+snapshots/session/web-search-endpoint-guidance/web-search-error-fixture.mjs	read	Fixture that answers 401 on the recorded Messages endpoint, patches globalThis.fetch to redirect the recorded URL to the loopback listener, and refuses to restore if another owner replaced fetch first.
+snapshots/session/windows-acl-skill/session.v4.jsonl	read	Format-v4 turn loading the bundled diagnose-windows-sandbox-acl skill; the skill catalog arrives as a skill-catalog user message before the skill call.
+snapshots/session/windows-acl-skill/snapshot.yml	read	Scenario manifest for the Windows ACL skill, seeding the workspace with the windows-acl-skill setup.
+snapshots/session/workflow-confinement/cordis.snapshot.yml	read	Replay overlay that only disables the live key and installs llm-replay, so the authored model turns run through the real OS sandbox.
+snapshots/session/workflow-confinement/cordis.yml	read	Empty live overlay: the shipped profile supplies the workflow engine and native file sandbox, so the scenario adds nothing.
+snapshots/session/workflow-confinement/session.v3.jsonl	read	Format-v3 workflow turn: tool-workflow run-start and run-end records bracket a run whose return value is blocked true.
+snapshots/session/workflow-confinement/session.v4.jsonl	read	Format-v4 workflow turn: the same run and the same blocked return value, in the v4 envelope.
+snapshots/session/workflow-confinement/snapshot.yml	read	Scenario manifest pinned to POSIX with read-only permission, a final workspace oracle and a workspace parent outside the temp grant.
+snapshots/session/workflow-confinement/system-prompt.expected.md	read	The expected system prompt for the read-only workflow turn.
+snapshots/session/workflow-confinement/tool-schemas.expected.json	read	Expected tool-schema set, the 26-tool baseline; header and complete tool-name list read, schema bodies not transcribed.
+snapshots/session/workflow-confinement/workspace.expected/.empty	read	Empty-oracle marker: the read-only workflow must leave the workspace untouched.
+snapshots/session/workflow-run/session.1.v2.jsonl	read	Format-v0 child session for the workflow scenario (no .vN suffix), answering WF_CHILD_OK.
+snapshots/session/workflow-run/session.1.v3.jsonl	read	Format-v3 child of the workflow run.
+snapshots/session/workflow-run/session.1.v4.jsonl	read	Format-v4 child: continuable descriptor labelled snapshot-flow child 1.
+snapshots/session/workflow-run/session.v2.jsonl	read	Format-v2 parent: tool-workflow run-start, agent-start, agent-end and run-end records bracket the run, and the tool result reports the workflow completed with 1 agent.
+snapshots/session/workflow-run/session.v3.jsonl	read	Format-v3 parent: the same run with an added subagent/catalog record for the workflow child.
+snapshots/session/workflow-run/session.v4.jsonl	read	Format-v4 parent: the workflow child is catalogued as continuable and the run returns the child reply as the workflow return value.
+snapshots/session/workflow-run/snapshot.yml	read	Minimal scenario manifest: default composition, LIVE recording.
+snapshots/session/working-directory-admission/cordis.snapshot.yml	read	Replay twin of the same overlay plus llm-replay and the passthrough sandbox runner.
+snapshots/session/working-directory-admission/cordis.yml	read	Live overlay inserting the working-directory-admission fixture that admits the selected directory.
+snapshots/session/working-directory-admission/session.v4.jsonl	read	Format-v4 turn: a working-directory/change record moves the cwd to the selected directory and a working-directory user message announces the change before the answer.
+snapshots/session/working-directory-admission/snapshot.yml	read	Scenario manifest pinned to POSIX, pinning the header class and the text-turn sidecars.
+snapshots/session/working-directory-admission/workspace/selected/witness.txt	read	Workspace seed proving the admitted directory was left unchanged.
+snapshots/session/working-directory-consumers/session.v4.jsonl	read	Format-v4 turn: two cwd changes, a file write inside the new cwd, the removal of the current directory, the automatic fallback to the session root and the working-directory notice reporting the directory as unavailable; ends with a workspace/changes record.
+snapshots/session/working-directory-consumers/snapshot.yml	read	Scenario manifest using the claude-code-mods composition, pinned to POSIX, with a final workspace oracle.
+snapshots/session/working-directory-consumers/workspace.expected/selected/input.txt	read	Oracle: the seed file inside selected must survive untouched.
+snapshots/session/working-directory-consumers/workspace.expected/selected/mods-directory.json	read	Oracle: a directory-mod probe recording that the directory was read, listed, exists and that the process cwd matches.
+snapshots/session/working-directory-consumers/workspace.expected/selected/result.txt	read	Oracle: the file the session wrote inside selected.
+snapshots/session/working-directory-consumers/workspace.expected/selected/witness.txt	read	Oracle: the seed witness file inside selected.
+snapshots/session/working-directory-consumers/workspace/second/witness.txt	read	Workspace seed witness inside the second directory (content: second directory).
+snapshots/session/working-directory-consumers/workspace/selected/input.txt	read	Workspace seed inside selected.
+snapshots/session/working-directory-consumers/workspace/selected/witness.txt	read	Workspace seed witness inside selected (content: selected witness).
+snapshots/session/working-directory/session.v4.jsonl	read	Format-v4 turn exercising the cwd change, a write in the new directory, reading a witness in a sibling directory, deleting the current directory and the automatic recovery to the session root.
+snapshots/session/working-directory/snapshot.yml	read	Scenario manifest pinned to POSIX with a final workspace oracle.
+snapshots/session/working-directory/workspace.expected/selected/input.txt	read	Oracle: the seed file inside selected survives.
+snapshots/session/working-directory/workspace.expected/selected/result.txt	read	Oracle: the file written inside selected.
+snapshots/session/working-directory/workspace/second/witness.txt	read	Workspace seed witness inside the second directory (content: second directory).
+snapshots/session/working-directory/workspace/selected/input.txt	read	Workspace seed inside selected (content: keep this file).
+snapshots/session/workspace-dependencies/cordis.snapshot.yml	read	Replay twin of the same overlay plus llm-replay and the passthrough sandbox runner.
+snapshots/session/workspace-dependencies/cordis.yml	read	Live overlay inserting the workspace-dependencies tool with a runtime source and install root, and disabling bash and pwsh.
+snapshots/session/workspace-dependencies/session.v3.jsonl	read	Format-v3 turn: load_workspace_dependencies fails with Error: primary runtime: conflicting numpy distribution version.
+snapshots/session/workspace-dependencies/session.v4.jsonl	read	Format-v4 turn: the same failure as an error tool result, and the model reports it without retrying.
+snapshots/session/workspace-dependencies/snapshot.yml	read	Scenario manifest for the workspace-dependencies composition.
+snapshots/session/workspace-dependencies/system-prompt.expected.md	read	The expected system prompt: no bash-related exit-code line, because bash is disabled in this composition.
+snapshots/session/workspace-dependencies/tool-schemas.expected.json	read	Expected tool-schema set, 25 tools including load_workspace_dependencies and no bash; header and complete tool-name list read.
+snapshots/session/workspace-dependencies/workspace/runtime-source/runtime.json	read	Runtime metadata seed whose pythonPackages.Numpy 2.3.4 conflicts with components.numpy 2.3.5, the deterministic cause of the tool failure.
+snapshots/session/workspace-edit/session.v2.jsonl	read	Format-v2 turn: bash appends WORLD to greeting.txt, then cats the file to confirm.
+snapshots/session/workspace-edit/session.v3.jsonl	read	Format-v3 twin of the append-and-confirm turn.
+snapshots/session/workspace-edit/session.v4.jsonl	read	Format-v4 twin: each bash call is bracketed by job/registered and job/settled records.
+snapshots/session/workspace-edit/snapshot.yml	read	Minimal scenario manifest with a final workspace oracle.
+snapshots/session/workspace-edit/workspace.expected/greeting.txt	read	Oracle: greeting.txt must end up as hello followed by WORLD.
+snapshots/session/workspace-edit/workspace/greeting.txt	read	Workspace seed: the single word hello.
+snapshots/session/worktree/cordis.snapshot.yml	read	Replay overlay for the same composition, with the flash model context window, default max tokens and reasoning-effort ladder pinned.
+snapshots/session/worktree/cordis.yml	read	Live overlay mounting the experimental worktree service and its tool.
+snapshots/session/worktree/session.v4.jsonl	read	Format-v4 turn: create_worktree moves the cwd into .agents/worktrees/isolated, the model reads the committed tracked.txt there, writes result.txt, walks back to the root and inspects git status --porcelain=v1.
+snapshots/session/worktree/snapshot.yml	read	Scenario manifest pinned to POSIX, seeding a git worktree and requiring a final workspace oracle.
+snapshots/session/worktree/system-prompt.expected.md	read	The expected system prompt for the worktree turn.
+snapshots/session/worktree/tool-schemas.expected.json	read	Expected tool-schema set, 27 tools including create_worktree; header and complete tool-name list read.
+snapshots/session/worktree/workspace.expected/.agents/worktrees/.gitignore	read	Oracle: the worktree root is gitignored with a single asterisk so the worktree directory never enters the parent index.
+snapshots/session/worktree/workspace.expected/.agents/worktrees/isolated/result.txt	read	Oracle: the file written inside the isolated worktree.
+snapshots/session/worktree/workspace.expected/.agents/worktrees/isolated/tracked.txt	read	Oracle: the tracked file as committed (COMMITTED CONTENT), proving the worktree was cut from HEAD and not from the dirty checkout.
+snapshots/session/worktree/workspace.expected/local.txt	read	Oracle: an untracked file that must stay in the original checkout and not appear in the worktree.
+snapshots/session/worktree/workspace.expected/tracked.txt	read	Oracle: the original checkout tracked.txt is dirty (DIRTY SOURCE) at the end.
+snapshots/session/worktree/workspace/tracked.txt	read	Workspace seed: tracked.txt as committed (COMMITTED CONTENT) before the session dirties it.
+snapshots/web/approval-composer/session.v2.jsonl	read	Format-v2 web session: a permission read-only command runs first, then the bash write triggers approval/asked and approval/decided with outcome allowed-once before the tool result.
+snapshots/web/approval-composer/session.v3.jsonl	read	Format-v3 twin of the approval-composer session.
+snapshots/web/approval-composer/session.v4.jsonl	read	Format-v4 twin: the approval handshake records and the role=tool results.
+snapshots/web/approval-composer/snapshot.yml	read	Scenario manifest for the web profile default composition, with a final workspace oracle.
+snapshots/web/approval-composer/ui.expected.md	read	Expected accessibility-tree rendering of the approval dialog: a Waiting for approval text, the Approval details group carrying the justification and the command, and the Reject and Allow once buttons.
+snapshots/web/approval-composer/workspace.expected/notes.txt	read	Oracle: the ~1.6 KB token-ish payload the approved bash command writes into notes.txt.
+snapshots/web/auto-review-approval/session.v3.jsonl	read	Format-v3 web session carrying the auto-review outcomes: a user rejection and an auto-review failure that prevented the tool body from running.
+snapshots/web/auto-review-approval/snapshot.yml	read	Scenario manifest for the web-auto-review composition.
+snapshots/web/auto-review-approval/ui.expected.md	read	Expected collapsed and expanded accessibility trees: failed tool rows, the Tool call Error the user rejected tool button, the auto-review failure text, and the IN/OUT payload line revealed only when expanded.
+snapshots/web/auto-review-denial/session.v3.jsonl	read	Format-v3 web session for the auto-review denial, including the nested SUBTOOL denial inside a code-mode call.
+snapshots/web/auto-review-denial/snapshot.yml	read	Scenario manifest pinning the header class and borrowing the fresh-round-trip prompt and schema sidecars.
+snapshots/web/auto-review-denial/ui.expected.md	read	Expected collapsed, expanded and Trajectory views, including the event-details Result tab showing the AutoReviewDeniedError and the SUBTOOL row marked as selected.
+snapshots/web/background-job-list/running.expected.md	read	Expected rendering of the running background-job list: a Show live output of button carrying the elapsed duration and a separate Stop task for button.
+snapshots/web/background-job-list/settled.expected.md	read	Expected rendering of the settled job list: a Finished 1 disclosure and a Clear button, with the job line recording SIGTERM and cancelled by the user.
+snapshots/web/background-job-list/snapshot.yml	read	Scenario manifest that points at another scenario session file as its session source.
+snapshots/web/bash-abort-row/snapshot.yml	read	Scenario manifest that reuses the ACP cancel-tool-calls session as its source.
+snapshots/web/bash-abort-row/ui.expected.md	read	Expected rendering of an aborted turn: status Stopped, a disabled Stopped button, a Failed Bash Error: tool call aborted row with its IN/OUT payload, and a second call reported as aborted before dispatch.

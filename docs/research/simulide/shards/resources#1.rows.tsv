@@ -1,0 +1,202 @@
+resources/data/codeeditor/compilers/compilers/angelscript.xml	read	Compiler descriptor with name="AScript" type="ascript" and NO <step> children; the AngelScript path is compiled in-process by the bundled AngelScript engine, so the XML exists only to carry the name/type into the compiler registry.
+resources/data/codeeditor/compilers/compilers/arduino.xml	read	Compiler descriptor name="Arduino" type="arduino", no <step>; the Arduino path is special-cased in InoDebugger (arduino-builder / arduino-cli), not shell-template driven.
+resources/data/codeeditor/compilers/compilers/avrgcc.xml	read	Two-step external toolchain descriptor (avr-gcc then avr-objcopy) with $device/$buildPath/$fileName/$filePath placeholders and a separate argsDebug line - the only shipped compiler with a real command line.
+resources/data/codeeditor/compilers/compilers/dummy_c.xml	read	Minimal sdcc stub whose type="c10" encodes the compiler-type digits documented in types.txt (1=high level, 0=no ':' in labels); arguments are empty so it never actually compiles.
+resources/data/codeeditor/compilers/default.xml	read	The "None" compiler entry (type="none") - the sentinel that means "no toolchain" and is skipped by the debugger factory.
+resources/data/codeeditor/compilers/template.txt	read	Documented template for authoring a compiler XML: lists the 8 supported $filePath/$fileDir/$fileName/$fileExt/$inclPath/$buildPath/$family/$device substitutions and shows a worked Avra example with a syntax="avrasm" link.
+resources/data/codeeditor/compilers/types.txt	read	Explains the 2-digit suffix of a compiler "type" (first digit 0=asm/1=high level, second digit bit0 = label ':' style, bit1 = flash address position) - the only place this encoding is written down.
+resources/data/codeeditor/syntax/6502asm.syntax	read	6502 assembler highlighting: directives (equ/include/org), the 56 official mnemonics as plain words, '#' preprocessor, ';' line comments, ':'-suffixed label rule.
+resources/data/codeeditor/syntax/avrasm.syntax	read	AVR assembler highlighting with the full AVR instruction set (~180 mnemonics incl. MUL/SBI/CALL) as plain words; label rule is "^[space/tab]*\w+:".
+resources/data/codeeditor/syntax/cpp.syntax	read	C/C++ highlighting: data/keyword1/keyword2 plain-word rules, a '#' preprocessor regex, number regexes, an HTML-tag rule, a 'function' rule using a lookahead "\b[A-Za-z0-9_]+(?=\()".
+resources/data/codeeditor/syntax/gcbasic.syntax	read	GCBASIC highlighting with a dated WIP changelog header; its Keyword2 list (HSerPrint, LCDCMD, PWMOn ...) is capitalised, which the lower-casing highlighter can never match - those rules are dead.
+resources/data/codeeditor/syntax/hex.syntax	read	Intel HEX highlighting: four column-anchored rules (ByteCount/Address/Type/Checksum) each using a background colour rather than a foreground one.
+resources/data/codeeditor/syntax/i51asm.syntax	read	8051/i51 assembler highlighting; its directives are one regex over a dot-directive alternation while the mnemonics are plain words, and the trailing "[^\\b]" is a negated class rather than the word boundary it was meant to be.
+resources/data/codeeditor/syntax/js.syntax	read	JavaScript highlighting (a near copy of cpp.syntax with a JS keyword set); its function rule is double-escaped - the file holds "\\b[A-Za-z0-9_]+(?=\\()" where cpp.syntax holds "\b...\b" - and remQuotes() does not unescape, so the word boundary becomes a literal backslash-b and the rule never fires.
+resources/data/codeeditor/syntax/makef.syntax	read	GNU-make highlighting with a negative-lookahead target rule "(?!.*:=).*:" so assignment lines are not highlighted as targets.
+resources/data/codeeditor/syntax/md.syntax	read	Markdown highlighting with 11 rules (headers, hrule, blockquote, lists, links, images, bold/italic/strike, inline code, html) and fenced code blocks expressed as a multiLineComment pair of "```".
+resources/data/codeeditor/syntax/pic14asm.syntax	read	PIC14 assembler highlighting; unlike the other assembler files it has no Label rule and calls its mnemonic list keyword1.
+resources/data/codeeditor/syntax/readme_syntax	read	239-line cookbook documenting the .syntax format for Highlighter::readSyntaxFile - rules header, -style: line, plain-word vs quoted-RegExp patterns, the special multiLineComment rule, rule ordering, and the _dark.syntax theme fallback.
+resources/data/codeeditor/syntax/xml.syntax	read	XML highlighting with a lookahead element-name rule "\b[A-Za-z0-9_]+(?=\=)" and a comment rule spanning "<!--.*-->".
+resources/data/codeeditor/syntax/z80asm.syntax	read	Z80 assembler highlighting; same 8-rule shape as the 6502/avr assembler files with the Z80 mnemonics and ED-prefixed block opcodes.
+resources/data/diodes.model	read	SPICE-style diode model library in XML: three itemsets (diode, zener, led) whose items carry satCurr_nA, resist, emCoef and brkDown, loaded by eDiode::getModels() from a user-overridable data file.
+resources/data/help/7-segbcd.txt	read	Help for the 7-segment-with-integrated-BCD component; documents the bit ordering (bit 0 right pin, bit 3 left pin) and that PWM/multiplexing is unsupported.
+resources/data/help/adc.txt	read	ADC help; documents Size (output pin count) and Reference Voltage, then includes the shared logicoutputs and logicedges fragments.
+resources/data/help/aip31068i2c.txt	read	AiP31068 I2C LCD help; documents Rows/Columns/I2C Address (62) and warns that the I2C frequency should match the master but is not critical.
+resources/data/help/amperimeter.txt	read	Amperimeter help; documents the red/black polarity pins and that the third pin outputs the reading as a voltage updated at the circuit FPS.
+resources/data/help/andgate.txt	read	AND gate help; the pure-include case - it adds no text of its own and pulls in logicinputs, gateinputs, logicoutputs, gateoutputs and gatedelay.
+resources/data/help/app.txt	read	Application-level help; documents the Language setting and the Font Scale setting, both of which need a restart.
+resources/data/help/at90usb162.txt	read	AT90USB162 MCU help: 32-pin QFN pin table with alternate-function names, then the datasheet feature summary (16 KB flash, 512 B EEPROM/SRAM, 22 I/O lines, 2.7-5.5 V).
+resources/data/help/audioout.txt	read	Audio output help; documents the Buzzer mode and the 8-ohm impedance, and notes that a missing audio device is shown as an "X" in the symbol.
+resources/data/help/battery.txt	read	Battery help; documents Voltage (5 V) and internal Resistance (1 m-ohm).
+resources/data/help/bcdtodec.txt	read	Binary-to-decimal converter help; documents the 16-Bits property, output inversion, and includes logicinputs/logicoutputs/logicedges.
+resources/data/help/bjt.txt	read	BJT help; documents PNP (default yes), Gain (100) and the base-emitter diode threshold (0.670736 V).
+resources/data/help/buffer.txt	read	Buffer help; documents input inversion, output inversion, the Tristate option (adds an active-low enable pin) and pulls in gatedelay.
+resources/data/help/bus.txt	read	Bus connector help; documents Size (8 bits) and Start bit, the bit number assigned to the first pin.
+resources/data/help/capacitor.txt	read	Capacitor help; documents Capacitance, Resistance, Initial Voltage and the per-component "Reactive Step" override that beats the global Simulation Settings.
+resources/data/help/circuit.txt	read	Circuit-canvas help; documents Draw Grid, Show Scrollbar, Animate, Canvas Refresh (20 redraws/sec) and the 15-second auto-backup interval.
+resources/data/help/clock.txt	read	Clock source help; documents Voltage, Frequency and "Always On" which removes the on/off button.
+resources/data/help/counter.txt	read	Binary counter help; documents Use Set Pin, clock/set-reset inversion and "Count to"; includes propdelay - a fragment that does NOT exist anywhere in the repo, so this include resolves to the "No help available" placeholder.
+resources/data/help/csource.txt	read	Controlled-source help; the boolean property set (Use Control Pins, Current Source, Current Controlled, Gain) lets one component cover VCVS/CCVS/VCCS/CCCS.
+resources/data/help/currentsource.txt	read	Variable current source help; documents Current value and Maximum Current (must be positive).
+resources/data/help/dac.txt	read	DAC help; documents Size and Reference Voltage, and includes logicinputs/logicedges.
+resources/data/help/dcmotor.txt	read	DC motor help; explains the green/red speed indication and that the coil is modelled as a plain resistor for speed.
+resources/data/help/decto7s.txt	read	Decimal-to-7-segment help; documents output inversion and includes logicinputs/logicoutputs/logicedges.
+resources/data/help/dectobcd.txt	read	Decimal-to-binary help; documents the 16-Bits property and input inversion, and includes logicinputs/logicoutputs/logicedges.
+resources/data/help/demux.txt	read	Demultiplexer help; documents Address Size (3 bits => 2^3 channels) and output inversion, and includes logicinputs/logicoutputs/logicedges.
+resources/data/help/dht22.txt	read	DHT22 temperature/humidity help; documents the Model choice (HDT22/HDT11) and the 0.5-degree increment buttons.
+resources/data/help/diac.txt	read	DIAC help; documents On Resistance (500 ohm), Off Resistance (100 M-ohm), Breakdwn Voltage and Holding Current.
+resources/data/help/dial.txt	read	Standalone dial help; documents Minimum/Maximum Value and Steps, and says explicitly that the dial is meant to be LINKED to a Dialed component (potentiometer, variable resistor, resistive sensors).
+resources/data/help/dialed.txt	read	Dialed-fragment help; documents the Slider-vs-Knob control choice and the Scale factor that sets the dial size.
+resources/data/help/diode.txt	read	Diode help; documents Model (read from data/diodes.model), forward voltage, max current, series resistance and the advanced saturation current / emission coefficient, and states that the diode blinks when the max current is exceeded.
+resources/data/help/ds1307.txt	read	DS1307 I2C real-time-clock help; documents "Set current time at start" so the sim can start from the PC clock.
+resources/data/help/ds1621.txt	read	DS1621 I2C temperature sensor help; documents the A0/A1/A2 address-strapping pins and the +/- temperature buttons.
+resources/data/help/ds18b20.txt	read	DS18B20 One-Wire temperature sensor help; documents the random ROM address and the +/- temperature buttons.
+resources/data/help/dynamicmemory.txt	read	Dynamic RAM help; documents row/column address sizes, data size, refresh period, the memory table / load-data / save-data context menu, and the open-drain output option.
+resources/data/help/elcapacitor.txt	read	Polarised (electrolytic) capacitor help; same four properties as the plain capacitor plus a note that it blinks when the polarity is wrong.
+resources/data/help/ellipse.txt	read	Ellipse help; a pure include of the shared shape fragment, so it carries no text of its own.
+resources/data/help/esp01.txt	read	ESP-01 WiFi module help; states the TCP/IP AT-command support is only partial and documents Baudrate and the debug-message switch.
+resources/data/help/fixedvoltage.txt	read	Fixed voltage source help; documents the 5 V output value and the left-button on/off.
+resources/data/help/flipflop.txt	read	Shared flip-flop fragment; documents Set/Reset inversion, Clock inversion and the Trigger Type options (Clock / enable / None hides the clock pin).
+resources/data/help/flipflopd.txt	read	D flip-flop help; a one-line alias that includes the shared flipflopfull fragment.
+resources/data/help/flipflopfull.txt	read	Full flip-flop fragment; documents the "Use Set/Reset Pin" visibility toggle and includes the shared flipflop fragment.
+resources/data/help/flipflopjk.txt	read	JK flip-flop help; a one-line alias that includes the shared flipflopfull fragment.
+resources/data/help/flipfloprs.txt	read	RS flip-flop help; documents only the "Use Set/Reset Pin" toggle and includes the shared flipflop fragment (no trigger-type options).
+resources/data/help/flipflopt.txt	read	T flip-flop help; a one-line alias that includes the shared flipflopfull fragment.
+resources/data/help/freqmeter.txt	read	Frequency meter help; documents the 0.1 V filter that ignores voltage changes below the threshold.
+resources/data/help/frequencimeter.txt	read	Standalone frequencimeter help; says to connect the left pin to a wire and gives the minimum measurable frequency as 2 Hz.
+resources/data/help/fulladder.txt	read	Full-adder help; a bare include set (logicinputs/logicoutputs/logicedges) with no component-specific text.
+resources/data/help/function.txt	read	Combinational-logic "Function" component help; documents the per-output function list syntax "i0 | i1", the input/output sizes, inversion, open drain, and links the simulide.com/p/function tutorial.
+resources/data/help/gatedelay.txt	read	Shared gate-timing fragment; documents Gate Delay (10 ns), Rise Time (3 ns) and Fall Time (4 ns) - the numbers every digital component inherits.
+resources/data/help/gateinputs.txt	read	Shared gate-input fragment; documents Input Size and input inversion.
+resources/data/help/gateoutputs.txt	read	Shared gate-output fragment; documents Initial High State, output inversion and the open-drain option (sink but not source).
+resources/data/help/ground.txt	read	Ground help; states it is simply a 0 V voltage source, with no properties.
+resources/data/help/hd44780.txt	read	HD44780 LCD help; documents Rows and Columns of characters.
+resources/data/help/hdt22.txt	read	HDT22 help; identical content to dht22.txt (the component id differs only in spelling) - a duplicate fragment pair.
+resources/data/help/header.txt	read	Header connector help; documents Size and the Downwards option that points the pins at boards behind.
+resources/data/help/i2cram.txt	read	I2C RAM/ROM help; documents size, control code (device address), I2C frequency and the Persistent flag that makes it behave as a ROM, plus the memory-table / load / save context menu.
+resources/data/help/i2ctoparallel.txt	read	I2C-to-parallel converter help; documents the base control code and the I2C frequency.
+resources/data/help/ili9341.txt	read	ILI9341 TFT LCD help; a two-line description only (240x320 colour, SPI interface) with no properties.
+resources/data/help/image.txt	read	Embedded-image component help; a pure include of the shared shape fragment.
+resources/data/help/inductor.txt	read	Inductor help; documents Inductance, Resistance, Initial Current and the per-component Reactive Step override.
+resources/data/help/keypad.txt	read	Keypad help; documents Rows, Columns and the Key Labels string (123456789*0#) read left-to-right, top-to-bottom.
+resources/data/help/ks0108.txt	read	KS0108 LCD driver help; documents the CS Active Low option.
+resources/data/help/ky023.txt	read	KY-023 resistive joystick help; a two-line description telling the user to click and move the circle.
+resources/data/help/ky40.txt	read	KY-040 rotary encoder help; documents Steps per Rotation (20).
+resources/data/help/lamp.txt	read	Incandescent lamp help; documents the filament Resistance and the Max Current that corresponds to maximum brightness.
+resources/data/help/latchd.txt	read	Latch help; documents channel count, the Trigger Type (Enable / Clock / None) and the Tristate enable pin, and pulls in the shared logic fragments.
+resources/data/help/ldr.txt	read	LDR help; documents the dial-driven Lux range, the Gamma exponent and R1, and links the dialed fragment.
+resources/data/help/led.txt	read	LED help; documents Color, the Grounded option (cathode wired internally, existing cathode wires deleted), forward voltage, max current and series resistance.
+resources/data/help/ledbar.txt	read	LED bar help; documents Color, Size (8 leds) and the same Grounded/fwd-voltage/current trio as the single LED.
+resources/data/help/ledmatrix.txt	read	LED matrix help; documents Rows, Columns and the Vertical Pins option that moves all pins to the top and bottom.
+resources/data/help/ledrgb.txt	read	RGB LED help; documents Common Cathode and a SEPARATE forward voltage, max current and resistance per R/G/B channel (2.4 V red, 3.5 V green and blue).
+resources/data/help/line.txt	read	Line component help; a pure include of the shared shape fragment.
+resources/data/help/logicanalizer.txt	read	Logic-analyser help; documents the 8 channels, screen size, 100000-sample buffer, ground impedance, and the VCD export options (base time step, export at pause).
+resources/data/help/logicedges.txt	read	Shared logic-timing fragment; documents Propagation delay (in gates), Gate Delay, Rise Time and Fall Time - the analogue timing that backs every digital edge.
+resources/data/help/logicinputs.txt	read	Shared logic-input fragment; documents the 2.5 V low-to-high and high-to-low thresholds and the 100 M-ohm input impedance.
+resources/data/help/logicoutputs.txt	read	Shared logic-output fragment; documents Output High Voltage (5 V), Output Low Voltage (0 V) and the 40-ohm output impedance.
+resources/data/help/max72xxmatrix.txt	read	MAX72xx matrix help; documents the LED colour and the size expressed as a number of 8x8 sections.
+resources/data/help/mega1280.txt	read	ATmega1280 help: 100-pin TQFP pin table with all alternate functions, then the full Atmel feature summary (128 KB flash, 4 KB EEPROM, 8 KB SRAM, 86 I/O lines, 16 PWM channels).
+resources/data/help/mega1284.txt	read	ATmega644 (mega1284 alias) help: 40-pin PDIP pin table and a short feature summary.
+resources/data/help/mega128rfa1.txt	read	ATmega128RFA1 help: 64-pin QFN pin table plus the long 2.4 GHz radio feature list (ZigBee/802.15.4, AES, TRX).
+resources/data/help/mega128rfr2.txt	read	ATmega128RFR2 help: same 64-pin QFN pin table as the RFA1 with the RFR2 feature list (PLL channel spacing, multi-PAN filtering).
+resources/data/help/mega16.txt	read	ATmega16 help: 40-pin PDIP pin table and a compact feature summary.
+resources/data/help/mega164.txt	read	ATmega164 help: 40-pin PDIP pin table with PCINT24-31 interrupt pins and a feature summary.
+resources/data/help/mega168.txt	read	ATmega168 help: 28-pin PDIP pin table with PCINT0-23 and a feature summary (16 KB flash, 1 KB SRAM, 23 I/O lines).
+resources/data/help/mega169.txt	read	ATmega169 help: 64-pin QFN pin table including the 4x25 segment LCD driver pins, plus the feature summary.
+resources/data/help/mega16m1.txt	read	ATmega16M1 help: 32-pin QFN/TQFP pin table with CAN, LIN and 4 analog comparators, plus a feature summary.
+resources/data/help/mega2560.txt	read	ATmega2560 help: 100-pin TQFP pin table and the long feature summary (256 KB flash, 16 PWM channels).
+resources/data/help/mega32.txt	read	ATmega32 help: 40-pin PDIP pin table and a feature summary.
+resources/data/help/mega324.txt	read	ATmega324 help: 40-pin PDIP pin table with PCINT24-31 and a feature summary.
+resources/data/help/mega324a.txt	read	ATmega324A help: byte-for-byte the same pin table and summary as mega324.txt - a duplicate fragment pair.
+resources/data/help/mega328.txt	read	ATmega328 help: 28-pin PDIP pin table with PCINT0-23 and a feature summary (32 KB flash, 2 KB SRAM).
+resources/data/help/mega32u4.txt	read	ATmega32u4 help: 44-pin QFN pin table including the USB D+/D- pins and 12 ADC channels, plus a feature summary.
+resources/data/help/mega48.txt	read	ATmega48 help: 28-pin PDIP pin table and a feature summary (4 KB flash, 512 B SRAM).
+resources/data/help/mega64.txt	read	ATmega64 help: 64-pin TQFP pin table including the ATmega64-only PEN pin and a feature summary.
+resources/data/help/mega644.txt	read	ATmega644 help: 40-pin PDIP pin table with PCINT24-31 and a feature summary.
+resources/data/help/mega8.txt	read	ATmega8 help: 28-pin PDIP pin table without PCINT and a feature summary noting the 4.5-5.5 V operating range.
+resources/data/help/mega88.txt	read	ATmega88 help: 28-pin PDIP pin table with PCINT0-23 and a feature summary (8 KB flash, 1 KB SRAM).
+resources/data/help/memory.txt	read	Static RAM/ROM help; documents Address Size, Data size, Persistent (acts as ROM) and Asynchronous, and the memory-table / load / save context menu.
+resources/data/help/mosfet.txt	read	MOSFET help; documents P Channel, Depletion mode, RDSon and the gate-source threshold voltage.
+resources/data/help/mux.txt	read	Multiplexer help; documents Address Size (3 bits => 8 channels), input inversion, and includes logicinputs/logicoutputs/logicedges.
+resources/data/help/muxanalog.txt	read	Analog multiplexer help; documents Address Size and the 1 m-ohm channel impedance.
+resources/data/help/opamp.txt	read	Op-amp help; documents Gain, Output Impedance, the V+/V- supply values and the "Use Supply Pins" switch.
+resources/data/help/orgate.txt	read	OR gate help; a pure include set of logicinputs/gateinputs/logicoutputs/gateoutputs/gatedelay.
+resources/data/help/oscope.txt	read	Oscilloscope help; documents the 4 channels, the 600000-sample buffer, screen size, ground impedance and the expandable floating window, and links the simulide.com/p/oscilloscope tutorial.
+resources/data/help/package.txt	read	Package-component help; documents Type, Width/Height in grid cells, the Name field with its "Package" magic value, the Package File path, the Background image and the Logic-Symbol vs Chip representation switch.
+resources/data/help/pcd8544.txt	read	PCD8544 LCD help; a two-line description of the 48x84 pixel controller with a serial bus interface.
+resources/data/help/potentiometer.txt	read	Potentiometer help; documents the 1 k-ohm resistance and the dial-driven Current Value, and links the dialed fragment.
+resources/data/help/probe.txt	read	Logic/voltage probe help; documents the hover-or-connect behaviour, the orange=High / blue=Low colour code, the voltage label toggle and the 2.5 V logic threshold.
+resources/data/help/push.txt	read	Push-button help; documents Normally Closed, the pole count and the Key character that lets the button be pressed from the PC keyboard.
+resources/data/help/rail.txt	read	Voltage-rail help; states it is a simple voltage source and documents the 5 V rail value.
+resources/data/help/rectangle.txt	read	Rectangle component help; a pure include of the shared shape fragment.
+resources/data/help/relayspst.txt	read	Electromagnetic relay help; documents Normally Closed, Double Throw, poles, the IOn/IOff activation currents, and the coil inductance/resistance/Reactive Step.
+resources/data/help/resistor.txt	read	Resistor help; a single property, Resistance (100 ohm).
+resources/data/help/resistordip.txt	read	Resistor-DIP help; documents Resistance, Size and the Pullup option that converts the whole DIP into pull-ups tied to a Pullup Voltage and hides the top pins.
+resources/data/help/rtd.txt	read	RTD help; documents the dial-driven temperature range, the Current Value, the Dial Step and R0, and links the dialed fragment.
+resources/data/help/scr.txt	read	SCR help; documents Gate Resistance and the two holding currents (10 mA to start conducting, 8.2 mA to keep conducting) - the duplicate label in the source is a copy/paste slip.
+resources/data/help/serialport.txt	read	Serial-port help; documents Auto Open, Port Name and the baud/data/stop bit configuration, and warns the port must exist in the PC with read/write permission.
+resources/data/help/serialterm.txt	read	Serial-terminal help; documents the baud/data/stop bits and the Rx/Tx wiring, and links the simulide.com/p/serial-terminal tutorial.
+resources/data/help/servo.txt	read	Servo help; documents Speed (time for 60 degrees) and the min/max pulse widths that map to 0 and 180 degrees, and includes logicinputs.
+resources/data/help/sevensegment.txt	read	Seven-segment help; documents Color, Size, Vertical Pins, Common Cathode, forward voltage, max current and series resistance.
+resources/data/help/shape.txt	read	Shared graphical-shape fragment; documents Size X/Y in pixels, Border width, the Z-Value stacking order and the colour plus opacity.
+resources/data/help/shiftreg.txt	read	Shift-register help; documents Clock Inverted, Reset Inverted, output inversion and open drain, and includes logicinputs/logicoutputs/logicedges.
+resources/data/help/simulation.txt	read	Simulation-settings help; documents Simulation Speed % and Steps per Second as two views of the same knob, the nonlinear Max Iterations, the Reactive Step and the Slope Steps for output edges.
+resources/data/help/socket.txt	read	Socket connector help; documents Size and links the SimulIDE 1.0.0 socket video.
+resources/data/help/sr04.txt	read	HC-SR04 help; documents the clever trick that feeding a voltage on the In pin simulates a distance, with volts equal to metres (1.5 V = 1.5 m).
+resources/data/help/ssd1306.txt	read	SSD1306 OLED help; documents the 128x64 size, the Rotate option for libraries that do not rotate, and the I2C address/frequency.
+resources/data/help/stepper.txt	read	Stepper-motor help; documents Bipolar, Steps per Rotation and the per-winding resistance, noting the coils are modelled as resistors.
+resources/data/help/strain.txt	read	Force-sensor help; documents the dial-driven Newton range, the Current Value, the Dial Step and the reference/current temperature.
+resources/data/help/subcircuit.txt	read	Subcircuit help; documents that a subcircuit is a component made of other parts, is described by TWO files (circuit + package), and can be shown as a chip or a logic symbol.
+resources/data/help/switch.txt	read	Two-position switch help; documents Normally Closed, Double Throw, poles and the Key character for keyboard activation.
+resources/data/help/switchdip.txt	read	Switch-DIP help; documents Size, the Exclusive option (only one switch closed at a time) and the Common Pin option.
+resources/data/help/text.txt	read	Text-box component help; documents margin, border, background colour and opacity, and the font family/colour/size plus the Fixed Width option and the editable text.
+resources/data/help/thermistor.txt	read	NTC thermistor help; documents the dial-driven temperature range, Current Value, Dial Step, the B beta parameter and R25, and links the dialed fragment.
+resources/data/help/tiny13.txt	read	ATtiny13 help: 8-pin PDIP pin table (with the multi-function PB5 reset/ADC0/PCINT5 pin) and a feature summary (1 KB flash, 64 B SRAM).
+resources/data/help/tiny2313.txt	read	ATtiny2313 help: 20-pin PDIP pin table and a feature summary (2 KB flash, 18 I/O lines).
+resources/data/help/tiny2313a.txt	read	ATtiny2313A help: identical pin table and summary to tiny2313.txt - a duplicate fragment pair.
+resources/data/help/tiny24.txt	read	ATtiny24 help: 14-pin PDIP pin table with the dual ADC (8+12 channel) and a feature summary.
+resources/data/help/tiny25.txt	read	ATtiny25 help: 8-pin PDIP pin table with the multi-function PB0/PB1 pins and a feature summary.
+resources/data/help/tiny4313.txt	read	ATtiny4313 help: 20-pin PDIP pin table and a feature summary (4 KB flash, 256 B SRAM).
+resources/data/help/tiny44.txt	read	ATtiny44 help: 14-pin PDIP pin table with the dual ADC and a feature summary (4 KB flash).
+resources/data/help/tiny45.txt	read	ATtiny45 help: 8-pin PDIP pin table and a feature summary (4 KB flash, 256 B SRAM).
+resources/data/help/tiny84.txt	read	ATtiny84 help: 14-pin PDIP pin table and a feature summary (8 KB flash, 512 B SRAM).
+resources/data/help/tiny85.txt	read	ATtiny85 help: 8-pin PDIP pin table and a feature summary (4 KB flash, 512 B SRAM).
+resources/data/help/touchpadr.txt	read	Resistive touchpad help; documents the 240x320 pixel size, the Transparent flag and the four edge resistances RxMin/RxMax/RyMin/RyMax.
+resources/data/help/transformer.txt	read	Transformer help; documents Coupling Coefficient, Base Inductance and the per-side Primary/Secondary coil lists, and states that any coil can act as the primary.
+resources/data/help/triac.txt	read	Triac help; documents Gate Resistance and the two holding currents (10 mA to start, 8.2 mA to keep) - the duplicate label is a copy/paste slip.
+resources/data/help/tunnel.txt	read	Tunnel help; documents the Id that links tunnels together and the Bus flag that makes a tunnel carry a bus.
+resources/data/help/varresistor.txt	read	Variable-resistor help; documents the dial-driven Minimum/Maximum Resistance, Current Value and Dial Step, and links the dialed fragment.
+resources/data/help/voltagesource.txt	read	Variable voltage source help; documents Current value plus the Maximum/Minimum Voltage bounds, which may be negative but must straddle zero.
+resources/data/help/voltimeter.txt	read	Voltmeter help; documents the red/black polarity pins and that the third pin outputs the reading as a voltage updated at the circuit FPS.
+resources/data/help/voltreg.txt	read	Voltage-regulator help; a single property, Output Voltage (1.2 V) referenced to the R pin.
+resources/data/help/wavegen.txt	read	Wave-generator help; documents the six wave types, Frequency, Phase shift, Quality (steps per cycle), Duty, Always On, and the Bipolar/Floating/Middle Voltage/Semi amplitude options.
+resources/data/help/ws2812.txt	read	WS2812 LED-string help; documents only Rows and Columns of LEDs.
+resources/data/help/xorgate.txt	read	XOR gate help; a pure include set of logicinputs/gateinputs/logicoutputs/gateoutputs/gatedelay, with a stray "Configurable Buffer Gate" line in the source.
+resources/data/help/zener.txt	read	Zener help; documents the Model (read from data/diodes.model), forward voltage, max current, resistance, breakdown voltage, saturation current and emission coefficient.
+resources/data/images/arduino.png	read	20x20 RGBA PNG icon of the Arduino board (dark blue board, black pin strip, white ATMEGA chip block) - a user-overridable component-list icon loaded through getDataFilePath("images/"+icon).
+resources/data/images/ic2.png	read	20x20 RGBA PNG of a small square IC package with a single dot marker - the generic chip icon used for the MCU library categories.
+resources/data/images/image.png	read	22x22 RGBA PNG of a generic framed picture with a small sun/moon shape - the icon for the "Embedded Image" graphical component.
+resources/data/images/null.png	read	10x10 RGBA PNG that is a fully transparent placeholder pixel - the "no image" icon; note it is a different file from the src/icons/components/null.png that the qrc aliases as :/null.png.
+resources/data/images/shield_uno.png	read	136x208 RGBA PNG of an Arduino Uno shield outline (blue board with four corner mounting holes) - the shield image a chip can use as its background.
+resources/data/images/subc2.png	read	20x20 RGBA PNG of a square IC package with a dot marker, a near-duplicate of ic2.png - the icon for the subcircuit category.
+resources/fonts/Ubuntu-B.ttf	skipped	Binary TrueType (sfnt 0x00010000) Ubuntu Bold face, 333 KB; opened the sfnt header and table directory (DSIG/DSIG/GPOS/GSUB present) but not read line by line because it is a compiled binary font with no textual content.
+resources/fonts/Ubuntu-R.ttf	skipped	Binary TrueType Ubuntu Regular face, 354 KB; sfnt header and table directory verified, not read line by line because it is a compiled binary font.
+resources/fonts/UbuntuMono-B.ttf	skipped	Binary TrueType Ubuntu Mono Bold face, 191 KB; sfnt header verified, not read line by line because it is a compiled binary font.
+resources/fonts/UbuntuMono-BI.ttf	skipped	Binary TrueType Ubuntu Mono Bold-Italic face, 216 KB; sfnt header verified, not read line by line because it is a compiled binary font.
+resources/fonts/UbuntuMono-R.ttf	skipped	Binary TrueType Ubuntu Mono Regular face, 206 KB; sfnt header verified, not read line by line because it is a compiled binary font.
+resources/fonts/UbuntuMono-RI.ttf	skipped	Binary TrueType Ubuntu Mono Regular-Italic face, 210 KB; sfnt header verified, not read line by line because it is a compiled binary font.
+resources/icons/simulide.icns	skipped	Binary macOS icon container (140 KB) starting with the 'icns' magic and a bplist00 payload of per-size PNG/icn chunks; header and container layout inspected, not read line by line because it is a packed binary icon archive.
+resources/icons/simulide.ico	skipped	Binary Windows icon container (12.8 KB), ICONDIR header declaring one 64x64 32-bit BMP entry; header inspected, not read line by line because it is a packed binary icon.
+resources/icons/simulide.png	read	256x256 RGBA PNG application icon - a yellow rounded chip with a purple outline and drawn circuit traces; rendered and identified visually, so there is no text in it to read line by line.
+resources/qm/readme	read	One-line note: all .qm files for translations are copied here - the output directory of the lrelease step, and the only tracked file in a folder whose other contents are gitignored by "resources/qm/*.*".
+resources/readme	read	Linux desktop-integration instructions: edit simulide.desktop with the right install path, and install simulide-mime.xml into ~/.local/share/mime/packages/ then run update-mime-database so .simu/.sim1 files open from the file manager.
+resources/simulide-mime.xml	read	Freedesktop shared-mime-info declaration of application/x-simulide-circuit, sub-classed from application/xml, with glob patterns *.simu and *.sim1 and the simulide icon.
+resources/simulide.desktop	read	Freedesktop desktop entry: Exec=simulide %F, Icon=simulide.png, MimeType=application/x-simulide-circuit, Categories=Education;Electronics.
+resources/translations/qt/qt_cz.ts	read	Qt Linguist XML for cs_CZ, 389 lines, 3 contexts (QPlatformTheme, QFileDialog, QFileSystemModel) - a hand-trimmed subset of Qt's own strings, not a full Qt translation.
+resources/translations/qt/qt_de.ts	read	Qt Linguist XML for de_DE, 360 lines, same 3 contexts, with translator comments distinguishing Windows Explorer vs OS X Finder wording.
+resources/translations/qt/qt_en.ts	read	Empty Qt Linguist XML for en (5 lines, no contexts) - the English identity translation.
+resources/translations/qt/qt_es.ts	read	Qt Linguist XML for es_ES, 385 lines, same 3 contexts; also translates the byte-size suffixes to TiB/GiB/MiB/KiB.
+resources/translations/qt/qt_pt_BR.ts	read	Qt Linguist XML for pt_BR, 360 lines, same 3 contexts; the most truncated of the small set (no byte-size entries in QFileSystemModel).
+resources/translations/qt/qt_zh_CN.ts	skipped	Generated 1 MB / 29,208-line Qt Linguist XML for zh_CN (628 contexts, 6649 messages); read the header, enumerated every context name and message count, and line-diffed it against qt_zh_TW.ts, but did not read all 29,208 lines because it is machine-generated translation bulk.
+resources/translations/qt/qt_zh_TW.ts	skipped	Generated 1 MB / 29,208-line Qt Linguist XML for zh_TW; proved by full line-by-line diff that it is byte-identical to qt_zh_CN.ts except for the language attribute, so the Traditional Chinese file is really a copy of the Simplified one.
+resources/translations/simulide_cz.ts	read	SimulIDE's own Czech translation source, 7265 lines, 181 contexts and 1326 messages with <location filename="../../src/..." line="..."/> back-references into the C++ sources; read the header, all context names and the message structure, but not every one of the 1326 message bodies.

@@ -1,0 +1,151 @@
+packages/session-query/README.i18n.yaml	read	Per-heading en/zh hash record for the session-query group README; re-recorded by pnpm run verify-translation-pairing --write.
+packages/session-query/README.md	read	Package-group map for the session retrieval family: session-query, session-query-sqlite, session-log-export and their ctx keys.
+packages/session-query/README.zh.md	read	Chinese mirror of the session-query group README; links the subsystem reference and the two archived design notes.
+packages/session-query/session-log-export/locale/en.json	read	Locale metadata stub: only meta.title for the session-log-export package.
+packages/session-query/session-log-export/locale/zh.json	read	Chinese locale metadata: title plus a one-line description for session log export.
+packages/session-query/session-log-export/package.json	read	Package manifest: dual host+client exports (lib/index.js, lib/client.js), fflate dependency, and the dsh.client inject list.
+packages/session-query/session-log-export/README.i18n.yaml	read	Per-heading en/zh hash record for the session-log-export README.
+packages/session-query/session-log-export/README.md	read	Package reference for the Web session-log ZIP export: command contract, archive layout, failures, and the host/browser split.
+packages/session-query/session-log-export/README.zh.md	read	Chinese mirror of the session-log-export README; same archive layout and failure semantics.
+packages/session-query/session-log-export/src/archive.ts	read	Streaming ZIP builder: canonical JSONL serialization, subagent lineage walk, attachment collection, and pull-driven backpressure.
+packages/session-query/session-log-export/src/client/controller.ts	read	Browser download controller: one in-flight download per session, HEAD preflight, snapshot-store modal state.
+packages/session-query/session-log-export/src/client/Dialog.tsx	read	Shared modal rendering preparing/success/error download phases from the controller snapshot.
+packages/session-query/session-log-export/src/client/HeaderAction.module.css	read	CSS module for the 28px square more-actions button; the shared compact Button owns radius and fill.
+packages/session-query/session-log-export/src/client/HeaderAction.tsx	read	Session header menu with download and optional feedback rows; aria-busy tracks the download state.
+packages/session-query/session-log-export/src/client/index.ts	read	Browser plugin: provides the controller, registers the header slot, and starts a download only on command/executed.
+packages/session-query/session-log-export/src/client/locales.ts	read	Locale namespace and the en/zh string table for the export dialog and menu.
+packages/session-query/session-log-export/src/css-modules.d.ts	read	Ambient module declaration for *.module.css and *.css imports.
+packages/session-query/session-log-export/src/index.ts	read	Host plugin: registers the /export command and the authenticated GET/HEAD /api/session.export route.
+packages/session-query/session-log-export/src/routes.ts	read	Absolute and document-relative forms of the session export route path.
+packages/session-query/session-log-export/tests/archive.host.spec.ts	read	Host-tier tests for the export ZIP: serialization, lineage, attachments, cancellation, backpressure, and surrogate splitting.
+packages/session-query/session-log-export/tests/client-apply.client.spec.tsx	read	Browser plugin tests: slot registration, feedback availability, download on command/executed, and re-registration after a slot collapse.
+packages/session-query/session-log-export/tests/command.host.spec.ts	read	Tests that /export registers one pathless command and unregisters with the fiber.
+packages/session-query/session-log-export/tests/controller.client.spec.ts	read	jsdom tests for the download controller: HEAD preflight, gesture collapsing, error publication, and disposal abort.
+packages/session-query/session-log-export/tests/dialog.client.spec.tsx	read	jsdom tests for the export modal across error, downloading, and success states.
+packages/session-query/session-log-export/tests/header-action.client.spec.tsx	read	jsdom tests for the header menu: feedback gating, aria-expanded, Escape, and disabled-during-download.
+packages/session-query/session-log-export/tests/loader-composition.host.spec.ts	read	Real Loader composition test: the /export command is discovered and executed through the assembled command plane.
+packages/session-query/session-log-export/tests/route.host.spec.ts	read	Host route tests: GET/HEAD registration, 400/404/500 status semantics, and compression-level validation.
+packages/session-query/session-log-export/tsconfig.client.json	read	Client tsconfig listing the six browser source files and their project references.
+packages/session-query/session-log-export/tsconfig.host.json	read	Host tsconfig listing archive.ts, index.ts, routes.ts and the host-side project references.
+packages/session-query/session-log-export/tsconfig.json	read	Solution tsconfig referencing the host and client projects.
+packages/session-query/session-log-export/tsdown.config.ts	read	tsdown bundle config reusing the shared clientBundle helper with hostPhase enabled.
+packages/session-query/session-query-sqlite/locale/en.json	read	Locale metadata stub: only meta.title for session-query-sqlite.
+packages/session-query/session-query-sqlite/locale/zh.json	read	Chinese locale metadata: title plus a one-line description of session query and search.
+packages/session-query/session-query-sqlite/package.json	read	Package manifest for the SQLite FTS5 backend; schemastery dependency, optional persistence peer, and dev deps on the JSONL backend.
+packages/session-query/session-query-sqlite/README.i18n.yaml	read	Per-heading en/zh hash record for the session-query-sqlite README.
+packages/session-query/session-query-sqlite/README.md	read	Package reference for the FTS5 backend: config table, ranking and cursor semantics, openAt lifecycle, and failure codes.
+packages/session-query/session-query-sqlite/README.zh.md	read	Chinese mirror of the session-query-sqlite README; same tokenizer and cursor semantics.
+packages/session-query/session-query-sqlite/src/index.ts	read	SQLite backend service: openAt lifecycle, serialized reconciliation with generation counters, FTS queries, and generation-bound cursors.
+packages/session-query/session-query-sqlite/src/query.ts	read	Request normalization, parameterized predicate compilation, snippet shaping, and the predicate/binding budgets.
+packages/session-query/session-query-sqlite/src/schema.ts	read	SQLite schema with application-id ownership check, in-place reset of a recognized derived schema, and owner-only file creation.
+packages/session-query/session-query-sqlite/tests/load-path.e2e.ts	read	Keyless real-Loader-path smoke: mounts the backend with the real JSONL persistence and searches it.
+packages/session-query/session-query-sqlite/tests/query.spec.ts	read	Unit tests for normalization, SQL predicate compilation, the FTS5 predicate budget, request fingerprinting, and snippets.
+packages/session-query/session-query-sqlite/tests/sqlite.spec.ts	read	1880-line wire-level suite: opening policy, ranking, cursors, reconciliation retries, schema ownership, and cancellation.
+packages/session-query/session-query-sqlite/tsconfig.json	read	tsconfig with project references to cordis, schemastery, session, persistence, and session-query.
+packages/session-query/session-query/package.json	read	Package manifest for the unified query service; optional persistence/projection peer dependencies and the session-format-catalog dependency.
+packages/session-query/session-query/README.i18n.yaml	read	Per-heading en/zh hash record for the session-query README.
+packages/session-query/session-query/README.md	read	Package reference for the unified query service: operation table, filter semantics, config, and the corpus/observation-cache design.
+packages/session-query/session-query/README.zh.md	read	Chinese mirror of the session-query README; same design-philosophy section.
+packages/session-query/session-query/src/cold-read.ts	read	One-shot cold log read through a persistence handle; balances an interrupted final turn in memory without writing back.
+packages/session-query/session-query/src/config.ts	read	Inherited config constants and the closed 17-member SessionQueryErrorCode taxonomy.
+packages/session-query/session-query/src/corpus.ts	read	Live-preferred corpus resolution: optional persistence binding, detached clones, batch projection with bounded concurrency.
+packages/session-query/session-query/src/cursor.ts	read	Branded opaque cursor type and its branding function for session-search pagination.
+packages/session-query/session-query/src/documents.ts	read	Surface-aware semantic document projection built on the canonical foldSurface.
+packages/session-query/session-query/src/extraction.ts	read	Per-event-type semantic text extraction; reasoning blocks and unknown events contribute nothing.
+packages/session-query/session-query/src/filters.ts	read	Provider-independent predicates, filter materialization, and a regex-escaped literal text scan.
+packages/session-query/session-query/src/index.ts	read	Abstract SessionQueryEngine service: concrete reads, traces, filters, and config validation.
+packages/session-query/session-query/src/observation.ts	read	Point observations with a bounded revision-keyed prepared-Session cache, lease pinning, and lazy live-event materialization.
+packages/session-query/session-query/src/sources.ts	read	Immutable-header compatibility check that fails rather than merging conflicting observations.
+packages/session-query/session-query/src/tracing.ts	read	One-shot lineage and event-relationship tracing over the canonical surface fold.
+packages/session-query/session-query/src/types.ts	read	Public record, filter, request, and page types for the query service.
+packages/session-query/session-query/tests/observation.spec.ts	read	Tests for the observation reader: cold preparation, revision cache hits, lease pinning, eviction sweeps, and abort mapping.
+packages/session-query/session-query/tests/search-helpers.spec.ts	read	Tests for extraction, document building, filter semantics, and the literal text scan.
+packages/session-query/session-query/tests/session-query.spec.ts	read	Exact-read suite: cancellation matrix, live-vs-persisted precedence, header conflict detection, and batch title reads.
+packages/session-query/session-query/tests/test-service.ts	read	Test-only concrete SessionQueryEngine returning empty search pages.
+packages/session-query/session-query/tests/tracing.spec.ts	read	Lineage and event-trace tests, including a 3000-deep lineage and invalid-surface rejection.
+packages/session-query/session-query/tsconfig.json	read	tsconfig with references to cordis, brand, llm, session, session-title, todo, persistence, and projection packages.
+packages/session/session-telemetry-otel/locale/en.json	read	Locale metadata stub: only meta.title for session-telemetry-otel.
+packages/session/session-telemetry-otel/locale/zh.json	read	Chinese locale metadata: title plus a description of feedback-authorized OTel upload.
+packages/session/session-telemetry-otel/package.json	read	Package manifest for the OTel telemetry backend; opentelemetry api-logs dependency and the dsh-otel peer.
+packages/session/session-telemetry-otel/README.i18n.yaml	read	Per-heading en/zh hash record for the session-telemetry-otel README.
+packages/session/session-telemetry-otel/README.md	read	Package reference for the OTel backend: modes, config, what leaves the machine, and shutdown semantics.
+packages/session/session-telemetry-otel/README.zh.md	read	Chinese mirror of the session-telemetry-otel README; same mode table and wire description.
+packages/session/session-telemetry-otel/src/index.ts	read	OTel backend: mode resolution, fail-closed config validation, feedback authorization, coordinator wiring, and a shutdown deadline.
+packages/session/session-telemetry-otel/tests/egress.spec.ts	read	Egress test proving explicit feedback uploads directly and ignore the ambient proxy configuration.
+packages/session/session-telemetry-otel/tests/fixtures/driver.ts	read	Test driver booting the production profile against a mock OTLP collector and writing the captures.
+packages/session/session-telemetry-otel/tests/fixtures/telemetry-redact-rule.ts	read	Fixture redaction rule scrubbing a fake credential from the telemetry body via the record waterfall.
+packages/session/session-telemetry-otel/tests/fixtures/telemetry.patch.yml	read	Test-only YAML patch enabling the telemetry plugin and injecting the fixture scrub rule.
+packages/session/session-telemetry-otel/tests/loader-composition.e2e.ts	read	Real-composition e2e: the redacted authorized prefix leaves the machine while the canonical log keeps the secret.
+packages/session/session-telemetry-otel/tests/otel.spec.ts	read	862-line wire suite: SDK pipeline assertions, feedback authorization, cold snapshots, and fail-loud config cases.
+packages/session/session-telemetry-otel/tsconfig.json	read	tsconfig referencing cordis, schemastery, session, feedback, llm, telemetry seam, anonymous-user-id, and the shared otel package.
+packages/session/session-telemetry/package.json	read	Package manifest for the telemetry seam; peers on session and agent only.
+packages/session/session-telemetry/README.i18n.yaml	read	Per-heading en/zh hash record for the session-telemetry README.
+packages/session/session-telemetry/README.md	read	Package reference for the capture seam: backend contract, capture modes, sharing disclosure, redaction waterfall, and handoff cursor.
+packages/session/session-telemetry/README.zh.md	read	Chinese mirror of the session-telemetry README; same contract and handoff-cursor rules.
+packages/session/session-telemetry/src/coordinator.ts	read	Capture coordinator: live and on-demand capture, the redaction waterfall, the module-scope handoff cursor, and failure containment.
+packages/session/session-telemetry/src/index.ts	read	Service definition: the backend/sink contract, the record vocabulary, and the session-telemetry/record waterfall declaration.
+packages/session/session-telemetry/tests/redact.spec.ts	read	Tests for the record waterfall: pass-through, stacking, veto, canonical-log immunity, and fail-closed withholding.
+packages/session/session-telemetry/tests/telemetry.spec.ts	read	776-line coordinator suite: adoption, fork/restored boundaries, severity mapping, flush hints, and the agent/error relay.
+packages/session/session-telemetry/tsconfig.json	read	tsconfig referencing cosmokit, cordis, core/session, and core/agent.
+packages/session/session-title-first-prompt-llm/locale/en.json	read	Locale metadata stub: only meta.title for session-title-first-prompt-llm.
+packages/session/session-title-first-prompt-llm/locale/zh.json	read	Chinese locale metadata: title plus a description of first-message title generation.
+packages/session/session-title-first-prompt-llm/package.json	read	Package manifest for the first-prompt provider; peers on llm, session, session-title, and session-title-llm.
+packages/session/session-title-first-prompt-llm/README.i18n.yaml	read	Per-heading en/zh hash record for the session-title-first-prompt-llm README.
+packages/session/session-title-first-prompt-llm/README.md	read	Package reference for the first-prompt title provider: scheduling rules, config, and the fresh-session-only automatic cadence.
+packages/session/session-title-first-prompt-llm/README.zh.md	read	Chinese mirror of the session-title-first-prompt-llm README.
+packages/session/session-title-first-prompt-llm/src/index.ts	read	First-prompt provider: language-aware system prompt, JSON message framing, emphasis-stripping title parsing, and least-effort reasoning selection.
+packages/session/session-title-first-prompt-llm/tests/loader-composition.spec.ts	read	Loader composition test: the provider boots from YAML and titles a session on an inherited pi-ai route.
+packages/session/session-title-first-prompt-llm/tests/provider.e2e.ts	read	Real-API e2e gated on DEEPSEEK_API_KEY; verifies a model title replaces the fallback.
+packages/session/session-title-first-prompt-llm/tests/provider.spec.ts	read	Provider unit tests: first-message selection, exact prompt pinning, emphasis parsing, and rejection of tool-call or max-token finishes.
+packages/session/session-title-first-prompt-llm/tsconfig.json	read	tsconfig referencing cosmokit, cordis, schemastery, util/values, llm, session-title, and session-title-llm.
+packages/session/session-title-llm/package.json	read	Package manifest for the shared title LLM executor; peers on llm, session, session-title, and timeout.
+packages/session/session-title-llm/README.i18n.yaml	read	Per-heading en/zh hash record for the session-title-llm README.
+packages/session/session-title-llm/README.md	read	Package reference for the shared executor: route resolution, byte/token/timeout bounds, request logging, and the provider/executor split.
+packages/session/session-title-llm/README.zh.md	read	Chinese mirror of the session-title-llm README.
+packages/session/session-title-llm/src/index.ts	read	Shared auxiliary-request executor: config validation, route resolution, byte ceiling, deadline, cancellation, request logging, and stream assembly.
+packages/session/session-title-llm/tests/llm.spec.ts	read	Executor tests: dispatch, effort forwarding, byte ceiling, deadline enforcement, cancellation, and finish-reason mapping.
+packages/session/session-title-llm/tsconfig.json	read	tsconfig referencing cosmokit, cordis, schemastery, llm, util/timeout, and session-title.
+packages/session/session-title/locale/en.json	read	Locale metadata stub: only meta.title for session-title.
+packages/session/session-title/locale/zh.json	read	Chinese locale metadata: title plus a description of storing and managing session titles.
+packages/session/session-title/package.json	read	Package manifest for the title service; exports ./types and ./client outlets, peers on llm, session, and projection.
+packages/session/session-title/README.i18n.yaml	read	Per-heading en/zh hash record for the session-title README.
+packages/session/session-title/README.md	read	Package reference for the title service: three title sources, provider registration, projection units, and concurrency rules.
+packages/session/session-title/README.zh.md	read	Chinese mirror of the session-title README.
+packages/session/session-title/src/client.ts	read	Client-namespace projection of the title domain types (pure re-export).
+packages/session/session-title/src/index.ts	read	Title service: log-only session/title events, deterministic fallback, provider registry, revision-based supersession, and two projection units.
+packages/session/session-title/src/normalize.ts	read	Title cleaning (terminal/control/directional stripping), UTF-8-safe truncation, and the deterministic word-capped fallback.
+packages/session/session-title/src/types.ts	read	Pure title-domain types and the one home of the title and titleInput projection-key declarations.
+packages/session/session-title/tests/persistence.spec.ts	read	Round-trip test proving a fallback title survives a remounted JSONL persistence backend.
+packages/session/session-title/tests/projection.spec.ts	read	Projection unit tests: last-wins title, change-feed notification, late mounting, HMR key removal, and checkpoint validation.
+packages/session/session-title/tests/provider.spec.ts	read	Provider lifecycle tests: fork inheritance, watermark cuts, supersession, replacement during drain, and failure containment.
+packages/session/session-title/tests/rename.spec.ts	read	Rename tests: normalization, rejection, the user-source pin, and the explicit refresh unpin.
+packages/session/session-title/tests/service-contracts.spec.ts	read	Service contract tests: config validation, cancellation, shared fallback, provider validation, and malformed-result rejection.
+packages/session/session-title/tests/session-title.spec.ts	read	Title normalization and fallback tests, including eligibility rules and log-only surface assertions.
+packages/session/session-title/tsconfig.json	read	tsconfig referencing cosmokit, cordis, schemastery, brand, llm, core/session, session-projection, and core/agent.
+packages/session/session-turn-outline/locale/en.json	read	Locale metadata stub: only meta.title for session-turn-outline.
+packages/session/session-turn-outline/locale/zh.json	read	Chinese locale metadata: title plus a description of the session turn outline.
+packages/session/session-turn-outline/package.json	read	Package manifest for the turn-outline plugin; exports ./types and ./client outlets and depends on zod.
+packages/session/session-turn-outline/README.i18n.yaml	read	Per-heading en/zh hash record for the session-turn-outline README.
+packages/session/session-turn-outline/README.md	read	Package reference for the turnOutline projection: entry fields, preview budgets, the whole-value wire rule, and fold rules.
+packages/session/session-turn-outline/README.zh.md	read	Chinese mirror of the session-turn-outline README.
+packages/session/session-turn-outline/src/client.ts	read	Client-namespace projection of the turn-outline domain types (pure re-export).
+packages/session/session-turn-outline/src/index.ts	read	Function plugin whose whole purpose is registering the turnOutline projection unit.
+packages/session/session-turn-outline/src/projection.ts	read	The turnOutline fold: turn/start anchoring, bounded prompt preview, draft-buffered response, and identity-gated change feed.
+packages/session/session-turn-outline/src/types.ts	read	Pure turn-outline types and the one home of the turnOutline projection-key declaration.
+packages/session/session-turn-outline/tests/loader-composition.spec.ts	read	Loader composition test that also pins the absence of a default export on the function plugin.
+packages/session/session-turn-outline/tests/projection.spec.ts	read	Projection unit tests: entry folding, draft commit, oversized-block bounding, three-pushes-per-turn, and checkpoint validation.
+packages/session/session-turn-outline/tsconfig.json	read	tsconfig referencing cosmokit, cordis, llm, core/session, and session-projection.
+packages/session/tool-working-directory/package.json	read	Package manifest for the working_directory tool; peers on tools and working-directory.
+packages/session/tool-working-directory/README.i18n.yaml	read	Per-heading en/zh hash record for the tool-working-directory README.
+packages/session/tool-working-directory/README.md	read	Package reference for the working_directory tool: read/change semantics, result shape, and the agent requirement.
+packages/session/tool-working-directory/README.zh.md	read	Chinese mirror of the tool-working-directory README.
+packages/session/tool-working-directory/src/index.ts	read	Tool registration exposing working_directory({cd?}) backed by the working-directory service.
+packages/session/tool-working-directory/tsconfig.json	read	tsconfig referencing cordis, core/tools, and working-directory.
+packages/session/working-directory/package.json	read	Package manifest for the working-directory service; peers on agent, fs, llm, session, projection, and system-prompt.
+packages/session/working-directory/README.i18n.yaml	read	Per-heading en/zh hash record for the working-directory README.
+packages/session/working-directory/README.md	read	Package reference for the working-directory service: projection-owned state, serialization, recovery, and the user-context placement.
+packages/session/working-directory/README.zh.md	read	Chinese mirror of the working-directory README.
+packages/session/working-directory/src/index.ts	read	Working-directory service: projection-owned effective directory, serialized changes, recovery to the original project, and required user context.
+packages/session/working-directory/tests/admission.spec.ts	read	Admission test proving a request carries the directory and permissions current at request time, not at assembly time.
+packages/session/working-directory/tests/working-directory.spec.ts	read	358-line suite: log-backed state, sibling isolation, recovery, cancellation, disposal draining, and the tool surface.
+packages/session/working-directory/tsconfig.json	read	tsconfig referencing cordis, core/agent, fs, llm, core/session, session-projection, core/system-prompt, and schemastery.

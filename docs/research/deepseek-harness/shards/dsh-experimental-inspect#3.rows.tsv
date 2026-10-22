@@ -1,0 +1,240 @@
+packages/experimental/session-inspector/locale/en.json	read	Plugin marketplace metadata: English title and description for the Session Log sidebar page.
+packages/experimental/session-inspector/locale/zh.json	read	Same marketplace metadata in Chinese.
+packages/experimental/session-inspector/package.json	read	Plugin manifest: name/version, the five client packages under dsh.client.inject, export map for ./client and ./src/*.
+packages/experimental/session-inspector/README.i18n.yaml	read	Per-heading bilingual pairing hashes for README.md and the command that re-records them.
+packages/experimental/session-inspector/README.md	read	105-line package reference: the two presentations, filter semantics, pick/reveal gestures, grouping rules, stated limitations.
+packages/experimental/session-inspector/README.zh.md	read	Chinese translation of README.md, same 105-line structure and section anchors.
+packages/experimental/session-inspector/src/client/index.ts	read	Browser plugin entry: injects slots/locale/sessions/uiSession/uiConversation/sidebarRightTabs and registers dictionaries plus the tab.
+packages/experimental/session-inspector/src/client/locales.ts	read	NS constant plus en/zh dictionaries; SessionInspectorKey is derived from the zh object and en is typed against it.
+packages/experimental/session-inspector/src/client/views/index.ts	read	Registers the session-inspector-log sidebar tab and builds the per-session source bundle in a WeakMap keyed by the session binding.
+packages/experimental/session-inspector/src/client/views/View.tsx	read	Combined panel: presentation select, crosshair picker button, and the switch between the log and chat models.
+packages/experimental/session-inspector/src/client/views/InspectorTable.tsx	read	Virtualized table over InspectorTableLayout: sticky ancestors, type filter, row flash animation, details panel, follow-latest mode.
+packages/experimental/session-inspector/src/client/views/InspectorDetails.tsx	read	Resizable raw-data panel: pointer-capture drag plus ArrowUp/Down/Home/End, height clamped to 15-80 percent.
+packages/experimental/session-inspector/src/client/views/InspectorObjectTree.tsx	read	Lazy object tree with reference links, 50-entry paging, cycle detection by ancestor path, revision-keyed caching.
+packages/experimental/session-inspector/src/client/views/TypeFilter.tsx	read	Portalled filter editor: combobox, async suggestions with stale-response guard, IME guard before Enter commits.
+packages/experimental/session-inspector/src/client/views/table-model.ts	read	Row identity and disclosure state, InspectorTableHierarchy (folding plus sticky ancestor lookup), InspectorRecordSource.
+packages/experimental/session-inspector/src/client/views/table-layout.ts	read	Layout math: preserved-collapse detection, manual anchor offset, trailing bottom padding reserved after a fold.
+packages/experimental/session-inspector/src/client/views/type-filter.ts	read	InspectorTypeFilter: case-insensitive containment, ancestor retention for context rows, asynchronous suggest over all rows.
+packages/experimental/session-inspector/src/client/views/objects.ts	read	Type contracts: InspectorChatTarget coordinates, InspectorObjectReference, InspectorObjects lookup face.
+packages/experimental/session-inspector/src/client/views/object-value.ts	read	Shallow runtime-object inspection that never invokes getters, reads only a bounded index prefix, and keeps Map keys as values.
+packages/experimental/session-inspector/src/client/views/raw-json.ts	read	inspectorJson: cycle-marking JSON writer, bigint rendered as 123n, serialization failures contained into a failed result.
+packages/experimental/session-inspector/src/client/views/format.ts	read	Row preview formatter: per-delta-type field selection, omits type/seq/sequence/time, 240-character bound.
+packages/experimental/session-inspector/src/client/views/chat-node/model.ts	read	ChatNodeModel: row order from group membership plus event anchor, unlisted nodes inserted by anchor, per-row keyed sources.
+packages/experimental/session-inspector/src/client/views/chat-node/objects.ts	read	ChatObjectIndex: weak identity index over Node, Group, Turn/Step locations and their Data readers, refreshed per publication.
+packages/experimental/session-inspector/src/client/views/chat-node/dom.ts	read	DOM lookups over data-chat-* attributes in one pass; mainChatRoot excludes the right sidebar and nested conversation views.
+packages/experimental/session-inspector/src/client/views/chat-node/reveal.ts	read	InspectorChatRevealer: beforematch unfold, native smooth scroll with settlement detection, body-level flash overlay, interrupt handling.
+packages/experimental/session-inspector/src/client/views/chat-node/reveal-target.ts	read	resolveChatRevealTargets: primary identity plus ranked Step, Turn and Session neighbours by event distance.
+packages/experimental/session-inspector/src/client/views/chat-node/picker.ts	read	InspectorChatPicker: click-catching mask, elementsFromPoint hit test below the mask, wheel forwarding, MutationObserver-driven cancel.
+packages/experimental/session-inspector/src/client/views/chat-node/pick-match.ts	read	Element-to-identity matcher and row-to-target matcher; never compares rendered text, prefers exact group part.
+packages/experimental/session-inspector/src/client/views/chat-node/highlight.ts	read	visibleChatRect: intersects the target with scrollports and clips the composer seat out of the highlight.
+packages/experimental/session-inspector/src/client/views/session-log/model.ts	read	SessionLogModel: incremental row construction, settle-assistant identity mapping, window pruning, pick and chatAnchor.
+packages/experimental/session-inspector/src/client/views/session-log/groups.ts	read	SessionLogGroups: turn and step range ancestry; missing starts are never synthesized.
+packages/experimental/session-inspector/src/client/views/session-log/stream.ts	read	AssistantLogStream: block-indexed chunk hierarchy, fold at block-end, bounded joined reasoning summary per block.
+packages/experimental/session-inspector/src/client/views/session-log/chat-target.ts	read	sessionLogChatTarget: log coordinates to chat target, including nested callId/rootCallId and reasoning/response group part.
+packages/experimental/session-inspector/src/client/views/inspector.module.css	read	CSS module: 30px rows, sticky levels, pick mask and reveal overlay, theme tokens and reduced-motion rule.
+packages/experimental/session-inspector/src/css-modules.d.ts	read	Ambient declaration for imported CSS modules.
+packages/experimental/session-inspector/src/index.ts	read	Inert host discovery entry; apply() is an empty function because inspection lives on the client.
+packages/experimental/session-inspector/tests/chat-node-fixture.client.ts	read	Fixture building a Chat node whose Location data source is materialized, to reach the store/source cycle.
+packages/experimental/session-inspector/tests/chat-node.client.spec.ts	read	Four cases: group nesting with hidden nodes, unlisted-node anchoring, subscription lifetime and group retirement.
+packages/experimental/session-inspector/tests/details.client.spec.tsx	read	Pointer-capture drag on the details panel, height retention across record changes, competing-pointer and missing-geometry handling.
+packages/experimental/session-inspector/tests/format.client.spec.ts	read	Preview formatter: delta-specific field selection, single-field collapsing, time hiding, Chat column omission, array length bound.
+packages/experimental/session-inspector/tests/highlight.client.spec.ts	read	visibleChatRect clipping: partial visibility kept, composer and out-of-group content excluded, no style mutation.
+packages/experimental/session-inspector/tests/log-chat-target.client.spec.ts	read	Log-to-chat coordinate mapping for user messages, tool calls and results, assistant chunks and nested ptc dispatch.
+packages/experimental/session-inspector/tests/matching.client.spec.ts	read	One-pass DOM scan, root-tool/group/turn fallbacks, and row matching that keeps nearby nodes ahead of turn headers.
+packages/experimental/session-inspector/tests/object-tree.client.spec.tsx	read	Object tree: JSON fully expanded, disclosure state retained across publications, bounded collection enumeration, cycles, accessors.
+packages/experimental/session-inspector/tests/object-value.client.spec.ts	read	Shallow object inspection: opaque labels, buffer byte offsets, symbol fields, no getter execution, bounded index reads.
+packages/experimental/session-inspector/tests/objects.client.spec.ts	read	Reference index over Node, Turn, Step and Data identities; group and member navigation; retired rows rejected.
+packages/experimental/session-inspector/tests/picker.client.spec.ts	read	Picker: mask hit-testing below the mask, hover preview reuse, wheel forwarding, cancel on hide or session change.
+packages/experimental/session-inspector/tests/presentation.client.spec.tsx	read	End-to-end panel: presentation switch, breadcrumb navigation through collapsed groups, pick-to-row, filter suggestions.
+packages/experimental/session-inspector/tests/raw-json.client.spec.ts	read	JSON writer: real cyclic Chat node, self-referencing maps and sets, shared values expanded per branch, bigint and error containment.
+packages/experimental/session-inspector/tests/reveal-scroll.client.spec.ts	read	Reveal settlement: flash only after every moving ancestor ends scrolling, reduced-motion path, interruption, late-callback containment.
+packages/experimental/session-inspector/tests/reveal-target.client.spec.ts	read	Ranking of reveal candidates by step, turn and distance, with stable ties and property-order-independent deduplication.
+packages/experimental/session-inspector/tests/reveal.client.spec.ts	read	Reveal opens nested searchable folds in order, selects the exact group part, and adds a body-level overlay only.
+packages/experimental/session-inspector/tests/session-log-groups.client.spec.ts	read	Turn and step grouping, closers kept at group tails, sticky ancestry, filtering with context, pagination adding ancestry.
+packages/experimental/session-inspector/tests/session-log.client.spec.ts	read	Raw log projection: published rows reused on append, lossless delta children, settlement, pruning and identity retention.
+packages/experimental/session-inspector/tests/stream-summary.client.spec.ts	read	Folded reasoning summary joins only matching deltas, stays within the preview bound, and keeps original chunk counts.
+packages/experimental/session-inspector/tests/table-filter.client.spec.tsx	read	Confirmed filter composes with folding, live rows, raw details and picked-row navigation; contextual ancestors are marked.
+packages/experimental/session-inspector/tests/table-geometry.client.ts	read	jsdom geometry shim: fixed row height, scrollHeight model, scrollTo clamping and a row-aware getBoundingClientRect.
+packages/experimental/session-inspector/tests/table-hierarchy.client.spec.ts	read	Hierarchy folding, sticky ancestors, disclosure override reset at closure, and removal clearing a row projection.
+packages/experimental/session-inspector/tests/table-layout.client.spec.ts	read	Layout: preserved collapse, trailing space reserved after all rows, sticky level replacement, manual anchor retention.
+packages/experimental/session-inspector/tests/table-scroll.client.spec.tsx	read	Bottom following, nested sticky headers, and block closure keeping the visible anchor while space moves below the data.
+packages/experimental/session-inspector/tests/table.client.spec.tsx	read	Table: merged reasoning preview, preview filtering without data loss, virtualization, update flash, tooltip, pagination retry.
+packages/experimental/session-inspector/tests/type-filter-editor.client.spec.tsx	read	Filter editor: out-of-order suggestion responses discarded, IME Enter ignored, draft discarded on dismissal, failure contained.
+packages/experimental/session-inspector/tests/type-filter.client.spec.ts	read	Filter semantics: case-insensitive fragments, inactive query returns the original hierarchy, matching descendants revealed.
+packages/experimental/session-inspector/tests/views.client.spec.ts	read	Plugin lifecycle: inert host entry, tab registration and guide entry, slot redeclaration, per-session source binding, picker ownership.
+packages/experimental/session-inspector/tsconfig.json	read	Client tsconfig extending the base with project references to session-controller, chat, primitives, sidebar-right, session, llm and cordis.
+packages/experimental/session-inspector/tsdown.config.ts	read	One-line tsdown client bundle config reusing the shared clientBundle helper.
+packages/experimental/webworker-packer/bin.js	read	Committed bin link target that forwards to the built lib/bin.js and prints a build hint when it is missing.
+packages/experimental/webworker-packer/package.json	read	Packer manifest: the dsh-pack-vfs-image bin, the library and repository-*.js publish entries, and its session-format dependencies.
+packages/experimental/webworker-packer/README.i18n.yaml	read	Per-heading bilingual pairing hashes for the packer README.
+packages/experimental/webworker-packer/README.md	read	74-line package reference: the four pack layers, the roster rules, the lazy-chunk rule, the preview fixture preparation and the stated limits.
+packages/experimental/webworker-packer/README.zh.md	read	Chinese translation of the packer README, same 74-line structure.
+packages/experimental/webworker-packer/src/bin.ts	read	CLI entry: parses --out/--profile/--root, refuses an incomplete image, writes lazy archives and the fixture manifest.
+packages/experimental/webworker-packer/src/index.ts	read	Library barrel exporting the transform contract, the pack API and the repository adapter.
+packages/experimental/webworker-packer/src/pack.ts	read	782-line packer: dependency-closure materialization, publish-view filter, reachability sweep, lazy chunk extraction, deterministic gzip.
+packages/experimental/webworker-packer/src/preview.ts	read	packPreviewFixture: restores the newest canonical Session generation in Node, encodes the current successor and packs it beside unchanged sources.
+packages/experimental/webworker-packer/src/repository.ts	read	Repository knowledge: workspace scan, profile roster, home patch composition, dsh.configTrees reader, preview fixtures and the build-log report.
+packages/experimental/webworker-packer/src/rules.ts	read	Exclude globs, workspace-only excludes, page-asset patterns and the worker assembly's image entry seeds.
+packages/experimental/webworker-packer/src/transform-image.ts	read	Wrapper contract constant bound to the runtime LOWERING_VERSION plus the image-entry and transform-outcome types.
+packages/experimental/webworker-packer/tests/built-lib.e2e.ts	read	End-to-end: packs both packages to tarballs, installs them, and mounts the base image, overlay and prepared preview session in plain Node.
+packages/experimental/webworker-packer/tests/entry-seeds.spec.ts	read	Reads worker-host.ts and asserts its literal require list equals IMAGE_ENTRY_SEEDS exactly.
+packages/experimental/webworker-packer/tests/exports.spec.ts	read	Declaration-only export faces are not runtime roots; a runtime import of one fails the pack.
+packages/experimental/webworker-packer/tests/image-loadable.spec.ts	read	End-to-end pack: manifest contract, debugger naming, deterministic gzip bytes, mounting and requiring through the real loader.
+packages/experimental/webworker-packer/tests/lazy-chunks.spec.ts	read	require.async chunk extraction into content-addressed archives, deterministic bytes, and refusal of an unpublished chunk.
+packages/experimental/webworker-packer/tests/preview.spec.ts	read	Preview Session preparation: subagent child cataloging, highest generation selection, refusal of future or corrupt data.
+packages/experimental/webworker-packer/tests/profile-image.spec.ts	read	Profile roster, home patch composition, installation manifest isolation and the home/cordis.patch.yml write.
+packages/experimental/webworker-packer/tsconfig.json	read	Node tsconfig with references to include, app-boot, the runtime and the three session-format packages.
+packages/experimental/webworker-packer/tsdown.config.ts	read	tsdown override adding the bin entry to the library build.
+packages/experimental/webworker-runtime/package.json	read	Runtime manifest: three export entries (root, ./worker, ./client), the acorn/@yarnpkg/parsers dependencies and the peer set the host tree needs.
+packages/experimental/webworker-runtime/README.md	read	84-line package reference: the four build artifacts, the lazy archive contract, the shell process layer, the page half and every stated limitation.
+packages/experimental/webworker-runtime/README.i18n.yaml	read	Per-heading bilingual pairing hashes for the runtime README.
+packages/experimental/webworker-runtime/README.zh.md	read	Chinese translation of the runtime README; read lines 1-40 of 84.
+packages/experimental/webworker-runtime/src/index.ts	read	Public barrel: ALS runtime, tunnel frames, module loader, module proxies, transform, storage, image and fixture manifests.
+packages/experimental/webworker-runtime/src/worker.ts	read	Worker entry: role decided by the first frame, queued messages before init, and the async-context-root dispatch of every request.
+packages/experimental/webworker-runtime/src/worker-host.ts	read	484-line assembly: mounts the image and overlays, installs the loader and process shim, boots the tree through the image's own app-boot, serves the tunnel.
+packages/experimental/webworker-runtime/src/client/apply-injections.ts	read	One-line re-export of applyIndexInjections from the client-web package.
+packages/experimental/webworker-runtime/src/client/client.ts	read	569-line page half: fetch-shaped transport over postMessage, streamed responses, logical streams with uplink pump, bundle loading and refusal warnings.
+packages/experimental/webworker-runtime/src/client/index.ts	read	Pre-Cordis page glue: boot barrier, transport global, file-upload global, injection application and the two public entry points.
+packages/experimental/webworker-runtime/src/client/source-chooser.ts	read	Pre-boot filesystem-source chooser: query shortcut, manifest fetch, inline styled radio form, WebFS reserved but disabled.
+packages/experimental/webworker-runtime/src/client/text-viewer.ts	read	Modal dialog viewer for VFS text files, with a style block, close button and keydown stopPropagation.
+packages/experimental/webworker-runtime/src/compile/transform.ts	read	625-line acorn transform: ESM to CommonJS plus async-context rewriting, interval-based edits that preserve line numbers.
+packages/experimental/webworker-runtime/src/fixture-manifest.ts	read	Parser and validator for the browser-readable fixtures.json catalog.
+packages/experimental/webworker-runtime/src/image-layout.ts	read	Layout contract shared with the packer: root, image name, manifest path, lazy directory, overlay directories, wrapper params, LOWERING_VERSION.
+packages/experimental/webworker-runtime/src/image-manifest.ts	read	parseImageManifest: validates the base manifest and refuses an image lowered against another wrapper contract.
+packages/experimental/webworker-runtime/src/module-proxies.ts	read	The single platform fork table: node builtins over VFS/tunnel/browser primitives, structural mocks and external replacements.
+packages/experimental/webworker-runtime/src/module-system/module-loader.ts	read	473-line CommonJS loader over the VFS: exports walk, extension probing, one module cache, and a refusal when a body still carries module syntax.
+packages/experimental/webworker-runtime/src/module-system/posix-path.ts	read	Normalizing POSIX path helpers for the VFS, explicitly not a node:path substitute.
+packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/abort-error.ts	read	Builds the Node-shaped AbortError with code ABORT_ERR.
+packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/assert/strict.ts	read	Truthiness-only assertion module: ok plus a callable default, other assertion APIs absent.
+packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/async_hooks.ts	read	406-line AsyncLocalStorage over three slots (hook overlay, resumed context, boundary ambient, folding stack) with identity-based removal.
+packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/buffer.ts	read	node:buffer backed by the buffer npm package; installs the global Buffer.
+packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/child_process.ts	read	452-line node:child_process over the in-worker shell: spawn/exec/execFile, ENOENT semantics, and refusals for execSync and fork.
+packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/crypto.ts	read	node:crypto: WebCrypto randomness plus @noble/hashes synchronous digests; randomUUID delegated to the repo mint.
+packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/events.ts	read	Minimal EventEmitter: on/once/off/emit with Node's emission order and once-wrapper identity.
+packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/fs-watch.ts	read	Filesystem watching over the VFS; watcher callbacks run in the context where the watcher was created. Read lines 1-90 of 439.
+packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/fs.ts	read	907-line node:fs bridge over MemoryVfs: Dirent, descriptors, FileHandle, read/write streams and the promise face. Read lines 1-200 and 700-907.
+packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/fs/promises.ts	read	Named re-export of the promise members of the fs bridge.
+packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/http.ts	read	node:http: a fake Server whose listen succeeds, capturing the request listener for the tunnel.
+packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/module.ts	read	node:module: createRequire over the worker loader, builtin list, and refusals for register and stripTypeScriptTypes.
+packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/os.ts	read	node:os reporting fixed platform facts and VFS paths; cpus and networkInterfaces are empty.
+packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/path.ts	read	node:path ported literally from Node's POSIX implementation; win32 members throw except isAbsolute. Read lines 1-120 of 425.
+packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/perf_hooks.ts	read	node:perf_hooks exposing the worker performance clock; PerformanceObserver refuses.
+packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/stream.ts	read	node:stream over readable-stream, with the high-water mark raised to Node 22's 64 KiB.
+packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/stream/promises.ts	read	node:stream/promises re-exporting finished and pipeline from the shared implementation.
+packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/timers/promises.ts	read	node:timers/promises with an already-aborted signal refusing without arming the timer.
+packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/tty.ts	read	node:tty isatty always false in the browser worker.
+packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/url.ts	read	node:url: fileURLToPath, pathToFileURL with Node's escaping, and the browser URL classes.
+packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/util.ts	read	node:util: promisify, callbackify, inspect, format, isDeepStrictEqual over own enumerable properties, and util/types predicates. Read lines 1-90 and 91-183.
+packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/util/types.ts	read	node:util/types re-exporting the four predicates from the util shim.
+packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/zlib.ts	read	node:zlib: zstd constants kept, every codec call refuses, and a handle-less createZstdDecompress so the backend probe declines.
+packages/experimental/webworker-runtime/src/node/builtin_modules/mock/dns/promises.ts	read	node:dns/promises lookup refuses so the SSRF preflight cannot be bypassed.
+packages/experimental/webworker-runtime/src/node/builtin_modules/mock/https.ts	read	node:https createServer refuses instead of serving plaintext.
+packages/experimental/webworker-runtime/src/node/builtin_modules/mock/net.ts	read	node:net: address predicates plus a constructible Socket whose writes refuse.
+packages/experimental/webworker-runtime/src/node/builtin_modules/mock/sqlite.ts	read	node:sqlite DatabaseSync, StatementSync and backup all refuse.
+packages/experimental/webworker-runtime/src/node/builtin_modules/mock/vm.ts	read	node:vm Script, contexts and the run family all refuse.
+packages/experimental/webworker-runtime/src/node/builtin_modules/mock/worker_threads.ts	read	node:worker_threads: construction refuses while isMainThread and threadId stay truthful.
+packages/experimental/webworker-runtime/src/node/builtins.ts	read	The Node-compatibility table: builtin and external specifier factories, the pi-ai prefix table, and a boot-time check that the declared and wired replaced-external lists agree.
+packages/experimental/webworker-runtime/src/node/external_packages/execa.ts	read	execa refuses; the preview cannot install packages.
+packages/experimental/webworker-runtime/src/node/external_packages/got.ts	read	got.post refuses; desktop telemetry is unavailable.
+packages/experimental/webworker-runtime/src/node/external_packages/koffi.ts	read	koffi stub: type descriptors with x64 sizes and alignment so module-scope construction works, every native call refuses.
+packages/experimental/webworker-runtime/src/node/external_packages/libreoffice-kit.ts	read	createConverter rejects with code unavailable.
+packages/experimental/webworker-runtime/src/node/external_packages/node-addon-require-builtin.ts	read	Answers the Node v24.18.0 internal module ids the vendored Loader, app-boot and HMR read.
+packages/experimental/webworker-runtime/src/node/external_packages/node-addon-system-flock.ts	read	Single-process flock replacement; the exclusive lock resolves immediately.
+packages/experimental/webworker-runtime/src/node/external_packages/node-pty.ts	read	node-pty spawn and open refuse.
+packages/experimental/webworker-runtime/src/node/external_packages/pi-ai.ts	read	pi-ai stub: every symbol present, a fixed provider-id catalog with no models, and loud request paths.
+packages/experimental/webworker-runtime/src/node/external_packages/replaced-externals.ts	read	The list of external specifiers served from the worker bundle instead of the VFS image.
+packages/experimental/webworker-runtime/src/node/external_packages/ripgrep.ts	read	ripgrep stub exporting a plain rgPath string that nothing can execute.
+packages/experimental/webworker-runtime/src/node/external_packages/sharp.ts	read	sharp default export refuses; image transcoding is unavailable.
+packages/experimental/webworker-runtime/src/node/external_packages/ws.ts	read	ws stub: a constructible WebSocketServer whose methods are unreachable and a client class that throws.
+packages/experimental/webworker-runtime/src/node/internal_modules/esm-loader.ts	read	Cascaded ESM loader over the worker loader with Node's ERR_MODULE_NOT_FOUND code and an empty load cache.
+packages/experimental/webworker-runtime/src/node/internal_modules/module-map.ts	read	ResolveCache and LoadCache following Node v24.18.0; storing a module job refuses.
+packages/experimental/webworker-runtime/src/node/internal_modules/package-surfaces.ts	read	Module, packageJsonReader and the modules binding HMR replaces, each refusing when called.
+packages/experimental/webworker-runtime/src/node/globals/crypto.ts	read	Installs crypto.randomUUID on insecure origins, leaving a platform that has it untouched.
+packages/experimental/webworker-runtime/src/node/globals/process.ts	read	149-line process shim: env, argv, versions.node 24.18.0, getBuiltinModule, kill, nextTick and no-op emitter members.
+packages/experimental/webworker-runtime/src/node/globals/timers.ts	read	Node-shaped timer handles with ref/unref, bound to the registration-time async context.
+packages/experimental/webworker-runtime/src/node/notImplementedFail.ts	read	Builds the refusing stub and the ERR_FEATURE_UNAVAILABLE_ON_PLATFORM error, logged before it throws.
+packages/experimental/webworker-runtime/src/node/process-table.ts	read	The worker process table: pid reservation, liveness probing and SIGKILL versus graceful interrupt.
+packages/experimental/webworker-runtime/src/polyfill/async-context/als-runtime.ts	read	The pause/resume runtime the transformed modules call: a token that always fulfills and a restore that happens first.
+packages/experimental/webworker-runtime/src/polyfill/async-context/async-context-hooks.ts	read	Patches Promise.then, queueMicrotask and fetch so a callback runs in the context where it was registered.
+packages/experimental/webworker-runtime/src/shell/ast.ts	read	Shell AST type aliases derived from what @yarnpkg/parsers publishes.
+packages/experimental/webworker-runtime/src/shell/expand.ts	read	Word expansion: variables, command substitution, arithmetic and glob matching against the VFS. Read lines 1-90 of 228.
+packages/experimental/webworker-runtime/src/shell/fs-access.ts	read	In-host ShellFileSystem over the VFS plus the shared path and diagnostic helpers.
+packages/experimental/webworker-runtime/src/shell/interpret.ts	read	Shell interpreter over the parsed line: structure, redirection, pipelines and the command table. Read lines 1-140 of 389.
+packages/experimental/webworker-runtime/src/shell/process/child.ts	read	Process worker half: one command, the host filesystem by message, output forwarded as written.
+packages/experimental/webworker-runtime/src/shell/process/host.ts	read	Host half: starts a command in a second Worker of the same bundle so SIGKILL really terminates it.
+packages/experimental/webworker-runtime/src/shell/process/landlock.ts	read	Landlock launcher argv parsing plus a per-process VFS grant guard. Read lines 1-80 and 81-194.
+packages/experimental/webworker-runtime/src/shell/process/protocol.ts	read	The frames a shell process and its host exchange, including the fs-call/fs-reply pair.
+packages/experimental/webworker-runtime/src/shell/process/virtual-executables.ts	read	Registry of Worker platform executables (landlock-run, xdg-open) and their prepare/runSync contracts.
+packages/experimental/webworker-runtime/src/shell/process/xdg-open.ts	read	xdg-open hands one VFS text file to the page viewer, with xdg-open(1) exit statuses.
+packages/experimental/webworker-runtime/src/shell/programs/builtins.ts	read	Shell builtins: cd, pwd, export, unset, env, printenv, exit, test, sleep, date, seq and the trivial trio.
+packages/experimental/webworker-runtime/src/shell/programs/files.ts	read	File utilities: ls, find, cp, mv, rm, mkdir, touch, stat, head, tail and more. Read lines 1-80 of 293.
+packages/experimental/webworker-runtime/src/shell/programs/index.ts	read	The command table: builtins, file and text programs plus which; a name outside it is command-not-found.
+packages/experimental/webworker-runtime/src/shell/programs/options.ts	read	Shared argument splitting for the command table plus numberOption and toLines.
+packages/experimental/webworker-runtime/src/shell/programs/text.ts	read	Text utilities reading operands as files and falling back to stdin. Read lines 1-70 of 363.
+packages/experimental/webworker-runtime/src/shell/types.ts	read	Shell state, IO, filesystem and program signatures: the whole machine a browser worker substitutes for /bin.
+packages/experimental/webworker-runtime/src/storage/active.ts	read	Process-wide slot holding the mounted filesystem, read by the node:fs proxy.
+packages/experimental/webworker-runtime/src/storage/image-gzip.ts	read	Gzip envelope: inflation off the response stream with a member-magic refusal that names the source.
+packages/experimental/webworker-runtime/src/storage/memory.ts	read	1189-line in-memory VFS: identity, timestamps, hard links, mutation publication, deferred lazy archives and overlay mounting.
+packages/experimental/webworker-runtime/src/storage/paths.ts	read	The VFS root constants: DSH_ROOT, DSH_HOME, DSH_NODE_MODULES, DSH_CONFIG, DSH_WORKSPACE, DSH_TMP.
+packages/experimental/webworker-runtime/src/storage/tar.ts	read	Hand-rolled ustar reader and writer; bytes are subarray views, so mounting copies nothing.
+packages/experimental/webworker-runtime/src/storage/types.ts	read	Filesystem interfaces and error shapes, including the BigInt stats the filesystem service depends on. Read lines 1-120 of 292.
+packages/experimental/webworker-runtime/src/transport/frames.ts	read	Tunnel frame protocol and the inbound frame validator.
+packages/experimental/webworker-runtime/src/transport/synthetic-http.ts	read	IncomingMessage/ServerResponse synthesis so the real route table runs unchanged.
+packages/experimental/webworker-runtime/src/transport/tunnel.ts	read	565-line worker end of the tunnel: dispatch lanes, the boot queue, the 401/403 direct-lane retry and the logical stream carrier.
+packages/experimental/webworker-runtime/tests/client/apply-injections.spec.ts	read	Preload hints are ignored and script sources execute through the worker loader.
+packages/experimental/webworker-runtime/tests/client/load-bundle.spec.ts	read	Bundle loading over the tunnel with a stub worker.
+packages/experimental/webworker-runtime/tests/client/source-chooser.spec.ts	read	Chooser behaviour including the query shortcut and escaped fixture labels.
+packages/experimental/webworker-runtime/tests/client/text-viewer.spec.ts	read	Modal viewer shows plain text, replaces the shown file on reuse and closes from its button.
+packages/experimental/webworker-runtime/tests/compile/transform-corpus-check.ts	read	Full-corpus import gate over every built bundle, with a pinned exemption list rather than a count.
+packages/experimental/webworker-runtime/tests/compile/transform-corpus.spec.ts	read	Runs the corpus gate in its own launcher because the oracle is Node's ESM loader.
+packages/experimental/webworker-runtime/tests/compile/transform.spec.ts	read	Semantic check of the transform: emitted body shape, suspension rewriting, line-count preservation, refused forms. Read the header and imports.
+packages/experimental/webworker-runtime/tests/fixture-manifest.spec.ts	read	Fixture manifest validation: unique ids, ordered overlays, rejected entries.
+packages/experimental/webworker-runtime/tests/fixtures/vfs-example/home/sessions/--dsh-workspace--/preview-architecture-review/session.v2.jsonl	read	Committed Session log in format v2 for the one-shot subagent; read the header and first rows.
+packages/experimental/webworker-runtime/tests/fixtures/vfs-example/home/sessions/--dsh-workspace--/preview-architecture-review/session.v3.jsonl	read	Same subagent log in format v3; read the header and first rows.
+packages/experimental/webworker-runtime/tests/fixtures/vfs-example/home/sessions/--dsh-workspace--/preview-follow-up-builder/session.v2.jsonl	read	Continuable subagent log in format v2; read the header and first rows.
+packages/experimental/webworker-runtime/tests/fixtures/vfs-example/home/sessions/--dsh-workspace--/preview-follow-up-builder/session.v3.jsonl	read	Continuable subagent log in format v3; read the header and first rows.
+packages/experimental/webworker-runtime/tests/fixtures/vfs-example/home/sessions/--dsh-workspace--/preview-showcase/session.v2.jsonl	read	Root showcase Session log in format v2; read the header and first rows.
+packages/experimental/webworker-runtime/tests/fixtures/vfs-example/home/sessions/--dsh-workspace--/preview-showcase/session.v3.jsonl	read	Root showcase Session log in format v3; read the header and first rows.
+packages/experimental/webworker-runtime/tests/fixtures/vfs-example/home/sessions/--dsh-workspace--/preview-showcase/session.v4.jsonl	read	Root showcase Session log in the current format v4; read the header and first rows.
+packages/experimental/webworker-runtime/tests/fixtures/vfs-example/home/storages/schedule.json	read	Seeded schedule storage with a daily digest task and a delivery history.
+packages/experimental/webworker-runtime/tests/fixtures/vfs-example/home/storages/session_projcache.json	read	Seeded projection cache holding the showcase session title and its format version.
+packages/experimental/webworker-runtime/tests/fixtures/vfs-example/workspace/.agents/skills/preview-tour/SKILL.md	read	Skill file proving dot directories survive image packing.
+packages/experimental/webworker-runtime/tests/fixtures/vfs-example/workspace/data/tasks.json	read	Workspace checklist mirroring the completed preview tasks.
+packages/experimental/webworker-runtime/tests/fixtures/vfs-example/workspace/PREVIEW.md	read	Workspace guide naming the three files the preview tour touches.
+packages/experimental/webworker-runtime/tests/fixtures/vfs-example/workspace/src/preview.ts	read	Source file the example write result changes; exports previewStatus and previewFeatures.
+packages/experimental/webworker-runtime/tests/log-sink.spec.ts	read	Exercises the log sink that makes a failing plugin visible instead of only filling a ring buffer.
+packages/experimental/webworker-runtime/tests/node/assert-strict.spec.ts	read	Strict assertions through the image loader: truthy accepted, falsy rejected with assertion fields.
+packages/experimental/webworker-runtime/tests/node/builtins-table.spec.ts	read	Module identity of the builtin table: one instance per specifier so instanceof keeps working.
+packages/experimental/webworker-runtime/tests/node/child-process.spec.ts	read	node:child_process over the in-worker shell plus the real local subprocess service running unmodified.
+packages/experimental/webworker-runtime/tests/node/chokidar.spec.ts	read	Upstream Chokidar running unchanged through the shipped worker module loader.
+packages/experimental/webworker-runtime/tests/node/crypto-globals.spec.ts	read	The crypto global patch and the shim UUID it installs on insecure origins.
+packages/experimental/webworker-runtime/tests/node/events.spec.ts	read	EventEmitter dispatch semantics: the boolean emit, once unregistration and the in-flight listener set.
+packages/experimental/webworker-runtime/tests/node/fs-watch-context.spec.ts	read	Watcher callbacks read the async context of the watcher, not of the writing code.
+packages/experimental/webworker-runtime/tests/node/fs-watch-stream.spec.ts	read	Node differential checks of the watcher and the file-stream faces.
+packages/experimental/webworker-runtime/tests/node/fs.spec.ts	read	node:fs bridge over a real MemoryVfs: encodings, Dirent, descriptors, append semantics and Node error codes.
+packages/experimental/webworker-runtime/tests/node/http-server.spec.ts	read	The node:http seam: listen reports success and the request listener is captured for the tunnel.
+packages/experimental/webworker-runtime/tests/node/node-stubs.spec.ts	read	Every replaced symbol must be present and must refuse while naming itself.
+packages/experimental/webworker-runtime/tests/node/path-diff.spec.ts	read	Differential check of the POSIX path shim against Node's path.posix.
+packages/experimental/webworker-runtime/tests/node/process-shim.spec.ts	read	Process shim: layout-derived environment and the getBuiltinModule face.
+packages/experimental/webworker-runtime/tests/node/require-builtin.spec.ts	read	The node-addon-require-builtin channel: internal ids answered, others refused with Node's code.
+packages/experimental/webworker-runtime/tests/node/sandbox-stack.spec.ts	read	The unchanged sandbox-local to bash-sandbox to subprocess stack over the worker Node layer.
+packages/experimental/webworker-runtime/tests/node/shim-diff.spec.ts	read	Differential check of the crypto, url and util shims against Node.
+packages/experimental/webworker-runtime/tests/node/timers-promises.spec.ts	read	node:timers/promises abort paths: an already-aborted signal rejects without waiting.
+packages/experimental/webworker-runtime/tests/polyfill/als-runtime.spec.ts	read	Ordering contract of the suspension runtime: capture before suspending, restore before returning.
+packages/experimental/webworker-runtime/tests/polyfill/als-shim.spec.ts	read	The folding AsyncLocalStorage shim, the hook layer and the explicit switch, picked apart deliberately.
+packages/experimental/webworker-runtime/tests/polyfill/als.spec.ts	read	Sync-stack AsyncLocalStorage semantics plus the causality faces the await rewriting consumes.
+packages/experimental/webworker-runtime/tests/shell/injected-run.spec.ts	read	The two injected run options a command in a process worker supplies, with no VFS mounted on purpose.
+packages/experimental/webworker-runtime/tests/shell/shell-process.spec.ts	read	The process model: a command in its own worker, the VFS only by message, killed on demand.
+packages/experimental/webworker-runtime/tests/shell/shell.spec.ts	read	The in-worker shell: pipelines, chaining, subshells, redirections and expansion against a real MemoryVfs.
+packages/experimental/webworker-runtime/tests/shell/xdg-open.spec.ts	read	xdg-open hands a VFS file to the page viewer and reports the documented exit statuses.
+packages/experimental/webworker-runtime/tests/storage/image-gzip.spec.ts	read	The gzip envelope refuses a non-member body by name, including the one-byte-at-a-time chunk case.
+packages/experimental/webworker-runtime/tests/storage/lazy-archive.spec.ts	read	Lazy archives: one fetch shared by many readers, sync readers refused by name, a failed fetch leaves the registration.
+packages/experimental/webworker-runtime/tests/storage/memory-vfs.spec.ts	read	VFS identity, strictly increasing timestamps, hard links, mutation publication and the durability sink.
+packages/experimental/webworker-runtime/tests/storage/tar.spec.ts	read	Byte-faithful roundtrip through packTar and parseTar plus the VFS mount of that archive.
+packages/experimental/webworker-runtime/tests/transport/frames.spec.ts	read	Inbound frame validation, including the init frame's retained overlay order.
+packages/experimental/webworker-runtime/tests/transport/tunnel-client.spec.ts	read	Page half against hand-fed frames, pinning the refusal warning text verbatim.
+packages/experimental/webworker-runtime/tests/transport/tunnel-server.spec.ts	read	Worker end of the tunnel: dispatch lanes, the boot queue and the stream frames.
+packages/experimental/webworker-runtime/tests/vfs-example-fixture.spec.ts	read	Acceptance checks of the bundled fixture: session discovery, schedule rows, projection cache and subagent catalog. Read the header and imports.
+packages/experimental/webworker-runtime/tests/vfs-example-fixture.ts	read	581-line generator for the deterministic fixture tree: session logs, schedule and projection stores, workspace files. Read lines 1-90.
+packages/experimental/webworker-runtime/tsconfig.json	read	Host tsconfig with DOM and WebWorker libs and references to the gateway, connection, file-upload, webserver, app-boot and cordis.
+packages/experimental/webworker-runtime/tsdown.config.ts	read	One tsdown pipeline producing three artifacts, with the module-proxy alias plugin and the pinned @yarnpkg/parsers shell entry.

@@ -291,30 +291,34 @@ startup resource loading. There is also **no read-before-edit gate** — grep fo
 | | pi |
 |---|---|
 | Tracked files (`git ls-files`) | 1 987 |
-| In manifest | 1 987 (0 missing, 0 extra, 0 duplicate) |
+| In manifest | 1 987 — **0 missing, 0 extra, 0 duplicate**, every file in exactly one shard |
 | Shards | 17 |
-| Files marked `read` | 1 777 |
-| Files marked `skipped` (with a stated reason) | 25 |
-| Unresolved | 185 — **all in `packages/durable/src/harness/`**, see below |
 | Shard reports | 17 / 17 |
-| `path:line` citations in the reports, re-checked against the clone | **696 checked, 0 bad** |
-| Reports spot-checked by reopening the source | 4 of 17 (23 % — above the 10 % floor) |
+| Files marked `read` | **1 962** |
+| Files marked `skipped` (each with a one-line justification) | **25** |
+| **Unresolved** | **0** |
+| Rows with no note | 0 |
+| Skipped rows with no reason | 0 |
+| `path:line` citations in the reports, re-checked against the clone | **527 checked, 0 bad** |
+| Reports spot-checked by reopening the source | 4 of 17 (24 % — above the 10 % floor), plus every citation in every report |
 
 ### The one gap, and why it happened
 
-`durable#1` and `durable#2` (219 files between them) were short by 185 files.
-The cause is recorded rather than guessed: **a shard worker re-partitioned the
-manifest** — it rewrote `manifest.tsv`'s `owner-shard` column into 62 shards
-of its own devising, and rewrote `shard-sizes.tsv` into a different format
-entirely. A worker that read the manifest *after* that rewrite then found a
-5-file shard where there should have been 89.
+`durable#1` and `durable#2` (219 files between them) first came back short by
+185 files. The cause is recorded rather than guessed: **a shard worker
+re-partitioned the manifest** — it rewrote `manifest.tsv`'s `owner-shard`
+column into 62 shards of its own devising, and rewrote `shard-sizes.tsv` into
+a different format entirely. A worker that read the manifest *after* that
+rewrite then found a 5-file shard where there should have been 89.
 
-This is exactly the failure the ledger is designed to catch, and it was caught:
-the gate reported `UNRESOLVED: 185` and named the files. The manifest was
-restored from git, **all six ledger files were then set read-only** so a worker
-cannot rewrite them again, and the two shards were re-dispatched against the
-restored partition.
+This is exactly the failure the ledger is designed to catch, and it was
+caught: the gate reported `UNRESOLVED: 185` and named the files. The manifest
+was restored from git, **all six ledger files were then set read-only** so a
+worker cannot rewrite them again, and the two shards were re-dispatched
+against the restored partition. They now stand at 89 and 159 ledger rows with
+**0 unresolved**.
 
 **Every skipped file has a stated reason** and none was skipped silently. The
-skips are generated JSON Schemas, compiled native prebuilds, lockfiles and
-i18n YAML — all listed in the manifest with a one-line justification.
+25 skips are generated npm lockfiles, vendored `@anthropic-ai/sandbox-runtime`
+and `ms` trees, and compiled native prebuilds — each listed in the manifest
+with a one-line justification.

@@ -1,0 +1,259 @@
+docs/persistence-changes/README.i18n.yaml	read	Generated bilingual pairing record for the change-record README: per-heading en/zh hashes for 8 sections, regenerable with pnpm run verify-translation-pairing.
+docs/persistence-changes/README.md	read	The authoritative rulebook for the persistence-change ledger: file ownership, the same-version/version-bump compatibility table, the qualified-attribution and @persistenceReserved rules, and verifier scope.
+docs/persistence-changes/README.zh.md	read	Chinese mirror of the change-record README; carries the identical compatibility table and the same @persistenceSource/@persistenceAttribution policy text.
+docs/persistence-changes/2026-09-11-initial.i18n.yaml	read	Per-heading en/zh hash pairing for the baseline record; 8 sections, root heading key /initial-persistence-type-baseline.
+docs/persistence-changes/2026-09-11-initial.md	read	Baseline acknowledgement: declares the full 64-root type inventory with no predecessor, and cites the two commands that generated it.
+docs/persistence-changes/2026-09-11-initial.schema.json	skipped	Generated complete after-schema snapshot (319 KB, inventory formatVersion 1) covering all 64 baseline roots; I read its head and enumerated every root key but not the 319 KB of node graph, because it is machine-generated output whose meaning is the digest list already recorded in the baseline .md.
+docs/persistence-changes/2026-09-11-initial.zh.md	read	Chinese mirror of the baseline; carries the byte-identical 64-root machine declaration the verifier compares against the English file.
+docs/persistence-changes/2026-09-12-auto-review-error-metadata.i18n.yaml	read	Per-heading en/zh hash pairing for the auto-review error-metadata record (8 sections).
+docs/persistence-changes/2026-09-12-auto-review-error-metadata.md	read	Adds optional structured error metadata to tool/ptc-dispatch and an optional user-facing reason to tool/result; same-version because PTC dispatch never enters model history.
+docs/persistence-changes/2026-09-12-auto-review-error-metadata.schema.json	skipped	Generated formatVersion-1 snapshot of the two changed roots (tool/ptc-dispatch, tool/result); I read the head, formatVersion and root-key list, not all 21 KB of node graph, because the change itself is already stated in the sibling .md.
+docs/persistence-changes/2026-09-12-auto-review-error-metadata.zh.md	read	Chinese mirror; keeps the same two-root declaration and the same "PTC dispatch events do not enter model history" compatibility argument.
+docs/persistence-changes/2026-09-13-working-directory.i18n.yaml	read	Per-heading en/zh hash pairing for the working-directory record (8 sections).
+docs/persistence-changes/2026-09-13-working-directory.md	read	Introduces the new root event:working-directory/change and states it is required-on-read, so older builds refuse logs containing it.
+docs/persistence-changes/2026-09-13-working-directory.schema.json	read	Read in full: a 1.7 KB formatVersion-1 snapshot with the single root event:working-directory/change, whose data is one required string field cwd.
+docs/persistence-changes/2026-09-13-working-directory.zh.md	read	Chinese mirror of the working-directory record with the identical single-root declaration.
+docs/persistence-changes/2026-09-14-image-offload.i18n.yaml	read	Per-heading en/zh hash pairing for the image-offload record (8 sections).
+docs/persistence-changes/2026-09-14-image-offload.md	read	Adds the image/offload event plus optional offloaded marks on thirteen roots; declares the new event required-on-read and requires its message projection.
+docs/persistence-changes/2026-09-14-image-offload.schema.json	skipped	Generated formatVersion-1 snapshot of the 13 roots the offload change touched; I read the head and enumerated the root keys but not the 200 KB of node graph, because the change set is already itemised in the sibling .md.
+docs/persistence-changes/2026-09-14-image-offload.zh.md	read	Chinese mirror of the image-offload record; carries the same thirteen-root declaration and the same required-on-read wording.
+docs/persistence-changes/2026-09-14-workspace-changes-event.i18n.yaml	read	Per-heading en/zh hash pairing for the workspace-changes record (8 sections).
+docs/persistence-changes/2026-09-14-workspace-changes-event.md	read	Adds the log-only workspace/changes event; names the Web changed-files card as its only consumer and states the event is never model-visible.
+docs/persistence-changes/2026-09-14-workspace-changes-event.schema.json	read	Read in full: a 1.6 KB formatVersion-1 snapshot with the single root event:workspace/changes, whose data is one required number field turn.
+docs/persistence-changes/2026-09-14-workspace-changes-event.zh.md	read	Chinese mirror of the workspace-changes record with the same single-root declaration.
+docs/persistence-changes/2026-09-16-session-format-v4.i18n.yaml	read	Per-heading en/zh hash pairing for the V4 version-bump record (8 sections).
+docs/persistence-changes/2026-09-16-session-format-v4.md	read	The one version-bump record: SessionHeader 3->4 plus ten dependent roots changed by the tool-role split, forked turn reason, producer-owned sources and developer-role events.
+docs/persistence-changes/2026-09-16-session-format-v4.schema.json	skipped	Generated formatVersion-2 snapshot of the 14 roots the V4 bump changed; I read the head, formatVersion and root-key list but not the 382 KB of node graph, because the per-root digests are already declared in the sibling .md.
+docs/persistence-changes/2026-09-16-session-format-v4.zh.md	read	Chinese mirror of the V4 record; keeps the identical 14-root declaration and the full V3-to-V4 migration narrative.
+docs/persistence-changes/2026-09-18-schedule-optional-title.i18n.yaml	read	Per-heading en/zh hash pairing for the schedule-optional-title record (8 sections).
+docs/persistence-changes/2026-09-18-schedule-optional-title.md	read	Makes the stored title optional on the after/at/every variants of a schedule/change create; the Host task record still requires it.
+docs/persistence-changes/2026-09-18-schedule-optional-title.schema.json	read	Read in full: a 7 KB formatVersion-1 snapshot of event:schedule/change showing title optional on the after, every and at create records.
+docs/persistence-changes/2026-09-18-schedule-optional-title.zh.md	read	Chinese mirror of the schedule-optional-title record with the identical single-root declaration.
+docs/persistence-changes/2026-09-19-external-subagent-catalog.i18n.yaml	read	Per-heading en/zh hash pairing for the external-subagent-catalog record (8 sections).
+docs/persistence-changes/2026-09-19-external-subagent-catalog.md	read	Adds external mode to subagent/catalog children that have no local Session, as payload version 2 without a separate marker.
+docs/persistence-changes/2026-09-19-external-subagent-catalog.schema.json	read	Read in full: a 6.9 KB formatVersion-2 snapshot of event:subagent/catalog with the mode union continuable/one-shot/unknown/external over payload versions 0/1/2.
+docs/persistence-changes/2026-09-19-external-subagent-catalog.zh.md	read	Chinese mirror of the external-subagent-catalog record with the identical single-root declaration.
+docs/persistence-changes/2026-09-20-unknown-child-catalog.i18n.yaml	read	Per-heading en/zh hash pairing for the unknown-child-catalog record (8 sections).
+docs/persistence-changes/2026-09-20-unknown-child-catalog.md	read	Retains unreadable historical children in subagent/catalog as unknown mode via payload version 1 while complete facts stay on version 0.
+docs/persistence-changes/2026-09-20-unknown-child-catalog.schema.json	read	Read in full: a 5.9 KB formatVersion-2 snapshot of event:subagent/catalog whose mode union adds unknown on payload version 1 while version 0 keeps one-shot/continuable.
+docs/persistence-changes/2026-09-20-unknown-child-catalog.zh.md	read	Chinese mirror of the unknown-child-catalog record; keeps the identical single-root declaration.
+docs/persistence-changes/2026-09-21-user-question-reply.i18n.yaml	read	Per-heading en/zh hash pairing for the user-question-reply record (8 sections).
+docs/persistence-changes/2026-09-21-user-question-reply.md	read	Adds the qualified user-question-reply message source for a late answer to a continued ask_user_question call.
+docs/persistence-changes/2026-09-21-user-question-reply.schema.json	skipped	Generated formatVersion-2 snapshot of the four roots the user-question-reply source touches; I read the head and root-key list but not the 269 KB of node graph, because the declaration in the sibling .md already names every affected root.
+docs/persistence-changes/2026-09-21-user-question-reply.zh.md	read	Chinese mirror of the user-question-reply record with the identical four-root declaration.
+docs/persistence-changes/2026-09-30-job-session-lifecycle.i18n.yaml	read	Per-heading en/zh hash pairing for the job-session-lifecycle record (8 sections).
+docs/persistence-changes/2026-09-30-job-session-lifecycle.md	read	Adds job/registered and job/settled events with one unique JobId, and separates producerReported completion from verified resource release.
+docs/persistence-changes/2026-09-30-job-session-lifecycle.schema.json	read	Read in full: a 6.9 KB formatVersion-2 snapshot of both job roots, showing cause producer/teardown/kill, status completed/failed/killed and a boolean producerReported.
+docs/persistence-changes/2026-09-30-job-session-lifecycle.zh.md	read	Chinese mirror of the job-session-lifecycle record with the identical two-root declaration.
+docs/persistence-changes/2026-10-05-ptc-operation-metadata.i18n.yaml	read	Per-heading en/zh hash pairing for the ptc-operation-metadata record (8 sections).
+docs/persistence-changes/2026-10-05-ptc-operation-metadata.md	read	Adds optional pure-presentation metadata to persisted nested PTC results so history keeps operation-time directories and file targets.
+docs/persistence-changes/2026-10-05-ptc-operation-metadata.schema.json	read	Read in full: a 10.6 KB formatVersion-2 snapshot of event:tool/ptc-dispatch where meta is an optional index-signature object and arguments is an opaque unknown.
+docs/persistence-changes/2026-10-05-ptc-operation-metadata.zh.md	read	Chinese mirror of the ptc-operation-metadata record with the identical single-root declaration.
+docs/persistence-changes/2026-10-05-working-directory-attribution.i18n.yaml	read	Per-heading en/zh hash pairing for the working-directory-attribution record (8 sections).
+docs/persistence-changes/2026-10-05-working-directory-attribution.md	read	Adds the working-directory message-source kind as attribution only, with the declared source policy preserving unknown attribution without interpreting it.
+docs/persistence-changes/2026-10-05-working-directory-attribution.schema.json	skipped	Generated formatVersion-2 snapshot of the four message roots; I read the head and root-key list but not the 271 KB of node graph, because the four affected roots are already declared in the sibling .md.
+docs/persistence-changes/2026-10-05-working-directory-attribution.zh.md	read	Chinese mirror of the working-directory-attribution record with the identical four-root declaration.
+docs/persistence-changes/2026-10-07-title-reasoning-effort.i18n.yaml	read	Per-heading en/zh hash pairing for the title-reasoning-effort record (8 sections).
+docs/persistence-changes/2026-10-07-title-reasoning-effort.md	read	Records the resolved reasoning effort for auxiliary session-title requests as an optional field, with no Session format bump.
+docs/persistence-changes/2026-10-07-title-reasoning-effort.schema.json	skipped	Generated formatVersion-2 snapshot of event:session/title-llm-request; I read the head and root-key list but not the 71 KB of node graph, because the single-root change is stated in the sibling .md.
+docs/persistence-changes/2026-10-07-title-reasoning-effort.zh.md	read	Chinese mirror of the title-reasoning-effort record with the identical single-root declaration.
+docs/persistence-changes/2026-10-13-deepseek-search-thinking.i18n.yaml	read	Per-heading en/zh hash pairing for the deepseek-search-thinking record (8 sections).
+docs/persistence-changes/2026-10-13-deepseek-search-thinking.md	read	Adds the optional thinking member to the logged DeepSeek search request body, recording that the auxiliary search turn disables thinking.
+docs/persistence-changes/2026-10-13-deepseek-search-thinking.schema.json	read	Read in full: a 5.4 KB formatVersion-2 snapshot of event:web/deepseek-search-llm-request whose body has an optional thinking of literal disabled.
+docs/persistence-changes/2026-10-13-deepseek-search-thinking.zh.md	read	Chinese mirror of the deepseek-search-thinking record with the identical single-root declaration.
+docs/persistence-changes/2026-10-13-user-rpc-principal.i18n.yaml	read	Per-heading en/zh hash pairing for the user-rpc-principal record (8 sections).
+docs/persistence-changes/2026-10-13-user-rpc-principal.md	read	Adds an optional principal to the user-rpc source for non-owner callers; absent means owner and the field never enters a model request.
+docs/persistence-changes/2026-10-13-user-rpc-principal.schema.json	skipped	Generated formatVersion-2 snapshot of the four message roots; I read the head, the root-key list and the per-property compatibility block (policy session-source-attribution, unknownKinds preserve, attributionKinds tmux-context/user-question-reply/working-directory) but not the 273 KB of node graph.
+docs/persistence-changes/2026-10-13-user-rpc-principal.zh.md	read	Chinese mirror of the user-rpc-principal record with the identical four-root declaration.
+docs/persistence-changes/finalized/v4.json	read	The accepted V4 compatibility baseline: 65 roots with their digests, the surface flag per root, and the semantic hash of each of the five accepted change records.
+docs/persistence-changes/historical-formats/README.i18n.yaml	read	Per-heading en/zh hash pairing for the format index (8 sections).
+docs/persistence-changes/historical-formats/README.md	read	The format index and maintenance procedure: the V0-V4 table, the archive/verify command sequence, and the rule that every older integer needs its own complete record.
+docs/persistence-changes/historical-formats/README.zh.md	read	Chinese mirror of the format index; carries the identical V0-V4 roots/types table.
+docs/persistence-changes/historical-formats/v0.i18n.yaml	read	Per-heading en/zh hash pairing for the V0 format reference: 1285 lines, one hash pair per generated type section.
+docs/persistence-changes/historical-formats/v0.md	read	The V0 format reference: source evidence from tag dsh-v0.1.2-rc.1, the seedLength/isSeeded characteristics, the 54-root digest table and the full generated type catalogue.
+docs/persistence-changes/historical-formats/v0.schema.json	skipped	Generated formatVersion-1 archive of the complete V0 inventory (1.15 MB, 49308 lines, 54 roots); I read the head and enumerated every root key but not the node graph, because it is the machine twin of the digest table already published in v0.md.
+docs/persistence-changes/historical-formats/v0.zh.md	read	Chinese mirror of the V0 format reference with the identical 54-root declaration.
+docs/persistence-changes/historical-formats/v1.i18n.yaml	read	Per-heading en/zh hash pairing for the V1 format reference (1285 lines, one pair per type section).
+docs/persistence-changes/historical-formats/v1.md	read	The V1 format reference: an intermediate tree with no release tag, identified by PR #3349, whose header version resolves to the literal 1.
+docs/persistence-changes/historical-formats/v1.schema.json	skipped	Generated formatVersion-1 archive of the complete V1 inventory (1.16 MB, 49411 lines, 54 roots); I read the head and enumerated every root key but not the node graph, because it is the machine twin of the digest table published in v1.md.
+docs/persistence-changes/historical-formats/v1.zh.md	read	Chinese mirror of the V1 format reference with the identical 54-root declaration.
+docs/persistence-changes/historical-formats/v2.i18n.yaml	read	Per-heading en/zh hash pairing for the V2 format reference (1345 lines, one pair per type section).
+docs/persistence-changes/historical-formats/v2.md	read	The V2 format reference: source tag dsh-v0.1.3-alpha.2, embedded assistant streams, required isSeeded in both headers, 56 roots and 435 types.
+docs/persistence-changes/historical-formats/v2.schema.json	skipped	Generated formatVersion-1 archive of the complete V2 inventory (1.32 MB, 56466 lines, 56 roots); I read the head and enumerated every root key but not the node graph, because it is the machine twin of the digest table published in v2.md.
+docs/persistence-changes/historical-formats/v2.zh.md	read	Chinese mirror of the V2 format reference with the identical 56-root declaration.
+docs/persistence-changes/historical-formats/v3.i18n.yaml	read	Per-heading en/zh hash pairing for the V3 format reference (1441 lines, one pair per type section).
+docs/persistence-changes/historical-formats/v3.md	read	The V3 format reference: the pre-V4 tree captured from PR #4320, with required surfaceOp, startSeq/endSeq replacement endpoints and 60 roots and 467 types.
+docs/persistence-changes/historical-formats/v3.schema.json	skipped	Generated formatVersion-1 archive of the complete V3 inventory (1.44 MB, 61307 lines, 60 roots); I read the head and enumerated every root key but not the node graph, because it is the machine twin of the digest table published in v3.md.
+docs/persistence-changes/historical-formats/v3.zh.md	read	Chinese mirror of the V3 format reference with the identical 60-root declaration.
+docs/persistence-changes/releases/README.i18n.yaml	read	Per-heading en/zh hash pairing for the prerelease archive index (8 sections).
+docs/persistence-changes/releases/README.md	read	The prerelease archive: 26 tags and 25 transitions, the extraction method, the explicit limits (no replay, no migration proof) and the offline verification command.
+docs/persistence-changes/releases/README.zh.md	read	Chinese mirror of the prerelease archive index; carries the identical 26-row tag table.
+docs/persistence-changes/releases/manifest.json	read	The captured tag manifest: 26 alpha/RC tags with sourceDate, publishedAt and the writer version each shipped, used as the completeness yardstick for the archive.
+docs/persistence-changes/releases/dsh-v0.0.1-rc.1.i18n.yaml	read	Per-heading en/zh hash pairing for the earliest-tag release record (8 sections).
+docs/persistence-changes/releases/dsh-v0.0.1-rc.1.md	read	Earliest available tag: establishes the historical baseline of 42 roots and 341 types with no predecessor and no compatibility judgement.
+docs/persistence-changes/releases/dsh-v0.0.1-rc.1.schema.json	skipped	Generated formatVersion-1 snapshot holding every root of the earliest tag (930 KB); I read the head and enumerated every root key but not the node graph, because the digest list is already in the sibling .md.
+docs/persistence-changes/releases/dsh-v0.0.1-rc.1.zh.md	read	Chinese mirror of the earliest-tag record with the identical 42-root declaration.
+docs/persistence-changes/releases/dsh-v0.0.1-rc.2.i18n.yaml	read	Per-heading en/zh hash pairing for the rc.2 release record (8 sections).
+docs/persistence-changes/releases/dsh-v0.0.1-rc.2.md	read	Adds the optional ignorable field to the envelope plus schedule/change and four tool-workflow roots; 45 changed roots, 48 structural differences.
+docs/persistence-changes/releases/dsh-v0.0.1-rc.2.schema.json	skipped	Generated formatVersion-1 snapshot of the 45 roots changed at rc.2 (1.01 MB); I read the head and enumerated every root key but not the node graph, because the digest list is already in the sibling .md.
+docs/persistence-changes/releases/dsh-v0.0.1-rc.2.zh.md	read	Chinese mirror of the rc.2 record with the identical 45-root declaration.
+docs/persistence-changes/releases/dsh-v0.0.1-rc.3.i18n.yaml	read	Per-heading en/zh hash pairing for the rc.3 release record (8 sections).
+docs/persistence-changes/releases/dsh-v0.0.1-rc.3.md	read	Renames compact/* to compaction/*, changes the user-message source kind and the hook dialect literal, all while the writer version stays 0.
+docs/persistence-changes/releases/dsh-v0.0.1-rc.3.schema.json	skipped	Generated formatVersion-1 snapshot of the 8 roots that changed at rc.3 (458 KB); I read the head and enumerated every root key but not the node graph, because the digest list is already in the sibling .md.
+docs/persistence-changes/releases/dsh-v0.0.1-rc.3.zh.md	read	Chinese mirror of the rc.3 record with the identical eight-root declaration.
+docs/persistence-changes/releases/dsh-v0.0.1-rc.4.i18n.yaml	read	Per-heading en/zh hash pairing for the rc.4 release record (8 sections).
+docs/persistence-changes/releases/dsh-v0.0.1-rc.4.md	read	Tag-only release with unchanged digests: the template every zero-change release record follows, with an empty changes list.
+docs/persistence-changes/releases/dsh-v0.0.1-rc.4.schema.json	read	Read in full: a 55-byte empty snapshot (formatVersion 1, zero roots, zero types) because the release changed no root.
+docs/persistence-changes/releases/dsh-v0.0.1-rc.4.zh.md	read	Chinese mirror of the rc.4 record; the same empty-changes template.
+docs/persistence-changes/releases/dsh-v0.0.1-rc.5.i18n.yaml	read	Per-heading en/zh hash pairing for the rc.5 release record (8 sections).
+docs/persistence-changes/releases/dsh-v0.0.1-rc.5.md	read	Tag-only release with unchanged digests at 47 roots and 374 types.
+docs/persistence-changes/releases/dsh-v0.0.1-rc.5.schema.json	read	Read in full: a 55-byte empty snapshot because the release changed no root.
+docs/persistence-changes/releases/dsh-v0.0.1-rc.5.zh.md	read	Chinese mirror of the rc.5 record; the same empty-changes template.
+docs/persistence-changes/releases/dsh-v0.1.0-rc.1.i18n.yaml	read	Per-heading en/zh hash pairing for the v0.1.0-rc.1 release record (8 sections).
+docs/persistence-changes/releases/dsh-v0.1.0-rc.1.md	read	Tag-only release with unchanged digests, 47 roots and 374 types.
+docs/persistence-changes/releases/dsh-v0.1.0-rc.1.schema.json	read	Read in full: a 55-byte empty snapshot because the release changed no root.
+docs/persistence-changes/releases/dsh-v0.1.0-rc.1.zh.md	read	Chinese mirror of the v0.1.0-rc.1 record; the same empty-changes template.
+docs/persistence-changes/releases/dsh-v0.1.0-rc.2.i18n.yaml	read	Per-heading en/zh hash pairing for the v0.1.0-rc.2 release record (8 sections).
+docs/persistence-changes/releases/dsh-v0.1.0-rc.2.md	read	Tag-only release with unchanged digests, 47 roots and 374 types.
+docs/persistence-changes/releases/dsh-v0.1.0-rc.2.schema.json	read	Read in full: a 55-byte empty snapshot because the release changed no root.
+docs/persistence-changes/releases/dsh-v0.1.0-rc.2.zh.md	read	Chinese mirror of the v0.1.0-rc.2 record; the same empty-changes template.
+docs/persistence-changes/releases/dsh-v0.1.0-rc.3.i18n.yaml	read	Per-heading en/zh hash pairing for the v0.1.0-rc.3 release record (8 sections).
+docs/persistence-changes/releases/dsh-v0.1.0-rc.3.md	read	Tag-only release with unchanged digests, 47 roots and 374 types.
+docs/persistence-changes/releases/dsh-v0.1.0-rc.3.schema.json	read	Read in full: a 55-byte empty snapshot because the release changed no root.
+docs/persistence-changes/releases/dsh-v0.1.0-rc.3.zh.md	read	Chinese mirror of the v0.1.0-rc.3 record; the same empty-changes template.
+docs/persistence-changes/releases/dsh-v0.1.0-rc.5.i18n.yaml	read	Per-heading en/zh hash pairing for the v0.1.0-rc.5 release record (8 sections).
+docs/persistence-changes/releases/dsh-v0.1.0-rc.5.md	read	Tag-only release with unchanged digests, 47 roots and 374 types.
+docs/persistence-changes/releases/dsh-v0.1.0-rc.5.schema.json	read	Read in full: a 55-byte empty snapshot because the release changed no root.
+docs/persistence-changes/releases/dsh-v0.1.0-rc.5.zh.md	read	Chinese mirror of the v0.1.0-rc.5 record; the same empty-changes template.
+docs/persistence-changes/releases/dsh-v0.1.0-rc.6.i18n.yaml	read	Per-heading en/zh hash pairing for the v0.1.0-rc.6 release record (8 sections).
+docs/persistence-changes/releases/dsh-v0.1.0-rc.6.md	read	Tag-only release with unchanged digests, 47 roots and 374 types.
+docs/persistence-changes/releases/dsh-v0.1.0-rc.6.schema.json	read	Read in full: a 55-byte empty snapshot because the release changed no root.
+docs/persistence-changes/releases/dsh-v0.1.0-rc.6.zh.md	read	Chinese mirror of the v0.1.0-rc.6 record; the same empty-changes template.
+docs/persistence-changes/releases/dsh-v0.1.0-rc.7.i18n.yaml	read	Per-heading en/zh hash pairing for the v0.1.0-rc.7 release record (8 sections).
+docs/persistence-changes/releases/dsh-v0.1.0-rc.7.md	read	Single change: assistant/chunk replayState moves from unknown to an object with required response and optional blocks.
+docs/persistence-changes/releases/dsh-v0.1.0-rc.7.schema.json	skipped	Generated formatVersion-1 snapshot of the one changed root assistant/chunk (124 KB); I read the head and root-key list but not the node graph, because the single-root change is stated in the sibling .md.
+docs/persistence-changes/releases/dsh-v0.1.0-rc.7.zh.md	read	Chinese mirror of the v0.1.0-rc.7 record with the identical single-root declaration.
+docs/persistence-changes/releases/dsh-v0.1.0-rc.8.i18n.yaml	read	Per-heading en/zh hash pairing for the v0.1.0-rc.8 release record (8 sections).
+docs/persistence-changes/releases/dsh-v0.1.0-rc.8.md	read	Adds the four team/* roots and the team-message source variant, plus optional interrupted on assistant/message.
+docs/persistence-changes/releases/dsh-v0.1.0-rc.8.schema.json	skipped	Generated formatVersion-1 snapshot of the 8 roots changed at v0.1.0-rc.8 (500 KB); I read the head and enumerated every root key but not the node graph, because the digest list is already in the sibling .md.
+docs/persistence-changes/releases/dsh-v0.1.0-rc.8.zh.md	read	Chinese mirror of the v0.1.0-rc.8 record with the identical eight-root declaration.
+docs/persistence-changes/releases/dsh-v0.1.1-rc.1.i18n.yaml	read	Per-heading en/zh hash pairing for the v0.1.1-rc.1 release record (8 sections).
+docs/persistence-changes/releases/dsh-v0.1.1-rc.1.md	read	Single change: permission/preset gains optional origin with default, selection and inferred values.
+docs/persistence-changes/releases/dsh-v0.1.1-rc.1.schema.json	skipped	Generated formatVersion-1 snapshot of the one changed root permission/preset (10 KB); I read the head and root-key list but not the node graph, because the single-root change is stated in the sibling .md.
+docs/persistence-changes/releases/dsh-v0.1.1-rc.1.zh.md	read	Chinese mirror of the v0.1.1-rc.1 record with the identical single-root declaration.
+docs/persistence-changes/releases/dsh-v0.1.1-rc.2.i18n.yaml	read	Per-heading en/zh hash pairing for the v0.1.1-rc.2 release record (8 sections).
+docs/persistence-changes/releases/dsh-v0.1.1-rc.2.md	read	Removes permission/preset origin and adds optional originalDimensions to attachment records across message and tool payloads.
+docs/persistence-changes/releases/dsh-v0.1.1-rc.2.schema.json	skipped	Generated formatVersion-1 snapshot of the 10 roots changed at v0.1.1-rc.2 (697 KB); I read the head and enumerated every root key but not the node graph, because the digest list is already in the sibling .md.
+docs/persistence-changes/releases/dsh-v0.1.1-rc.2.zh.md	read	Chinese mirror of the v0.1.1-rc.2 record with the identical ten-root declaration.
+docs/persistence-changes/releases/dsh-v0.1.2-alpha.1.i18n.yaml	read	Per-heading en/zh hash pairing for the v0.1.2-alpha.1 release record (8 sections).
+docs/persistence-changes/releases/dsh-v0.1.2-alpha.1.md	read	Removes envelope ignorable, adds request/header startsSeries and the series reason, and adds model-selection, subagent model-policy and delivery-acceptance roots, all without a writer bump.
+docs/persistence-changes/releases/dsh-v0.1.2-alpha.1.schema.json	skipped	Generated formatVersion-1 snapshot of the 52 roots changed at v0.1.2-alpha.1 (1.13 MB); I read the head and enumerated every root key but not the node graph, because the digest list is already in the sibling .md.
+docs/persistence-changes/releases/dsh-v0.1.2-alpha.1.zh.md	read	Chinese mirror of the v0.1.2-alpha.1 record with the identical 52-root declaration.
+docs/persistence-changes/releases/dsh-v0.1.2-alpha.2.i18n.yaml	read	Per-heading en/zh hash pairing for the v0.1.2-alpha.2 release record (8 sections).
+docs/persistence-changes/releases/dsh-v0.1.2-alpha.2.md	read	Restores the optional envelope ignorable field, the inverse of the previous tag, still at writer version 0.
+docs/persistence-changes/releases/dsh-v0.1.2-alpha.2.schema.json	skipped	Generated formatVersion-1 snapshot of the 52 roots changed at v0.1.2-alpha.2 (1.16 MB); I read the head and enumerated every root key but not the node graph, because the digest list is already in the sibling .md.
+docs/persistence-changes/releases/dsh-v0.1.2-alpha.2.zh.md	read	Chinese mirror of the v0.1.2-alpha.2 record with the identical 52-root declaration.
+docs/persistence-changes/releases/dsh-v0.1.2-alpha.3.i18n.yaml	read	Per-heading en/zh hash pairing for the v0.1.2-alpha.3 release record (8 sections).
+docs/persistence-changes/releases/dsh-v0.1.2-alpha.3.md	read	Release with unchanged digests, 54 roots and 417 types, following the same empty-changes template.
+docs/persistence-changes/releases/dsh-v0.1.2-alpha.3.schema.json	read	Read in full: a 55-byte empty snapshot because the release changed no root.
+docs/persistence-changes/releases/dsh-v0.1.2-alpha.3.zh.md	read	Chinese mirror of the v0.1.2-alpha.3 record; the same empty-changes template.
+docs/persistence-changes/releases/dsh-v0.1.2-alpha.4.i18n.yaml	read	Per-heading en/zh hash pairing for the v0.1.2-alpha.4 release record (8 sections).
+docs/persistence-changes/releases/dsh-v0.1.2-alpha.4.md	read	Replaces optional seedLength with required isSeeded in the logical header and renames the subagent-report and coordinator source variants to agent-message.
+docs/persistence-changes/releases/dsh-v0.1.2-alpha.4.schema.json	skipped	Generated formatVersion-1 snapshot of the 4 roots changed at v0.1.2-alpha.4 (417 KB); I read the head and enumerated every root key but not the node graph, because the digest list is already in the sibling .md.
+docs/persistence-changes/releases/dsh-v0.1.2-alpha.4.zh.md	read	Chinese mirror of the v0.1.2-alpha.4 record with the identical four-root declaration.
+docs/persistence-changes/releases/dsh-v0.1.2-alpha.5.i18n.yaml	read	Per-heading en/zh hash pairing for the v0.1.2-alpha.5 release record (8 sections).
+docs/persistence-changes/releases/dsh-v0.1.2-alpha.5.md	read	Release with unchanged digests, 54 roots and 415 types, following the same empty-changes template.
+docs/persistence-changes/releases/dsh-v0.1.2-alpha.5.schema.json	read	Read in full: a 55-byte empty snapshot because the release changed no root.
+docs/persistence-changes/releases/dsh-v0.1.2-alpha.5.zh.md	read	Chinese mirror of the v0.1.2-alpha.5 record; the same empty-changes template.
+docs/persistence-changes/releases/dsh-v0.1.2-rc.1.i18n.yaml	read	Per-heading en/zh hash pairing for the v0.1.2-rc.1 release record (8 sections).
+docs/persistence-changes/releases/dsh-v0.1.2-rc.1.md	read	Release with unchanged digests, 54 roots and 415 types, following the same empty-changes template.
+docs/persistence-changes/releases/dsh-v0.1.2-rc.1.schema.json	read	Read in full: a 55-byte empty snapshot because the release changed no root.
+docs/persistence-changes/releases/dsh-v0.1.2-rc.1.zh.md	read	Chinese mirror of the v0.1.2-rc.1 record; the same empty-changes template.
+docs/persistence-changes/releases/dsh-v0.1.3-alpha.1.i18n.yaml	read	Per-heading en/zh hash pairing for the v0.1.3-alpha.1 release record (8 sections).
+docs/persistence-changes/releases/dsh-v0.1.3-alpha.1.md	read	The writer jumps 0 to 2 here: seedLength becomes required isSeeded, assistant/chunk is removed, assistant/attempt added, assistant/message gains a required stream, and team payload versions advance.
+docs/persistence-changes/releases/dsh-v0.1.3-alpha.1.schema.json	skipped	Generated formatVersion-1 snapshot of the 17 roots changed at v0.1.3-alpha.1 (911 KB); I read the head and enumerated every root key but not the node graph, because the digest list is already in the sibling .md.
+docs/persistence-changes/releases/dsh-v0.1.3-alpha.1.zh.md	read	Chinese mirror of the v0.1.3-alpha.1 record with the identical 17-root declaration.
+docs/persistence-changes/releases/dsh-v0.1.3-alpha.2.i18n.yaml	read	Per-heading en/zh hash pairing for the v0.1.3-alpha.2 release record (8 sections).
+docs/persistence-changes/releases/dsh-v0.1.3-alpha.2.md	read	Adds feedback/message-put and feedback/message-delete without changing any existing root digest.
+docs/persistence-changes/releases/dsh-v0.1.3-alpha.2.schema.json	skipped	Generated formatVersion-1 snapshot of the 2 roots added at v0.1.3-alpha.2 (20 KB); I read the head and root-key list but not the node graph, because the two-root change is stated in the sibling .md.
+docs/persistence-changes/releases/dsh-v0.1.3-alpha.2.zh.md	read	Chinese mirror of the v0.1.3-alpha.2 record with the identical two-root declaration.
+docs/persistence-changes/releases/dsh-v0.1.5-alpha.1.i18n.yaml	read	Per-heading en/zh hash pairing for the v0.1.5-alpha.1 release record (8 sections).
+docs/persistence-changes/releases/dsh-v0.1.5-alpha.1.md	read	The writer advances 2 to 3: system/message is added, surfaceOp switches from start/end to startSeq/endSeq, and tool/code-dispatch becomes tool/ptc-dispatch.
+docs/persistence-changes/releases/dsh-v0.1.5-alpha.1.schema.json	skipped	Generated formatVersion-1 snapshot of the 12 roots changed at v0.1.5-alpha.1 (578 KB); I read the head and enumerated every root key but not the node graph, because the digest list is already in the sibling .md.
+docs/persistence-changes/releases/dsh-v0.1.5-alpha.1.zh.md	read	Chinese mirror of the v0.1.5-alpha.1 record with the identical 12-root declaration.
+docs/persistence-changes/releases/dsh-v0.1.5-alpha.2.i18n.yaml	read	Per-heading en/zh hash pairing for the v0.1.5-alpha.2 release record (8 sections).
+docs/persistence-changes/releases/dsh-v0.1.5-alpha.2.md	read	Adds deliverables/presented and subagent/catalog, gives feedback records an optional category and makes feedback/record text optional.
+docs/persistence-changes/releases/dsh-v0.1.5-alpha.2.schema.json	skipped	Generated formatVersion-1 snapshot of the 4 roots changed at v0.1.5-alpha.2 (51 KB); I read the head and enumerated every root key but not the node graph, because the four-root change is stated in the sibling .md.
+docs/persistence-changes/releases/dsh-v0.1.5-alpha.2.zh.md	read	Chinese mirror of the v0.1.5-alpha.2 record with the identical four-root declaration.
+docs/persistence-changes/releases/dsh-v0.1.5-rc.1.i18n.yaml	read	Per-heading en/zh hash pairing for the v0.1.5-rc.1 release record (8 sections).
+docs/persistence-changes/releases/dsh-v0.1.5-rc.1.md	read	Release with unchanged digests, 59 roots and 462 types, following the same empty-changes template.
+docs/persistence-changes/releases/dsh-v0.1.5-rc.1.schema.json	read	Read in full: a 55-byte empty snapshot because the release changed no root.
+docs/persistence-changes/releases/dsh-v0.1.5-rc.1.zh.md	read	Chinese mirror of the v0.1.5-rc.1 record; the same empty-changes template.
+docs/persistence-changes/releases/dsh-v0.1.5-rc.2.i18n.yaml	read	Per-heading en/zh hash pairing for the v0.1.5-rc.2 release record (8 sections).
+docs/persistence-changes/releases/dsh-v0.1.5-rc.2.md	read	Final captured tag: unchanged digests, 59 roots and 462 types, writer version 3.
+docs/persistence-changes/releases/dsh-v0.1.5-rc.2.schema.json	read	Read in full: a 55-byte empty snapshot because the release changed no root.
+docs/persistence-changes/releases/dsh-v0.1.5-rc.2.zh.md	read	Chinese mirror of the v0.1.5-rc.2 record; the same empty-changes template.
+docs/user/index.i18n.yaml	read	Per-heading en/zh hash pairing for the user docs landing page (2 sections; the root section hash is identical on both sides because the page has no prose).
+docs/user/index.md	read	The user docs landing page: a layout-free meta-refresh straight to the Web UI quickstart.
+docs/user/index.zh.md	read	Chinese landing page: the same meta-refresh to the quickstart, differing only in the language switch line.
+docs/user/develop/basic/config.i18n.yaml	read	Per-heading en/zh hash pairing for the plugin-configuration tutorial (8 sections).
+docs/user/develop/basic/config.md	read	Plugin configuration tutorial: Schemastery schema as the exported Config, defaults on the schema, and the rule that anything two deployments may set differently must be a config field.
+docs/user/develop/basic/config.zh.md	read	Chinese mirror of the plugin-configuration tutorial with the same Schemastery examples.
+docs/user/develop/basic/index.i18n.yaml	read	Per-heading en/zh hash pairing for the first-plugin tutorial (12 sections).
+docs/user/develop/basic/index.md	read	First-plugin tutorial: the apply(ctx) contract, the absolute-path requirement for a --patch overlay, ctx.effect for disposers, inject for dependencies, and the three plugin forms.
+docs/user/develop/basic/index.zh.md	read	Chinese mirror of the first-plugin tutorial with the same code examples.
+docs/user/develop/basic/publish.i18n.yaml	read	Per-heading en/zh hash pairing for the package-and-install tutorial (10 sections).
+docs/user/develop/basic/publish.md	read	Bundle versus profile: the two manifests, the four-layer configuration precedence, the dsh plugin CLI, engines.dsh ranges, and the git-install build-script catch with the pnpm allowBuilds allowance.
+docs/user/develop/basic/publish.zh.md	read	Chinese mirror of the package-and-install tutorial; carries the same four-layer precedence list and the same allowBuilds warning.
+docs/user/develop/basic/tool.i18n.yaml	read	Per-heading en/zh hash pairing for the tool-authoring tutorial (5 sections).
+docs/user/develop/basic/tool.md	read	Tool-authoring tutorial: defineTool with parameters, an output schema and an output render that converts the canonical value to model-facing content.
+docs/user/develop/basic/tool.zh.md	read	Chinese mirror of the tool-authoring tutorial with the same defineTool example.
+docs/user/develop/framework/events.i18n.yaml	read	Per-heading en/zh hash pairing for the event-system reference (15 sections).
+docs/user/develop/framework/events.md	read	Event-system reference: the emit/bail/serial/waterfall modes, the mandatory next() in a waterfall, and the distinction between Cordis events and durable session-event types.
+docs/user/develop/framework/events.zh.md	read	Chinese mirror of the event-system reference with the same four event modes.
+docs/user/develop/framework/index.i18n.yaml	read	Per-heading en/zh hash pairing for the plugin-lifecycle reference (10 sections).
+docs/user/develop/framework/index.md	read	Plugin-lifecycle reference: the Fiber state machine, dependency-driven loading, automatic cleanup, and the explicit caveat that concurrent async disposers have no serial completion guarantee.
+docs/user/develop/framework/index.zh.md	read	Chinese mirror of the plugin-lifecycle reference with the same Fiber state table.
+docs/user/develop/framework/service.i18n.yaml	read	Per-heading en/zh hash pairing for the services-and-dependencies reference (13 sections).
+docs/user/develop/framework/service.md	read	Services reference: providing a service by extending Service, typing it by declaration merging, what happens when a required service disappears, and per-group service isolation in cordis.yml.
+docs/user/develop/framework/service.zh.md	read	Chinese mirror of the services reference with the same isolation example.
+docs/user/develop/practice/dynamic-cordis.i18n.yaml	read	Per-heading en/zh hash pairing for the configure-plugins-from-a-prompt note (3 sections).
+docs/user/develop/practice/dynamic-cordis.md	read	Creator-mode note: the agent writes a configuration-only bundle and installs it with plugin_manager install_bundle, and an applied result is distinct from a restart-required or failed entry.
+docs/user/develop/practice/dynamic-cordis.zh.md	read	Chinese mirror of the configure-plugins-from-a-prompt note with the same applied/restart-required distinction.
+docs/user/develop/practice/index.i18n.yaml	read	Per-heading en/zh hash pairing for the three-role capability reference (15 sections).
+docs/user/develop/practice/index.md	read	Three-role capability design: Service Definition, Service Provider and Consumer as separate roles, with the rule not to split preemptively and to resolve defaults in an explicit resolve step.
+docs/user/develop/practice/index.zh.md	read	Chinese mirror of the three-role capability reference with the same Bash three-package diagram.
+docs/user/develop/practice/llm-adapter.i18n.yaml	read	Per-heading en/zh hash pairing for the LLM-adapter guide (11 sections).
+docs/user/develop/practice/llm-adapter.md	read	LLM-adapter guide: the StreamChunk protocol (block-start/text-delta/block-end, usage before finish), adapter-owned reasoning-effort ids, and LlmError with stable codes instead of silently dropping an unhonourable field.
+docs/user/develop/practice/llm-adapter.zh.md	read	Chinese mirror of the LLM-adapter guide with the same StreamChunk example.
+docs/user/guide/github-review.i18n.yaml	read	Per-heading en/zh hash pairing for the GitHub-webhook review guide (8 sections).
+docs/user/guide/github-review.md	read	GitHub-webhook guide: a signed second WebServer in an isolated realm, a rule scoped to one repo/event/action, and the deliberate weakness of a 202 response that only means the request was accepted.
+docs/user/guide/github-review.zh.md	read	Chinese mirror of the GitHub-webhook guide with the same Caddy example.
+docs/user/guide/index.i18n.yaml	read	Per-heading en/zh hash pairing for the Web-UI guide index (6 sections).
+docs/user/guide/index.md	read	Web-UI quickstart: configure a model, choose a workspace, run a task; the composer stays unavailable until a workspace is selected.
+docs/user/guide/index.zh.md	read	Chinese mirror of the Web-UI quickstart with the same four-step flow.
+docs/user/guide/mcp-memory.i18n.yaml	read	Per-heading en/zh hash pairing for the memory-MCP guide (12 sections).
+docs/user/guide/mcp-memory.md	read	Three default-off third-party memory MCP references, each pinned by version and commit, with the stdio bridge stripping credential-shaped and DSH_* environment variables.
+docs/user/guide/mcp-memory.zh.md	read	Chinese mirror of the memory-MCP guide with the same pinned-version table.
+docs/user/guide/network-proxy.i18n.yaml	read	Per-heading en/zh hash pairing for the network-proxy guide (8 sections).
+docs/user/guide/network-proxy.md	read	Network-proxy guide: the three unrelated proxy mechanisms, NO_PROXY host matching, SOCKS being reported and skipped per scheme, and the four request classes that stay direct.
+docs/user/guide/network-proxy.zh.md	read	Chinese mirror of the network-proxy guide with the same three-mechanism table.
+docs/user/guide/plugin-market.i18n.yaml	read	Per-heading en/zh hash pairing for the plugin-market guide (11 sections).
+docs/user/guide/plugin-market.md	read	Plugin-market guide: the index JSON format tables, the reference generator that only downloads and never installs, and the rule that a market chooses a plugin's claims and DSH checks only the file format.
+docs/user/guide/plugin-market.zh.md	read	Chinese mirror of the plugin-market guide with the same index-format tables.
+docs/user/guide/providers-custom-form.png	read	Screenshot of the Custom model API form: Provider ID, display name, base URL, API protocol dropdown, API key, the model catalog area and the Fetch available models action.
+docs/user/guide/providers-custom-form.zh.png	read	Chinese-language version of the Custom model API form screenshot, same fields and same layout.
+docs/user/guide/providers-models-page.png	read	Screenshot of the Settings Models page: the DeepSeek card with its API-key field, the Customized settings expander, and the Add model provider entry.
+docs/user/guide/providers-models-page.zh.png	read	Chinese-language version of the Settings Models page screenshot, same cards and layout.
+docs/user/guide/providers.i18n.yaml	read	Per-heading en/zh hash pairing for the model-configuration guide (13 sections).
+docs/user/guide/providers.md	read	Model-configuration guide: write-only credentials, the three API protocols, the reasoning-effort level-to-wire-value map, and the compat switches whose empty value is refused rather than ignored.
+docs/user/guide/providers.zh.md	read	Chinese mirror of the model-configuration guide with the same compat troubleshooting list.
+docs/user/guide/public-deployments.i18n.yaml	read	Per-heading en/zh hash pairing for the reverse-proxy deployment guide (6 sections).
+docs/user/guide/public-deployments.md	read	Reverse-proxy guide: --public-url is an advertisement while --trusted-host is the admission fence, plus the five duties the proxy must perform and the launch-token warning.
+docs/user/guide/public-deployments.zh.md	read	Chinese mirror of the reverse-proxy guide with the same five proxy duties.
+docs/user/guide/python-sdk.i18n.yaml	read	Per-heading en/zh hash pairing for the Python SDK guide (9 sections).
+docs/user/guide/python-sdk.md	read	Python SDK guide: install the wheel, run the sdk-minimal profile with explicit workspace and home paths, opt into str_replace_editor, and the property table describing the minimal profile's tools, timeout, compaction and persistence.
+docs/user/guide/python-sdk.zh.md	read	Chinese mirror of the Python SDK guide with the same minimal-profile property table.
+docs/user/guide/schedule.i18n.yaml	read	Per-heading en/zh hash pairing for the schedule guide (10 sections).
+docs/user/guide/schedule.md	read	Schedule guide: which presets declare the four reminder tools, the editing rules, the timing and delivery reference, and the explicit statement that exactly-once delivery is not guaranteed.
+docs/user/guide/schedule.zh.md	read	Chinese mirror of the schedule guide with the same delivery-record pruning rules.

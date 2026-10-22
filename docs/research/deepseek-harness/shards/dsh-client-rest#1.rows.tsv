@@ -1,0 +1,252 @@
+packages/client/AGENTS.md	read	Web-client authoring rules: slot/props discipline (five derived shares, framework-made hooks only, stores as createXXXStore factories, no module-level singletons) and the build/dependency rules for packages/client/*.
+packages/client/connection/locale/en.json	read	Package catalogue entry with only meta.title "connection".
+packages/client/connection/locale/zh.json	read	Chinese catalogue entry: title 客户端连接 plus a one-line description.
+packages/client/connection/package.json	read	Manifest with dual exports (host "." and "./client" with node+browser conditions), dsh.client declaration inject []/platform web/immediately true, zod+schemastery deps.
+packages/client/connection/README.i18n.yaml	read	Per-heading hashes recording which English and Chinese README blocks are translation pairs.
+packages/client/connection/README.md	read	Package reference: browser-host wire layer, browser auth + Host/Origin trust fence, connection generations, and the stated known limits (300 MiB buffered bodies, no logout, plain-HTTP cookie exposure).
+packages/client/connection/README.zh.md	read	Chinese translation of the connection package reference; same sections and limits.
+packages/client/connection/src/api-path.ts	read	One constant API_PATH='/api' shared by the node half and the browser half.
+packages/client/connection/src/api-request-trust.ts	read	Browser-trust fence: assertTrustedAuthority (canonical bare host[:port] only), isRemoteAuthority, isTrustedApiRequest binding the Host header on every request including markerless ones.
+packages/client/connection/src/browser-auth.ts	read	BrowserAuth: launch-token exchange at /, HMAC-signed authority-bound cookies with issue/expiry checks, and the API-peer /connect cookie path.
+packages/client/connection/src/client/api.ts	read	Browser-safe re-export of the RPC envelope types plus the resultOf() unwrapper.
+packages/client/connection/src/client/connection.ts	read	ConnectionController: generation source lifecycle, jittered exponential backoff capped at backoffMaxMs, separate readiness-warning and hard-deadline timers, and online/offline suspension.
+packages/client/connection/src/client/index.ts	read	Browser plugin entry: installConnection provides ctx.connection (generation, state, rpc, reconnect), reads __DSH_TRANSPORT__ and __DSH_CONNECTION_RECOVERY__, and emits connection/reset.
+packages/client/connection/src/client/random-uuid.ts	read	RFC 4122 v4 UUID built on crypto.getRandomValues so it works on insecure origins.
+packages/client/connection/src/client/rpc.ts	read	Browser unary RPC caller: JSON envelope POST, rpcId echo check, multipart binary-response parsing that restores bytes over null placeholders, and assertTarget's path-shape guard.
+packages/client/connection/src/client/socket.ts	read	ConnectionWebSocket interface plus openConnectionWebSocket resolving the logical channel against the Host base (http→ws, https→wss).
+packages/client/connection/src/connect-protocol.ts	read	CONNECT_PATH='/connect' and the ConnectionInteractions 'answer'|'none' union.
+packages/client/connection/src/http-bridge.ts	read	node:http ↔ WHATWG fetch bridge: client-disconnect abort hung off the response (not the request), declared-oversize 413 + destroy, buffered/streaming body modes, and backpressure-aware response writes.
+packages/client/connection/src/index.ts	read	Host plugin entry: Config schema, the /api prefix route and /connect exact route, assertImageBodyCapacity, and the connection/request waterfall.
+packages/client/connection/src/loopback-hostname.ts	read	Browser-safe isLoopbackHostname accepting localhost, [::1] and the whole 127/8 block.
+packages/client/connection/src/peer.ts	read	Peer class: one admitted party with a fixed principal, its own cordis scope/Context and a lifetime AbortSignal.
+packages/client/connection/src/recovery-config.ts	read	Shared schemastery schema and resolver for backoff base/factor/max plus generationReadyWarnMs and generationReadyTimeoutMs, with a finite-factor check.
+packages/client/connection/src/rpc-host.ts	read	HostConnectionService: per-fibre channel registry, interceptors, exact fetch routes, peer admission, owner-only route enforcement, and multipart response writing with attachment metadata.
+packages/client/connection/src/rpc-schema.ts	read	zod schemas for the client-request / server-response envelopes and the ok/error result union.
+packages/client/connection/src/rpc.ts	read	Carrier-neutral RPC contracts: branded RpcId, ok/error result union, attachment path/bytes types, ConnectionTrustRequest and the ClientConnectionRpc interface.
+packages/client/connection/tests/api-helpers.client.spec.ts	read	Contract-layer spec for transportError folding and resultOf unwrapping.
+packages/client/connection/tests/api-request-trust.host.spec.ts	read	Trust-fence spec: markerless requests held to the Host check, loopback spellings, bind-IP matching, rebound Host refusal and Origin scheme normalisation.
+packages/client/connection/tests/binary-rpc.host.spec.ts	read	Binary RPC spec: multipart roundtrip with and without gzip, attachment-table validation, and rejection of truncated or late bytes.
+packages/client/connection/tests/browser-auth.host.spec.ts	read	Browser-auth spec: token exchange, cookie authority binding, expiry rejection, and refusal of malformed/unsupported credential records.
+packages/client/connection/tests/browser-credentials.ts	read	Mutable credential-record double (RecordCredentials) plus provideBrowserCredentials for the auth specs.
+packages/client/connection/tests/client-apply.client.spec.ts	read	Browser-half apply spec: bootstrap recovery validation, carrier selection, single-consumer loop ownership, RPC envelope validation and invalid-target rejection.
+packages/client/connection/tests/connection.client.spec.ts	read	Connection lifecycle spec: ready publication, reconnect with a fresh generation, jittered cap retry, sink isolation and idempotent start().
+packages/client/connection/tests/fake-generation.client.ts	read	Hand-pumped ConnectionGenerationSource double with suppressReady/holdReady and end/fail controls.
+packages/client/connection/tests/fetch-routes.host.spec.ts	read	Exact fetch-route spec: dispatch and 404 for unclaimed paths, invalid/duplicate registration rejection, and 403 for non-owner peers.
+packages/client/connection/tests/generation.client.spec.ts	read	Spec that the ready frame's Host facts publish and retract with the connection loop.
+packages/client/connection/tests/http-bridge.host.spec.ts	read	Bridge spec: oversize rejection destroys the request, disconnect aborts the carrier signal, and multipart responses finish without further writes after a client close.
+packages/client/connection/tests/loopback-hostname.client.spec.ts	read	Spec pinning the accepted loopback hostnames and the refused malformed ones.
+packages/client/connection/tests/node-half.host.spec.ts	read	Node-half spec: /api route registration, trust+auth admission, owner-peer dispatch, exact-route withdrawal and per-method status codes.
+packages/client/connection/tests/recovery-config.client.spec.ts	read	Spec pinning the recovery defaults and rejecting timing that could disable recovery or overflow a timer.
+packages/client/connection/tests/rpc-schema.host.spec.ts	read	Spec for the RPC envelope schemas, the failure shape and RpcId branding.
+packages/client/connection/tests/socket.client.spec.ts	read	Spec for WebSocket base resolution (explicit base, document base) and the refusal to open without a base outside a document.
+packages/client/connection/tsconfig.client.json	read	Client project: an explicit browser-safe file list plus references to cordis/schemastery/session/llm/typert/brand/attachment.
+packages/client/connection/tsconfig.host.json	read	Host project: node-side file list including the trust fence, browser-auth, http-bridge and rpc-host, with webserver/scope references.
+packages/client/connection/tsconfig.json	read	Solution tsconfig referencing the host and client projects.
+packages/client/connection/tsdown.config.ts	read	clientBundle(..., {dualClient:true}) producing lib/client.node.js and lib/client.browser.js.
+packages/client/file-upload/locale/en.json	read	Package catalogue entry with meta.title "file-upload".
+packages/client/file-upload/locale/zh.json	read	Chinese catalogue entry: 文件上传 plus a one-line description.
+packages/client/file-upload/package.json	read	Manifest exposing ./client, ./types, ./typert and ./remote entries; dsh.client injects the api-remotes package.
+packages/client/file-upload/README.i18n.yaml	read	Per-heading translation-pair hashes for the file-upload README.
+packages/client/file-upload/README.md	read	Package reference: Session-addressed uploads, streaming intake, progress, cancellation, staged receipts, and the limits (not resumable, one-shot streams, no stream total, self-contained Worker).
+packages/client/file-upload/README.zh.md	read	Chinese translation of the file-upload package reference.
+packages/client/file-upload/src/client/contract.ts	read	Browser contract types: FileUploadBody (Blob | ReadableStream), FileUploadProgress and the FileUploadService upload() signature.
+packages/client/file-upload/src/client/index.ts	read	Browser plugin entry: provides ctx.fileUpload via the FileUploadRuntime service; injects the generated remote.
+packages/client/file-upload/src/client/runtime.ts	read	Background upload implementation: the self-contained Worker body (XHR for Blob progress, fetch for streams), the page-owned __DSH_FILE_UPLOAD__ hook, and strict receipt validation.
+packages/client/file-upload/src/http-route.ts	read	Authenticated raw-byte upload route: POST + application/octet-stream + sessionId required, streaming body chunks, and JSON business/internal failure envelope.
+packages/client/file-upload/src/index.ts	read	Host service: the streaming route registration, the command file-receipt resolver, the Session-keyed staged-receipt table, and the PromptFileBinding disposable-transaction guard.
+packages/client/file-upload/src/protocol.ts	read	FILE_UPLOAD_PATH='/api/session/uploadFileBinary' and its document-relative form.
+packages/client/file-upload/src/types.ts	read	Encoded upload request, FileUploadValue/ReceiptId types and the page-owned FileUploadFetch hook types.
+packages/client/file-upload/tests/file-upload-http.host.spec.ts	read	Spec for the upload route: method/media-type/sessionId rejection before any storage, chunk delivery, and business vs internal error envelopes.
+packages/client/file-upload/tests/file-upload.client.spec.ts	read	Spec for the Worker body (credentials, progress, completion/failure), stream transfer, and the receipt validation and page-hook behaviour of the service.
+packages/client/file-upload/tsconfig.client.json	read	Client project listing the browser-side files with references to brand/crypto/attachment/session/typert.
+packages/client/file-upload/tsconfig.host.json	read	Host project listing http-route/index/protocol/types with references to agent/session/attachment/commands/typert and the connection host project.
+packages/client/file-upload/tsconfig.json	read	Solution tsconfig referencing the host and client projects.
+packages/client/file-upload/tsdown.config.ts	read	clientBundle(..., ['lib/types/index.js']) for the file-upload package.
+packages/client/hmr/locale/en.json	read	Package catalogue entry with meta.title "hmr".
+packages/client/hmr/locale/zh.json	read	Chinese catalogue entry: Web 客户端热更新 plus a description.
+packages/client/hmr/package.json	read	Manifest with ./client export and dsh.client inject of the client-modules package.
+packages/client/hmr/README.i18n.yaml	read	Per-heading translation-pair hashes for the hmr README.
+packages/client/hmr/README.md	read	Package reference: live graph sync, rebuild-driven reload, the browser swap, cascade/self-reload and the failure policy (no rollback, React state lost).
+packages/client/hmr/README.zh.md	read	Chinese translation of the hmr package reference.
+packages/client/hmr/src/client/index.ts	read	Browser transport: reads the events route through the page's __DSH_TRANSPORT__.fetch when present, otherwise EventSource; drops malformed frames with a warning and delegates graph/rebuilt frames to the entry controller.
+packages/client/hmr/src/events.ts	read	Shared SSE frame types (graph | rebuilt), the parse result that separates unknown types from malformed frames, and the EVENTS_ENDPOINT constant.
+packages/client/hmr/src/index.ts	read	Host half: one stat-poll over each graph row's bundle, mtime/ctime/size revision tracking, clientModules.rebuilt reporting, and the /plugins/events SSE channel.
+packages/client/hmr/tests/events.client.spec.ts	read	Spec for the frame parser: complete frames accepted, unknown types separated from malformed known frames.
+packages/client/hmr/tests/node-half.client.spec.ts	read	Spec for the Node half: bundle watches follow the graph, stat changes report rebuilt, and the SSE channel's per-connection graph plus teardown.
+packages/client/hmr/tests/transport.client.spec.ts	read	Spec for the browser transport: forwards graph/rebuilt frames, contains wire errors, closes the EventSource, and reads through the page transport when one exists.
+packages/client/hmr/tsconfig.json	read	Single tsconfig including src with DOM libs and references to cordis/loader/modules/webserver/schemastery.
+packages/client/hmr/tsdown.config.ts	read	clientBundle(..., ['lib/types/index.js']) for the hmr package.
+packages/client/locale/locale/en.json	read	Package catalogue entry with meta.title "locale".
+packages/client/locale/locale/zh.json	read	Chinese catalogue entry: 界面语言 plus a description.
+packages/client/locale/package.json	read	Manifest whose dsh.client injects connection, ui-renderer, ui-settings and api-remotes.
+packages/client/locale/README.i18n.yaml	read	Per-heading translation-pair hashes for the locale README.
+packages/client/locale/README.md	read	Package reference: zh/en preference, browser-derived fallback, typed namespace dictionaries, the framework translation seat, and the limit that registry-held text reads its translation once.
+packages/client/locale/README.zh.md	read	Chinese translation of the locale package reference.
+packages/client/locale/src/client/bootstrap.ts	read	Native-shell bootstrap contract and parseLocaleBootstrap, which validates the untrusted preload IPC response before any field is read.
+packages/client/locale/src/client/index.ts	read	LocaleRuntime: the dictionary registry, the per-key fallback chain (active → declared fallbacks → common → the key itself), stable per-namespace bind identity, publish() that bumps the revision but only emits locale/change on an active switch, and the Language row registration.
+packages/client/locale/src/client/LanguageRow.module.css	read	Styles for the settings Language row: 16px vertical padding, hairline separator, 36px control height, theme tokens only.
+packages/client/locale/src/client/LanguageRow.tsx	read	Language preference row component: reads active/options from the store, renders a Menu of self-described labels, and writes through the injected setLocale.
+packages/client/locale/src/client/settings-store.ts	read	Language row store: a mirror of the locale snapshot with a revision guard that drops stale and duplicate syncs.
+packages/client/locale/src/css-modules.d.ts	read	Ambient declaration for *.module.css class maps and plain *.css.
+packages/client/locale/src/index.ts	read	Host half: registers the locale settings namespace with a volatile preference field, hidden from the generated settings pages.
+packages/client/locale/src/locale-settings.ts	read	Durable locale preference schema: BCP 47-style id pattern, the preference field name, and the built-in locale ids.
+packages/client/locale/src/locales/en.ts	read	English common-namespace dictionary, checked complete against the zh key set by the satisfies clause.
+packages/client/locale/src/locales/index.ts	read	Re-export point documenting zh as the key-set source of truth and en as checked against it.
+packages/client/locale/src/locales/settings.ts	read	settings.locale namespace dictionary (language.title) with the same zh-source-of-truth convention.
+packages/client/locale/src/locales/zh.ts	read	Chinese common-namespace dictionary and the CommonKey union derived from its keys.
+packages/client/locale/tests/apply.client.spec.ts	read	Spec for the plugin wiring: service+dictionary provisioning, declaration-aware Language row registration, snapshot projection, and recovery after an HMR collapse of the declaring entry.
+packages/client/locale/tests/bootstrap.client.spec.ts	read	Spec that a failed native read is reported, an automatic choice is never persisted, and a stored external locale waits for its language to register.
+packages/client/locale/tests/config.host.spec.ts	read	Spec that the Host settings lifecycle accepts a valid locale preference and rejects malformed ones.
+packages/client/locale/tests/document-language.client.spec.ts	read	Spec that <html lang> tracks the resolved locale with BCP 47 tags and is not rewritten for dictionary-only changes.
+packages/client/locale/tests/language-row.client.spec.tsx	read	Component spec for the Language row: label rendering, menu open/select/close, outside-pointerdown close, and store-driven label changes.
+packages/client/locale/tests/locale.client.spec.ts	read	Spec for LocaleRuntime: the active→en→key chain, the common-namespace fallthrough, parameter interpolation, stable bind identity, language-pack registration, recursive fallback chains, cycle rejection and the two shipped locales.
+packages/client/locale/tests/localized-text.client.spec.ts	read	Spec for resolveText: literal strings pass through, translation maps resolve per locale with lowercase keys and follow registered regional fallbacks.
+packages/client/locale/tests/settings-store.client.spec.ts	read	Spec for the Language row store: init shape, mirror sync, and the revision guard dropping stale writes.
+packages/client/locale/tsconfig.client.json	read	Client project including src but excluding the host entry, with references to package-manifest/store/ui-renderer/ui-primitives/ui-slots/cordis/ui-settings.
+packages/client/locale/tsconfig.host.json	read	Host project listing src/index.ts and src/locale-settings.ts with the settings package reference.
+packages/client/locale/tsconfig.json	read	Solution tsconfig referencing the host and client projects.
+packages/client/locale/tsdown.config.ts	read	clientBundle(..., ['lib/types/index.js']) for the locale package.
+packages/client/modules/locale/en.json	read	Package catalogue entry with meta.title "modules".
+packages/client/modules/locale/zh.json	read	Chinese catalogue entry: 客户端模块加载 plus a description.
+packages/client/modules/package.json	read	Manifest describing the dual-face package: node half composes the boot graph, browser half is the lazy-CJS module table the vendored Loader consumes.
+packages/client/modules/README.i18n.yaml	read	Per-heading translation-pair hashes for the modules README.
+packages/client/modules/README.md	read	Package reference: the lazy-CJS model, incremental composition, boot-manifest injection, entry ownership, host release changes, and the stated limits (metadata revisions, flat module graph, release detection rides the graph stream).
+packages/client/modules/README.zh.md	read	Chinese translation of the modules package reference.
+packages/client/modules/src/client/entries.ts	read	ClientEntries: page-owned Loader entry reconciliation, the serialised queue, generation guards against stale downloads, code replacement, and the failure list published to page diagnostics.
+packages/client/modules/src/client/entry-lifecycle.ts	read	tearDownEntryFiber (registry deletion + inertia drain before clearing the fiber) and removeOwnedStyles by data-plugin attribute.
+packages/client/modules/src/client/index.ts	read	Browser half entry: createClientModuleSystem from the HTML facade, the bootstrap export, and the plugin face that publishes the Loader's internal module system as ctx.modules.
+packages/client/modules/src/client/manifest.ts	read	Browser-safe contract: the __DSH_BOOT__ wire types, the lazy-CJS resolution branch order, the boot-manifest parser, the dsh.client declaration parser and the module-table interfaces.
+packages/client/modules/src/client/notify.ts	read	notifySubscribers: copies the listener set and contains one throwing subscriber so the rest still run.
+packages/client/modules/src/client/release-change.ts	read	ReleaseChangeGate: the page applies graphs and rebuilt frames only while the Host serves the release the page booted from, announces the change, and can dismiss it.
+packages/client/modules/src/client/system.ts	read	ClientModuleSystem: default bundle loader, revision rewriting of bundle URLs, chunk resolution, style claiming by data-plugin, the load/materialize/invalidate machinery and the loadCache.
+packages/client/modules/src/index.ts	read	Host half: ClientModuleRegistry — incremental per-package scan of Loader entries (no full-rescan path), combo script and source-map construction, the 3 KiB URL partition, the /plugins route, the index injection rows and the graph/rebuilt notifications.
+packages/client/modules/tests/entries.client.spec.ts	read	Spec for page entry reconciliation: add/remove/re-enable, style ownership, obsolete-generation rejection, bootstrap ownership, retained failed entries for retry, and the release-change announcements.
+packages/client/modules/tests/loader.client.spec.ts	read	Spec for the module table: batch arrival failure with a single-resource fallback, partial registration never re-executed, chunk arrival and invalidation, boot manifest validation, and loud failures for cycles/duplicates/double boot.
+packages/client/modules/tests/node-half.client.spec.ts	read	Spec for the Node half: package metadata resolution across Loader resolver versions, duplicate-source refusal and recovery, revision derivation from metadata, the 3 KiB combo partition, and source-map serving.
+packages/client/modules/tsconfig.json	read	Single tsconfig including src with DOM libs and references to cordis/loader/webserver/package-manifest/store.
+packages/client/modules/tsdown.config.ts	read	clientBundle(..., ['lib/types/index.js']) for the modules package.
+packages/client/product-analytics/locale/en.json	read	Package catalogue entry with meta.title "product-analytics".
+packages/client/product-analytics/locale/zh.json	read	Chinese catalogue entry: 桌面端使用统计 plus a description.
+packages/client/product-analytics/package.json	read	Manifest exposing ./client, ./types, ./typert and ./remote; dsh.client injects the api-gateway package.
+packages/client/product-analytics/README.i18n.yaml	read	Per-heading translation-pair hashes for the product-analytics README.
+packages/client/product-analytics/README.md	read	Package reference: the field table, the identity reuse, the one-shot environment sampling, and the limits (one-shot sampling, blocked PowerShell queries, disabling does not clear the exporter queue, best-effort delivery).
+packages/client/product-analytics/README.zh.md	read	Chinese translation of the product-analytics README, including the detailed per-event counting rules.
+packages/client/product-analytics/src/client/index.ts	read	Renderer sender: only collects when the dshDesktop global is present, follows the Host policy over a reconnecting stream, fails closed on stream loss, and discards transport failures.
+packages/client/product-analytics/src/environment-query.ts	read	Bounded, cancellable execFile metadata query with no shell, a maxBuffer cap, a timeout, and fixed failure reasons (unavailable/invalid-value/query-failed/timeout/output-limit/unsupported) that never leak raw output.
+packages/client/product-analytics/src/environment.ts	read	collectEnvironment: approved scalar fields only, with independent per-source failure isolation, zod validation of the OS command output, and missing_fields carrying reasons instead of zero values.
+packages/client/product-analytics/src/events.ts	read	ProductEventMap: the event catalogue with the exact attribute shape each event may carry, plus OnboardingPage and TrackProductEvent.
+packages/client/product-analytics/src/index.ts	read	Host service: the enabled()/watchPolicy() RPCs, the cached environment snapshot shared across concurrent intakes, the fresh identity read per event, the compaction-start event, and the enabled check before and after the awaits.
+packages/client/product-analytics/tests/collection.client.spec.ts	read	Spec for the renderer side: never collects in Web, drops disabled events with no backfill, no retry on transport rejection, survives a synchronous Remote failure, and fails closed on stream loss.
+packages/client/product-analytics/tests/collection.host.spec.ts	read	Spec for the Host side: disabled collection reads no identity, approved fields only, missing identity keeps the event, unload suppresses late results, one environment query shared across events, and the sorted missing_fields encoding.
+packages/client/product-analytics/tests/environment-composition.host.e2e.ts	read	End-to-end spec booting the shipped profile against a local OTLP receiver and asserting the captured record carries the real system fields and no forbidden ones.
+packages/client/product-analytics/tests/environment-query.host.spec.ts	read	Spec for the query helper: UTF-8 capture, no raw error text, timeout termination, output-limit bounding on both streams, abort handling and synchronous spawn isolation.
+packages/client/product-analytics/tests/environment.host.spec.ts	read	Spec for collectEnvironment: Windows revision handling, invalid JSON rejection, physical-core summation, native-vs-app architecture, macOS security-suffix handling and per-field failure isolation.
+packages/client/product-analytics/tests/fixtures/environment.host.ts	read	Fixture booting the production profile with an isolated OTLP receiver and computing the reference values from the OS itself.
+packages/client/product-analytics/tests/fixtures/environment.patch.yml	read	Loader overlay disabling unrelated plugins and enabling the telemetry exporter and product analytics with a synthetic release version.
+packages/client/product-analytics/tsconfig.client.json	read	Client project listing src/client/index.ts and src/events.ts with gateway/session/llm references.
+packages/client/product-analytics/tsconfig.host.json	read	Host project listing the service, events, environment and environment-query with telemetry/credentials/session/compaction/settings references.
+packages/client/product-analytics/tsconfig.json	read	Solution tsconfig referencing the host and client projects.
+packages/client/product-analytics/tsdown.config.ts	read	clientBundle(..., {hostPhase:true}) so the node half is emitted during the Host pass.
+packages/client/README.i18n.yaml	read	Per-heading translation-pair hashes for the client group README.
+packages/client/README.md	read	Package-group map of the web-GUI browser half: the kernel packages (web, modules, connection, file-upload, shortcuts, store, hmr, locale) and the UI feature packages, each with its ctx key.
+packages/client/README.zh.md	read	Chinese translation of the client group map, listing the same packages and ctx keys.
+packages/client/resources/locale/en.json	read	Package catalogue entry with meta.title "resources".
+packages/client/resources/locale/zh.json	read	Chinese catalogue entry: 客户端资源服务 plus a description.
+packages/client/resources/package.json	read	Manifest whose dsh.client injects the ui-renderer package; no runtime dependencies.
+packages/client/resources/README.i18n.yaml	read	Per-heading translation-pair hashes for the resources README.
+packages/client/resources/README.md	read	Package reference: the dsh-resource:// address scheme, provider registration, pinning, and the lifecycle/failure rules (records kept for the page lifetime, failures are frames).
+packages/client/resources/README.zh.md	read	Chinese translation of the resources package reference.
+packages/client/resources/src/client/contract.ts	read	The published resource model: ResourceSnapshot, UseResource typed by the declaration-merged ResourceProtocolMap, the provider contract, and the Resources service.
+packages/client/resources/src/client/index.ts	read	Browser plugin: provides ctx.resources and contributes the resource root keyed hook so every slot component receives useResource.
+packages/client/resources/src/client/resources.ts	read	ResourceRegistry: per-address records kept for the page lifetime so source() stays reference-stable, holder counting over subscribers and pins, protocolOf() scheme parsing, and frame-driven failure handling.
+packages/client/resources/src/index.ts	read	Pure host half: apply() is a no-op because the resource model lives in the browser export.
+packages/client/resources/tests/apply.client.spec.ts	read	Spec that ctx.resources is provided, useResource reaches root and session scopes, and both leave with the fiber so a reload registers cleanly again.
+packages/client/resources/tests/resources.client.spec.ts	read	Spec for the resource lifecycle: open on first holder, share across holders, reopen as a fresh stream, pin semantics, late frames dropped, and provider disposal.
+packages/client/resources/tsconfig.json	read	Single client tsconfig including src with references to cordis/typert/store/ui-renderer/ui-slots.
+packages/client/resources/tsdown.config.ts	read	clientBundle(..., ['lib/types/index.js']) for the resources package.
+packages/client/shortcuts/locale/en.json	read	Package catalogue entry with meta.title "shortcuts".
+packages/client/shortcuts/locale/zh.json	read	Chinese catalogue entry: 快捷键服务 plus a description.
+packages/client/shortcuts/package.json	read	Manifest exposing a separate ./protocol entry; dsh.client injects the locale package.
+packages/client/shortcuts/README.i18n.yaml	read	Per-heading translation-pair hashes for the shortcuts README.
+packages/client/shortcuts/README.md	read	Package reference: per-device command defaults, overrides-only persistence, chord bindings, the fixed-action reservation model, and the platform restrictions per runtime.
+packages/client/shortcuts/README.zh.md	read	Chinese translation of the shortcuts package reference.
+packages/client/shortcuts/src/binding.ts	read	Physical-key protocol: normalizeBinding (primary expansion, code validation, canonical modifier order), bindingKey, presentBinding for keycaps/ARIA, and the per-platform isWebBindingAllowed admission.
+packages/client/shortcuts/src/client/dom.ts	read	Keyboard adapter: region detection, composition/dead-key/AltGraph guards, a MutationObserver for modal changes, the capture-phase reset of pending sequences, and the terminal Ctrl+W/R pass-through.
+packages/client/shortcuts/src/client/index.ts	read	ShortcutsService: environment detection, web vs Desktop storage selection, the native keyboard bridge requirement, the publish gate on sequence ordering, and the public edit/describeBinding/recording/closeWindow faces.
+packages/client/shortcuts/src/client/native.ts	read	installNativeKeyboard: routes native menu/keyboard/iframe/webview input through the same registry, rejecting stale revisions and verifying frame identity and embedding ownership before dispatch.
+packages/client/shortcuts/src/client/registry.ts	read	ShortcutRegistry: command and fixed-command registration, the derived catalog, and dispatch arbitration (region, modal, conflict and priority) that blocks a conflicting binding instead of disabling it.
+packages/client/shortcuts/src/client/storage.ts	read	webShortcutStorage over localStorage with a same-origin storage-event listener, and desktopShortcutStorage reading the restricted preload capability.
+packages/client/shortcuts/src/client/types.ts	read	Command contribution types: ShortcutContext, ShortcutCommand, ShortcutGesture, the fixed-command shape and the public Shortcuts service interface.
+packages/client/shortcuts/src/config.ts	read	Host Config with stopSequenceMs (default 500) bounded below the browser timer limit.
+packages/client/shortcuts/src/configuration.ts	read	Preference document validation, effective-shortcut resolution, the edit operations and the conflict/issue classification including platform-specific binding admission.
+packages/client/shortcuts/src/index.ts	read	Host plugin: injects the validated keyboard timing into served pages as __DSH_SHORTCUTS_CONFIG__.
+packages/client/shortcuts/src/native.ts	read	DesktopShortcutInput union (menu | keyboard | iframe | webview) carrying the accepted revision, and the DesktopKeyboardApi preload contract.
+packages/client/shortcuts/src/persistence.ts	read	ShortcutPersistence: a single-writer queue, revision-checked edits classified as saved/stale/unreadable/write-failed/not-ready/conflict, and the rule that a write failure keeps the previous document and draft.
+packages/client/shortcuts/src/protocol.ts	read	Barrel re-exporting binding, configuration, persistence and native for the shared ./protocol entry.
+packages/client/shortcuts/tests/config.host.spec.ts	read	Spec for the Host timing config and the index injection row.
+packages/client/shortcuts/tests/configuration.client.spec.ts	read	Spec for document validation and conflict resolution: inherited/cleared/reset/dormant preferences, invalid document retention, future-version refusal, edit and definition parsing.
+packages/client/shortcuts/tests/desktop-chords.client.spec.ts	read	Spec for two-key chords: overlapping default rejection at registration and IPC ingress, canonicalisation, schema v1→v2 migration on write, and conflicts against fixed reservations.
+packages/client/shortcuts/tests/dom.client.spec.ts	read	Spec for the DOM adapter: native input ownership on Desktop, the macOS Option+Command+N dead-key case, composition/229/AltGraph/dead-key protection, modal blocking, terminal ownership and target resolution.
+packages/client/shortcuts/tests/fixed-input.client.spec.ts	read	Spec for fixed actions: local consumption ordering, sequence reset on focus/pointer/blur/modal change, disposal cleanup, reservation publication, and observer failure containment.
+packages/client/shortcuts/tests/native.client.spec.ts	read	Spec for native input: revision checks, repeats, frame-identity verification for iframes and webviews, shadow focus, and unbound menu invocation.
+packages/client/shortcuts/tests/persistence.client.spec.ts	read	Spec for the persistence coordinator: publish-once after durable completion, stale rejection, write-failure retention, unreadable documents blocking edits, reread-before-write and post-disposal suppression.
+packages/client/shortcuts/tests/registry.client.spec.ts	read	Spec for the registry: Web admission rules, terminal Ctrl+W/R pass-through, conflict blocking, dormant-override conflicts and identical priority before/after a save.
+packages/client/shortcuts/tests/service.client.spec.ts	read	Spec for the service: Desktop window close with the current revision, conflict description, Web persistence, fixed reservation publication and catalog publication failure propagation.
+packages/client/shortcuts/tests/storage.client.spec.ts	read	Spec for localStorage: same-origin updates, stale draft rejection, quota failure retention and refusal to replace future data.
+packages/client/shortcuts/tsconfig.client.json	read	Client project including src but excluding the host entry, with references to locale/store/ui-primitives/util-crypto/util-values.
+packages/client/shortcuts/tsconfig.host.json	read	Host project listing protocol/native/binding/configuration/persistence/index/config with the webserver reference.
+packages/client/shortcuts/tsconfig.json	read	Solution tsconfig referencing the host and client projects.
+packages/client/shortcuts/tsdown.config.ts	read	clientBundle(..., {hostPhase:true}) emitting both lib/index.js and lib/protocol.js.
+packages/client/store/package.json	read	Manifest for the React-free store engine with zustand and immer as dev dependencies.
+packages/client/store/README.i18n.yaml	read	Per-heading translation-pair hashes for the store README.
+packages/client/store/README.md	read	Package library note: synchronous and frame-driven publication, immer updates, shallow equality, optional browser persistence, and the localStorage-only persistence limit.
+packages/client/store/README.zh.md	read	Chinese translation of the store package note.
+packages/client/store/src/contract.ts	read	Framework-neutral contracts: ObservableSnapshot, the selector hook shapes, the ActionsDecl/BakedActions write-set discipline, StoreSpec and the StoreHandle/StoreFactory split.
+packages/client/store/src/index.ts	read	The engine: createSnapshotStore over zustand vanilla + immer with sync/raf flush, opt-in localStorage persistence and dev freeze, plus defineStore baking an init/persist/actions literal into a handle whose create(scopeKey) suffixes the persist key.
+packages/client/store/tests/store.client.spec.ts	read	Spec for the engine: draft updates preserving untouched branches, sync vs raf notification, rAF fallback, freeze semantics, rehydration and persistence failures, per-scope persist keys and shallowEqual.
+packages/client/store/tsconfig.json	read	Single client tsconfig including src with the cordis reference.
+packages/client/store/tsdown.config.ts	read	staticLinked(...) putting the store on the static assembly channel instead of the module table.
+packages/client/tsdown.client.ts	read	Shared build preset: the clientBundle/staticLinked presets, the bundle purity gate that makes a cross-plugin value import a build error, the CSS-modules and image inlining plugins, the async chunk require rewrite, the tsc source-map chaining and the build-face selection.
+packages/client/ui-attachment/locale/en.json	read	Package catalogue entry with meta.title "ui-attachment".
+packages/client/ui-attachment/locale/zh.json	read	Chinese catalogue entry: 附件展示 plus a description.
+packages/client/ui-attachment/package.json	read	Manifest whose dsh.client injects locale, ui-chat, ui-conversation, ui-renderer, ui-trajectory and ui-tool.
+packages/client/ui-attachment/README.i18n.yaml	read	Per-heading translation-pair hashes for the ui-attachment README.
+packages/client/ui-attachment/README.md	read	Package reference: the draft rail, message images and lightbox, the drop overlay, and the limits (no zoom/download, the lightbox does not trap focus).
+packages/client/ui-attachment/README.zh.md	read	Chinese translation of the ui-attachment package reference.
+packages/client/ui-attachment/src/AttachmentRail.module.css	read	Styles for the horizontal rail: hidden scrollbar, 64px items, absolutely positioned edge arrows, hover/focus and coarse-pointer reveal of the remove control.
+packages/client/ui-attachment/src/AttachmentRail.tsx	read	Horizontal overflow rail: edge arrows recomputed from scroll geometry on scroll, item-count change and a ResizeObserver on the rail element, vertical-wheel-to-horizontal translation with a per-tick clamp, and growth-only auto-reveal.
+packages/client/ui-attachment/src/client/ComposerAttachments.module.css	read	Styles for the composer rail, the 64px image thumbnail and the coarse-pointer-visible remove control.
+packages/client/ui-attachment/src/client/ComposerAttachments.tsx	read	Composer assembly: drop overlay, the mixed image/file rail, the upload state mapping to the FileCard states, and the local preview lightbox.
+packages/client/ui-attachment/src/client/drop-events.ts	read	installDocumentDropEvents: file-only drag detection, a nested drag-depth counter, the viewport-leave reset, and directory detection through the entry API.
+packages/client/ui-attachment/src/client/index.ts	read	Browser plugin: registers the conversation.images.content Factory and injects the composer attachment entry plus the four image positions at priority 100.
+packages/client/ui-attachment/src/client/labels.ts	read	Label resolvers mapping the conversation namespace onto the rail, overlay, file card and message image components.
+packages/client/ui-attachment/src/client/MessageImages.tsx	read	MessageImagesContent Factory and the MessageImages slot adapter that renders through renderFactorySlot.
+packages/client/ui-attachment/src/css-modules.d.ts	read	Ambient declaration for *.module.css class maps and plain *.css.
+packages/client/ui-attachment/src/DropOverlay.module.css	read	Styles for the full-viewport drop mask: pointer-events none so drag targeting survives, blur backdrop, fade-in and its reduced-motion opt-out.
+packages/client/ui-attachment/src/DropOverlay.tsx	read	Pointer-inert drop invitation rendered through a body portal, with the enabled and disabled SVG illustrations.
+packages/client/ui-attachment/src/FileCard.module.css	read	Styles for the pending-file card: 240×64 layout, the spinner, the indeterminate progress bar animation and the error state colours.
+packages/client/ui-attachment/src/FileCard.tsx	read	Pending-file card: type glyph or spinner, the name and extension/size meta line, a separate retry affordance on failure, remove, and the byte progress bar.
+packages/client/ui-attachment/src/index.ts	read	Host half: apply() is a no-op because the client half registers the React slot entries.
+packages/client/ui-attachment/src/MessageImage.module.css	read	Styles for the gallery: wrap flow with per-align rules, the 64px tile and 48px thumbnail variants, the failed-load box that keeps the grid cell, and focus rings.
+packages/client/ui-attachment/src/MessageImage.tsx	read	MessageImage and ImageGallery: the singleFit sizing rule (240px long edge, aspect clamped to [0.25,4], never upscaled, crop anchor toward the informative edge), the peek/load split, the retry control, and the lightbox.
+packages/client/ui-attachment/tests/attachment-rail.client.spec.tsx	read	Spec for the rail: owner cards in order, edge arrows from scroll geometry, ResizeObserver on the rail element, wheel translation with clamped travel, reduced-motion paging and growth-only reveal.
+packages/client/ui-attachment/tests/composer-attachments.client.spec.tsx	read	Spec for the composer: file drops accepted anywhere, non-file drags left native, directory reporting through the entry API, nested drag tracking, blocked drops, and the file card states.
+packages/client/ui-attachment/tests/drop-overlay.client.spec.tsx	read	Spec for the overlay: body portal, optional desc line, and the illustration swap when disabled.
+packages/client/ui-attachment/tests/image-slot-isolation.client.spec.tsx	read	Spec proving a domain override replaces only its own image position and that the shared gallery returns on disposal.
+packages/client/ui-attachment/tests/message-image.client.spec.tsx	read	Spec for the image component: cached first frame, bounded single fit and crop anchors, the fixed tile size, thumbnail status icons with localized labels, late-settling loads ignored, and the preview arm that bypasses the loader.
+packages/client/ui-attachment/tests/plugin.client.spec.ts	read	Spec that the host half stays inert and that every entry and the Factory leave with the plugin fiber.
+packages/client/ui-attachment/tsconfig.json	read	Single client tsconfig including src with references to cordis/attachment and the five UI packages plus locale.
+packages/client/ui-attachment/tsdown.config.ts	read	clientBundle(..., ['lib/types/index.js']) for the ui-attachment package.
+packages/client/ui-deepseek-model-label-1017/package.json	read	Manifest whose dsh.client injects ui-model-selection, ui-renderer and locale.
+packages/client/ui-deepseek-model-label-1017/README.i18n.yaml	read	Per-heading translation-pair hashes for the model-label README.
+packages/client/ui-deepseek-model-label-1017/README.md	read	Package reference: the temporary 1017 badge, the exact provider/model/name conditions, how to disable it, and the limits (other surfaces keep the catalog name, it occupies a single slot).
+packages/client/ui-deepseek-model-label-1017/README.zh.md	read	Chinese translation of the model-label package reference.
+packages/client/ui-deepseek-model-label-1017/src/client/DeepSeekModelLabel.module.css	read	Styles for the label with badge: inline-flex row, 4px gap, baseline alignment, no wrap.
+packages/client/ui-deepseek-model-label-1017/src/client/DeepSeekModelLabel.tsx	read	Display-only badge component: returns the untouched catalog name unless the provider is official, the model id is deepseek-flash and the name is exactly DeepSeek-V4.1-Flash.
+packages/client/ui-deepseek-model-label-1017/src/client/index.ts	read	Browser plugin: registers the badge dictionary and injects the component into the existing conversation.input.model.label slot.
+packages/client/ui-deepseek-model-label-1017/src/client/locales.ts	read	Badge dictionary (badge.label = '1017') with the zh key union.
+packages/client/ui-deepseek-model-label-1017/src/css-modules.d.ts	read	Ambient declaration for *.module.css class maps.
+packages/client/ui-deepseek-model-label-1017/src/index.ts	read	Host half: apply() is a no-op that only makes the browser package available to the Loader.
+packages/client/ui-deepseek-model-label-1017/tsconfig.json	read	Single client tsconfig including src with references to cordis/locale/ui-model-selection/ui-renderer/ui-primitives/ui-slots.
+packages/client/ui-deepseek-model-label-1017/tsdown.config.ts	read	clientBundle(..., ['lib/types/index.js']) for the model-label package.
+packages/client/ui-deepseek-model-label-1017/tests/label.client.spec.tsx	read	Spec that the badge appears for both official providers at all three placements without rewriting the catalog entry, that other providers/names are preserved, and that unload restores the fallback.

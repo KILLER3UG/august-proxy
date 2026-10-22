@@ -1,0 +1,171 @@
+scripts/run-gates.spec.ts	read	1371-line spec for the gate runner: worker-budget arithmetic, graph validation (duplicate id / unknown dep / cycle), fail-fast abort semantics, host-signal forwarding, and the process-tree kill that reaches a detached grandchild.
+scripts/run-gates.ts	read	1697-line gate scheduler: 18 named aggregates, a needs/after dependency graph with cycle validation, bounded worker pools, fail-fast abort, and cross-platform process-tree termination (POSIX process groups, Windows taskkill).
+scripts/run-memory-pressure-bench.spec.ts	read	44-line spec pinning the modeled 4g/8g machines, the systemd-run MemoryMax/MemorySwapMax=0 scope, and the cgroup-limit-violation predicate.
+scripts/run-memory-pressure-bench.ts	read	147-line launcher that builds bench artifacts unconfined, re-runs itself inside a systemd transient scope, and refuses to run unless the cgroup really caps memory without swap.
+scripts/run-oxlint.spec.ts	read	55-line spec for resolveOxlintInvocation: CI keeps Oxlint's own thread default, local runs use the worker budget, DSH_OXLINT_THREADS wins, and a direct --threads is rejected as a competing owner.
+scripts/run-oxlint.ts	read	112-line Oxlint wrapper: one worker bound for both Oxlint backends, a second --fix pass for overlapping JS-plugin fixes, and signal-preserving exit.
+scripts/run-web-snapshots.ts	read	44-line browser snapshot runner: two serial owners (hmr-live, client-plugin-live) run first, then the rest in a bounded pool with those files excluded.
+scripts/session-fixture-layout.spec.ts	read	236-line spec for the canonical session-JSONL layout: source-reference order, packed-row rejection, v0-v3 byte preservation, sequence-gap diagnostics with source line numbers, and a repo-wide canonical-form census.
+scripts/session-fixture-layout.ts	read	294-line canonicalizer for repository session JSONL: historical codecs decode strictly, current rows are re-encoded one-event-per-row without seq/time, and the rewrite is checked for payload loss and idempotence.
+scripts/session-query-spill-command.spec.ts	read	67-line POSIX-only spec that a spill command resolves the real locator, keeps real failures, and restores the shell after the fixture adapter is disposed.
+scripts/session-snapshot-corpus-policy.spec.ts	read	146-line spec for the recorded-session corpus policy: v0 coverage set, adjacent-migration coverage per version, the 13-role retained cap, and the baseline/current majority rule.
+scripts/session-snapshot-corpus-policy.ts	read	114-line policy that requires each historical session generation to be covered by a named retained scenario, caps retained roles at 13, and requires baseline+current to outnumber retained.
+scripts/session-snapshot-corpus.corpus.ts	read	216-line corpus gate: reserves the .snapshot.ts suffix, enforces one owner per composition/header class, checks the session fixture is byte-identical to its owner, and asserts the corpus policy.
+scripts/slot-walk.ts	read	432-line AST scanner for the client slot surface: reads SlotMap declaration merges and slots.register/registerFactory call sites, indexes exported types with their JSDoc, and refuses computed slot names.
+scripts/smoke-python-runtime.py	read	3110-line keyless smoke of the Python SDK: a mock Anthropic Messages server, 16 scenarios (minimal, dynamic tools, fs search, MCP, snapshot, scheduler recovery, restart, authoring, Office), model-visible snapshot golden comparison, and session-log generation checks.
+scripts/snapshot-http-fixtures.spec.ts	read	203-line spec for snapshot HTTP fixtures: a fake node:http server with a controllable listen/close lifecycle asserting the loopback fixture server's readiness and cleanup contract.
+scripts/snapshot-shell-path.spec.ts	read	42-line POSIX-only spec: only the exact fixture command is path-translated, a near-miss command keeps its real exit code, and disposal restores the original shell.
+scripts/snapshot-shell-path.ts	read	30-line Cordis fixture that rewrites one recorded shell command's path to the live allocated target, after logging and approval, restoring the original execute on dispose.
+scripts/snapshot-spill-locators.spec.ts	read	72-line spec proving two concurrent runs keep private physical spill files while exposing equal-length logical locators, and that disposal restores the real fs behaviour.
+scripts/snapshot-spill-locators.ts	read	66-line Cordis fixture mapping real spill locators onto stable logical paths, refusing a locator this run did not save and keeping recorded path lengths for preview budgets.
+scripts/snapshot-workspace-parent.spec.ts	read	78-line spec for snapshot workspace placement: home fallback when the temp parent is unwritable, rejection of automatically writable temp workspaces including symlink aliases, and a real sandbox write-fence check.
+scripts/snapshot-workspace-parent.ts	read	46-line helper choosing a writable temp sibling parent (or home) and asserting the allocated workspace sits outside the automatic temporary write grants.
+scripts/snapshots/python-sdk-single-exe/advanced-ptc/result.json	skipped	114KB/4400-line generated golden: the recorded RunResult (events + notifications) of the advanced packaged-runtime snapshot. Data only, machine-diffed by compare_snapshot_files; not read line by line.
+scripts/snapshots/python-sdk-single-exe/advanced-ptc/session.v4.jsonl	skipped	50-line generated golden: the V4 persisted session log of the PTC-mode advanced scenario. Data only; the JSONL event vocabulary and structure are pinned by smoke-python-runtime.py, not by hand.
+scripts/snapshots/python-sdk-single-exe/advanced/result.json	skipped	58KB/2310-line generated golden: the recorded RunResult for the native advanced scenario. Data only; regenerated with --update-snapshots and compared byte-for-byte after normalization.
+scripts/snapshots/python-sdk-single-exe/advanced/session.1.v2.jsonl	skipped	18-line generated golden: the V2 session log of advanced child 1. Data only; kept as an immutable predecessor-generation migration fixture.
+scripts/snapshots/python-sdk-single-exe/advanced/session.1.v3.jsonl	skipped	22-line generated golden: the V3 session log of advanced child 1. Data only; kept as an immutable predecessor-generation migration fixture.
+scripts/snapshots/python-sdk-single-exe/advanced/session.1.v4.jsonl	skipped	22-line generated golden: the current V4 session log of advanced child 1 (the direct-subagent child). Data only; machine-compared.
+scripts/snapshots/python-sdk-single-exe/advanced/session.2.v2.jsonl	skipped	18-line generated golden: the V2 session log of advanced child 2. Data only; immutable predecessor-generation fixture.
+scripts/snapshots/python-sdk-single-exe/advanced/session.2.v3.jsonl	skipped	22-line generated golden: the V3 session log of advanced child 2. Data only; immutable predecessor-generation fixture.
+scripts/snapshots/python-sdk-single-exe/advanced/session.2.v4.jsonl	skipped	22-line generated golden: the current V4 session log of advanced child 2 (the workflow child). Data only; machine-compared.
+scripts/snapshots/python-sdk-single-exe/advanced/session.v2.jsonl	skipped	67-line generated golden: the V2 parent session log of the advanced scenario. Data only; immutable predecessor-generation fixture.
+scripts/snapshots/python-sdk-single-exe/advanced/session.v3.jsonl	skipped	72-line generated golden: the V3 parent session log of the advanced scenario. Data only; immutable predecessor-generation fixture.
+scripts/snapshots/python-sdk-single-exe/advanced/session.v4.jsonl	read	67-line current V4 parent session log; read to confirm the event vocabulary (permission/preset, sandbox/mode, approval/policy, agent/inbox/spliced, turn/start, step/start, system/message, user/message, tool/*, job/*, feedback/*).
+scripts/snapshots/python-sdk-single-exe/authoring/model-visible.json	skipped	35-line generated golden: the model-visible system prompt, tool schemas and messages of the authoring scenario. Data only; machine-compared.
+scripts/snapshots/python-sdk-single-exe/authoring/win-x64/model-visible.json	skipped	35-line generated golden: the win-x64 variant of the authoring model-visible snapshot (the platform path differs). Data only; machine-compared.
+scripts/snapshots/python-sdk-single-exe/dynamic-tools/tool-history.json	read	248-line golden read to confirm the tool-lifecycle contract: three request/header rows, a tool_addition then tool_removal, the dynamically added tool declared with defer_loading, and the tool_reference block in the request.
+scripts/snapshots/python-sdk-single-exe/minimal-in-history/prompt-history.json	skipped	31-line generated golden: the two-version system-prompt history of the in-history scenario. Data only; machine-compared.
+scripts/snapshots/python-sdk-single-exe/minimal/model-visible.json	read	254-line golden read to confirm the minimal composition's model surface: one system prompt, three tool schemas (bash, read_image, working_directory) and a persistent-shell user turn.
+scripts/snapshots/python-sdk-single-exe/minimal/win-x64/model-visible.json	skipped	254-line generated golden: the win-x64 variant of the minimal model-visible snapshot (pwsh instead of bash). Data only; machine-compared.
+scripts/snapshots/python-sdk-single-exe/restart/requests.json	read	60-line golden read to confirm the two isolated processes sent exactly two model requests, that the second inherited no first-turn history, and the advertised tool-name set.
+scripts/snapshots/python-sdk-single-exe/restart/result.json	skipped	80-line generated golden: the two RunResults of the restart scenario. Data only; machine-compared.
+scripts/snapshots/python-sdk-single-exe/restart/session.1.v2.jsonl	skipped	17-line generated golden: the V2 log of restart session 1. Data only; immutable predecessor-generation fixture.
+scripts/snapshots/python-sdk-single-exe/restart/session.1.v3.jsonl	skipped	18-line generated golden: the V3 log of restart session 1. Data only; immutable predecessor-generation fixture.
+scripts/snapshots/python-sdk-single-exe/restart/session.1.v4.jsonl	skipped	18-line generated golden: the current V4 log of restart session 1. Data only; machine-compared.
+scripts/snapshots/python-sdk-single-exe/restart/session.2.v2.jsonl	skipped	17-line generated golden: the V2 log of restart session 2. Data only; immutable predecessor-generation fixture.
+scripts/snapshots/python-sdk-single-exe/restart/session.2.v3.jsonl	skipped	18-line generated golden: the V3 log of restart session 2. Data only; immutable predecessor-generation fixture.
+scripts/snapshots/python-sdk-single-exe/restart/session.2.v4.jsonl	skipped	18-line generated golden: the current V4 log of restart session 2. Data only; machine-compared.
+scripts/snapshots/python-sdk-single-exe/scheduler-recovery/requests.json	skipped	109-line generated golden: the two serialized model requests of the failed-then-continued turn. Data only; machine-compared.
+scripts/snapshots/python-sdk-single-exe/scheduler-recovery/result.json	skipped	78-line generated golden: the two RunResults whose finish_reason sequence is error then completed. Data only; machine-compared.
+scripts/snapshots/python-sdk-single-exe/scheduler-recovery/session.v3.jsonl	skipped	31-line generated golden: the V3 log of the scheduler-recovery session. Data only; immutable predecessor-generation fixture.
+scripts/snapshots/python-sdk-single-exe/scheduler-recovery/session.v4.jsonl	read	31-line current V4 scheduler-recovery log; read to confirm the failed tool call is persisted as a tool/result with isError true and that the unstarted third call is never dispatched.
+scripts/snapshots/translation-prompt-v4/request-response.expected.json	read	44-line golden read to confirm the assembled request: one system prompt, three user/assistant gold-pair turns, then the source document, and the consumed response with the corrected language switcher.
+scripts/ssh-helper/artifact.spec.ts	read	117-line spec: payload inventory/digest/permission verification, unsafe manifest path rejection, symlink rejection before extraction, macOS deployment-version parsing, and a four-target release matrix.
+scripts/ssh-helper/artifact.ts	read	88-line zod-validated release manifest: strict payload path rules, per-file sha256 and mode, a symlink-free inventory walk, and verifyPayload refusing missing/extra/duplicate/altered files.
+scripts/ssh-helper/native.ts	read	74-line native payload inspector: ELF/Mach-O magic detection, readelf machine and GLIBC <= 2.28 checks, lipo arch verification, and macOS deployment-target <= 14.0 parsing.
+scripts/ssh-helper/probe.ts	read	42-line handshake probe that spawns the packaged helper, performs the private hello/close RPC over stdio with bounded timeouts, and SIGKILLs a hung helper after 30 s.
+scripts/ssh-helper/release.ts	read	76-line release gate requiring four same-commit, clean-source, digest-matching archives plus per-target native, no-Node and landlock evidence before writing SHA256SUMS.
+scripts/ssh-helper/worker-probe.ts	read	67-line macOS Seatbelt probe: denies read and exec of the checkout and host Node, then asserts the embedded PTC worker booted with an empty environment and saw EPERM/EACCES for both.
+scripts/test-dom-environment.ts	read	41-line Vitest setup installing a ResizeObserver that delivers one initial resize from jsdom's modeled offsets, restoring the original descriptor on teardown.
+scripts/test-fixture-cleanup.ts	read	49-line Windows-safe fixture cleanup: unlinks junctions before recursive removal (Windows rmSync follows MOUNT_POINT junctions into the real tree) and retries the removal 50x at 200 ms.
+scripts/test-non-loopback-address.spec.ts	read	57-line spec mocking node:os and node:http: a scoped IPv6 loopback literal must be a valid IP and a refused bind must make the scenario skip.
+scripts/test-non-loopback-address.ts	read	70-line probe that really opens and closes a listener to find a bindable non-loopback IPv4 or zoned ::1 address, and reports why coverage is skipped.
+scripts/test-proxy-environment.spec.ts	read	44-line spec clearing all eight proxy names plus NODE_USE_ENV_PROXY, and asserting every Vitest config that declares a setupFiles slot includes the proxy setup file.
+scripts/test-proxy-environment.ts	read	63-line setup file that deletes ambient HTTP_PROXY/HTTPS_PROXY/ALL_PROXY/NO_PROXY (both casings) and NODE_USE_ENV_PROXY from every Vitest process, and documents the one name that cannot be unbound after process start.
+scripts/tests/ci-master-platforms.spec.ts	read	CI scheduling-policy spec loaded from .github/workflows YAML via js-yaml + node:vm; checks the master-only push condition, the runtime-builder job and Wine job routing against gatesForMode.
+scripts/tests/ci-release-selfhosted.spec.ts	read	Release-rehearsal routing spec: asserts the self-hosted runner labels, concurrency group, cancel-in-progress, and that release builds are not executed by the test.
+scripts/translation-brief.spec.ts	read	Regression spec for the minimal-update briefing assembly: span alignment, code-only mechanical updates, terminology matching and first-occurrence movement.
+scripts/translation-brief.ts	read	512-line briefing builder: mdast-derived unit and section spans, a code-fence-only mechanical splice path, terminology-row matching, first-occurrence tracking, and a four-scope renderer.
+scripts/translation-links.spec.ts	read	Regression spec for locale-aware bilingual Markdown link resolution and rewriting, using the junction-safe fixture cleanup.
+scripts/translation-links.ts	read	384-line locale-aware link resolver/rewriter: resolves relative targets through the repository, computes the expected .md/.zh.md sibling, and rewrites destinations without reserializing surrounding Markdown.
+scripts/translation-pairing-git.ts	read	60-line Git index reader: stage-zero path listing and blob reads, refusing an unmerged or multiply-staged path.
+scripts/translation-pairing-record.ts	read	299-line per-section consistency record: splits both sides at headings, hashes blocks outside code and generated regions, and renders a canonical YAML record with a diff of changed/added/removed sections.
+scripts/translation-pairing.manifest.json	read	13-line manifest listing the 9 documents exempt from bilingual pairing (generated, instructional, or bilingual by construction).
+scripts/translation-pairing.spec.ts	read	Regression spec for bilingual pairing: corpus scope, generated-region grammar, structural signature equality, and record computation.
+scripts/translation-pairing.ts	read	419-line pure pairing library: generated-region grammar, corpus scope predicates, CLI argument parsing, and the structural signature (headings, code, tables, lists, links) compared across a pair.
+scripts/translation-prompt.expected.spec.ts	read	32-line runnable snapshot spec: runs verify-translation-prompt --snapshot and file-snapshots its stdout to the committed expected JSON.
+scripts/translation-prompt.spec.ts	read	234-line spec for the prompt-v7 content and the three-section protocol: placeholder validation, few-shot assembly, delimiter escaping, and language-switcher insertion after YAML frontmatter.
+scripts/translation-prompt.ts	read	259-line renderer/parser for the committed translation prompt: three placeholders, a whole-document three-section response, delimiter escaping, and the target-language switcher correction.
+scripts/ts-project.ts	read	151-line shared TypeScript Program builder: parses the host or client face aggregate and its project references, never the root solution, and exposes a shared TypeChecker.
+scripts/type-equiv-prefilter.spec.ts	read	Spec proving the text prefilter agrees with real Markdown fence parsing, including backslash- and entity-escaped info strings.
+scripts/type-equiv-prefilter.ts	read	19-line prefilter that lets verify-type-equiv skip Markdown parsing for documents with no type-equiv/public-api fence.
+scripts/type-equiv.manifest.json	skipped	76KB/2486-line generated manifest mapping every primary type-equiv block to its source symbol and file. Machine-read (comment, first entries, structure); the 2400+ entries are data, not prose, and are consumed by verify-type-equiv.ts.
+scripts/typert-faces.ts	read	9-line constant declaring that only the host face emits Typert reflection and the Host-for-Client Remote projection; no package publishes Client reflection.
+scripts/typert-workspace.fixture.ts	read	106-line fixture writer building a minimal one-package Typert workspace, plus a linked compiled dependency to prove subpath resolution through node_modules.
+scripts/types/client-build-environment/index.d.ts	read	7-line ambient declaration of the DSH_CLIENT_* build-time environment the client bundle replaces before the browser sees it.
+scripts/verify-agent-note-classification.ts	read	27-line gate forbidding legacy docs/rfc(s) homes and delegating structure checks to the shared Agent Note tree walker.
+scripts/verify-agent-note-format.ts	read	94-line gate enforcing Agent Note headers, per-lifecycle status grammar and required sections, banning proposal-era headings in implemented notes, and grandfathering pre-2026-07-05 notes.
+scripts/verify-application-entrypoints.spec.ts	read	Spec for the application-entrypoint classifier over synthetic workspaces: manifest bin classification, shebang classification, and root launcher policies.
+scripts/verify-application-entrypoints.ts	read	203-line gate making dsh profiles the only supported Node launcher: manifest bin allowlist, shebang classification list, and root script policies that must launch apps/cli/src/bin.ts.
+scripts/verify-archived-agent-notes.ts	read	115-line gate that verifies and append-seals the frozen Agent Note archive against a baseline manifest, refusing a new artifact that is not sealed.
+scripts/verify-client-domain-graph.spec.ts	read	14-line spec for client import resolution: imports leaving src/client keep their form, imports between domains normalize.
+scripts/verify-client-domain-graph.ts	read	104-line layering gate inside packages/client/*/src/client: domains may import contract/ and never each other; only apply.ts/index.ts assemble.
+scripts/verify-client-packages.spec.ts	read	Spec for client package modes and the synchronous browser module-request graph, over synthetic package fixtures.
+scripts/verify-client-packages.ts	read	713-line gate for browser-module packages: dynamic/external declarations, runtime vs type-only package uses, and manifest repair for the browser request graph.
+scripts/verify-client-route-resolution.spec.ts	read	Regression spec for the browser app-route guard: document-relative request targets accepted, route keys stay absolute, host route keys must be sliced.
+scripts/verify-client-route-resolution.ts	read	339-line browser-face gate: an app-owned route reached from a request target or a reference field must be document-relative; a root-absolute route binds the bundle to one mount.
+scripts/verify-client-ui-i18n.spec.ts	read	Spec rejecting direct JSX copy, copy-bearing attributes, and copy kept in label data or helper returns in Client UI source.
+scripts/verify-client-ui-i18n.ts	read	361-line gate that rejects hard-coded product copy in Client source, allowing only locale dictionaries to own translated text.
+scripts/verify-concrete-terms.spec.ts	read	Spec for the blocked-term policy: case variants in paths, prose and identifiers, and text containing an embedded NUL.
+scripts/verify-concrete-terms.ts	read	105-line gate rejecting one ambiguous origin label in maintained tracked files, with explicit exclusions for vendored, archived and historical-schema regions.
+scripts/verify-config-source-ownership.spec.ts	read	30-line spec rejecting an inline !!js endpoint in a shipped bundle patch.
+scripts/verify-config-source-ownership.ts	read	56-line gate rejecting inline credential/endpoint environment forms in shipped Cordis configuration, because they bypass the credential and endpoint ladders.
+scripts/verify-cordis-config.spec.ts	read	Spec for the Loader metadata contract: only `disabled` may hold a !!js expression, and a disabled expression must parse.
+scripts/verify-cordis-config.ts	read	578-line gate validating Cordis Loader entry metadata and package resolution, including the browser-half declaration, the preset plane and the app-resolution plane.
+scripts/verify-default-product-isolation.spec.ts	read	Regression spec for default-product isolation over synthetic manifests, presets and patch files.
+scripts/verify-default-product-isolation.ts	read	413-line gate keeping experimental packages out of default installations, runtime imports and shipped compositions, with a single declared optional-bundle exception.
+scripts/verify-doc-budgets.ts	read	58-line gate enforcing wc -w word ceilings from a manifest; a missing file or an invalid ceiling fails, and --list reports current usage.
+scripts/verify-doc-refs.ts	read	45-line gate resolving root-relative docs/ and .agents/notes/ Markdown references cited in package TypeScript comments.
+scripts/verify-doc-site-fragments.spec.ts	read	Spec for built-site fragment validation over a synthetic VitePress output directory.
+scripts/verify-doc-site-fragments.ts	read	181-line gate checking fragment links against the HTML VitePress actually emitted, because Markdown and VitePress use different heading-slug algorithms.
+scripts/verify-dsh-package-licenses.spec.ts	read	Spec for the MIT license declaration check over synthetic workspaces.
+scripts/verify-dsh-package-licenses.ts	read	89-line gate requiring every @deepseek-ai/dsh* workspace package to declare "license": "MIT".
+scripts/verify-export-jsdoc.ts	read	607-line gate requiring JSDoc with parameter and return documentation on every non-vendored package export, failing closed on unknown forms.
+scripts/verify-md-links.spec.ts	read	Spec for source discovery and fragment validation, including same-file anchors and non-Markdown fragments staying out of scope.
+scripts/verify-md-links.ts	read	254-line gate that relative Markdown links, images and definitions resolve, and that a #fragment names a real heading slug or explicit <a id>.
+scripts/verify-md-wrap.ts	read	86-line gate rejecting prose paragraphs that span multiple physical lines, using the GFM AST to tell paragraphs from structural nodes.
+scripts/verify-mermaid.ts	read	106-line gate parsing every repo-authored Mermaid fence with Mermaid itself under a jsdom window, with maxEdges raised to 2000.
+scripts/verify-no-bare-dispatcher.spec.ts	read	Spec for the bare-dispatcher check: the Agent construction and explicit dispatcher option that silently bypassed the proxy are both rejected.
+scripts/verify-no-bare-dispatcher.ts	read	226-line syntax-aware gate forbidding a package from constructing its own undici agent or passing an explicit dispatcher, with a proxy-exempt: marker escape.
+scripts/verify-no-top-level-await.spec.ts	read	Spec for module-scope await detection, including the process-entry shape the rule exists for and the reported line number.
+scripts/verify-no-top-level-await.ts	read	267-line AST gate forbidding module-scope await in importable package sources, excluding executables by shebang or manifest bin declaration.
+scripts/verify-no-unknown-casts.spec.ts	read	Spec for the unknown-cast baseline: new assertions fail, retired entries need --prune, and a source symlink is unsupported.
+scripts/verify-no-unknown-casts.ts	read	186-line gate enforcing a fingerprinted baseline of assertions to unknown, so an existing allowance can never be reused and a new one cannot be added.
+scripts/verify-node-next-types.ts	read	164-line gate compiling every published package's declarations under NodeNext in a temp project, and rejecting relative specifiers without extensions.
+scripts/verify-npm-install-layout.spec.ts	read	Spec for the two-incompatible-release npm layout and the resolution work budget.
+scripts/verify-npm-install-layout.ts	read	275-line gate proving npm can place two incompatible DSH releases side by side, with a measured resolution-work budget of 875000 units and a derived hang guard.
+scripts/verify-optional-dependency-imports.spec.ts	read	Spec for which import and re-export forms survive emit (import type, import {}, inline type specifier) and therefore load a package that may be absent.
+scripts/verify-optional-dependency-imports.ts	read	213-line gate rejecting a static value import of an optional dependency, decided against a bound TypeScript Program rather than import syntax.
+scripts/verify-package-dependencies.spec.ts	read	Spec for package dependency collection, policy violations, root type-package isolation and manifest repair.
+scripts/verify-package-dependencies.ts	read	1038-line gate that verifies and repairs npm dependency sections from the published Client and Host faces, keeping root-provided type packages out of workspace manifests.
+scripts/verify-package-meta.spec.ts	read	Spec for plugin metadata checks over synthetic private source-only packages and real resource exports.
+scripts/verify-package-meta.ts	read	285-line gate validating source locale metadata, official SVG artwork, Node resource exports and publication selections.
+scripts/verify-package-paths.spec.ts	read	Spec for stale packages/... references, including the historical-schema region exclusion.
+scripts/verify-package-paths.ts	read	113-line gate flagging a packages/... reference only when a segment names a real package leaf, so drift is separated from typos and proposals.
+scripts/verify-package-readme-limitations.ts	read	95-line gate requiring the canonical Known Limitations section, with an audited exemption list that must still justify itself.
+scripts/verify-package-readme-model-experience.ts	read	638-line doc-sync gate for package README Model Experience sections: audited classifications, the three field headings, and one-level evidence per package.
+scripts/verify-package-readme-summaries.spec.ts	read	Spec for the 100-word package README Summary limit, accepting exactly the limit.
+scripts/verify-package-readme-summaries.ts	read	77-line gate enforcing the English package README Summary length limit and pointing at the kind template to rewrite it.
+scripts/verify-plugin-record-callers.spec.ts	read	Spec for the restricted appendPluginRecord function: escape-aware discovery, admitted callers and catalogue-declared writes.
+scripts/verify-plugin-record-callers.ts	read	283-line gate allowing only experimental packages to call appendPluginRecord from production source, with escape-aware identifier discovery and a production-only record catalogue.
+scripts/verify-product-use.spec.ts	read	Regression spec for product use: source reachability and effective Loader composition over synthetic profiles and catalogs.
+scripts/verify-product-use.ts	read	317-line gate computing effective default and optional package reachability from the real Loader composition, so a maintained package cannot be dead weight.
+scripts/verify-public-repository-links.spec.ts	read	Spec proving percent-, HTML-, JSON- and Unicode-escaped and case-varied references to the unavailable repository are all rejected.
+scripts/verify-public-repository-links.ts	read	99-line gate rejecting references to an unavailable legacy repository, decoding URL, JavaScript and HTML escapes before matching.
+scripts/verify-repository-references.spec.ts	read	Spec over a synthetic git repository, including unique-prefix commit matching.
+scripts/verify-repository-references.ts	read	155-line gate rejecting maintained references to the disallowed organization URL and to repository commit ids, using a local git object listing.
+scripts/verify-runtime-closure.spec.ts	read	Spec for the runtime closure gate over synthetic runtime manifests and presets.
+scripts/verify-runtime-closure.ts	read	237-line gate proving the executable deploy manifest supplies every preset-referenced plugin and every required workspace peer, so a packaged plugin cannot fail only at Cordis load.
+scripts/verify-skill-invocation-metadata.spec.ts	read	Spec for cross-product skill invocation policy alignment over synthetic skills.
+scripts/verify-skill-invocation-metadata.ts	read	122-line gate keeping the Claude Code and Codex invocation policies aligned (disable-model-invocation vs policy.allow_implicit_invocation) and a manual-only skill user-invocable.
+scripts/verify-ssh-helper-artifact.ts	read	167-line verifier that unpacks a release archive safely, checks native payload and digests, makes the install read-only, and runs the Loader-mounted consumers.
+scripts/verify-ssh-helper-ssh.ts	read	108-line real-OpenSSH acceptance: builds a glibc 2.28 container, installs the helper read-only, drives production SSH providers over a real sshd, and records the evidence report.
+scripts/verify-subsystem-pages.spec.ts	read	Regression spec for package-group subsystem-page ownership over synthetic group READMEs.
+scripts/verify-subsystem-pages.ts	read	137-line doc-sync gate: every package group links a docs/subsystems page or carries an explicit, justified exemption.
+scripts/verify-translation-pairing.ts	read	368-line bilingual pairing gate: complete three-file pairs, per-section hash records, wrong-locale links, byte-identical generated regions, and the language switcher.
+scripts/verify-translation-prompt.ts	read	98-line CLI that renders both prompt directions, validates the placeholder table, round-trips the three-section response, and can emit the request/response snapshot.
+scripts/verify-type-equiv.ts	read	391-line gate proving every ```ts type-equiv / ```ts public-api documentation block equals the named source declaration, ignoring whitespace but preserving JSDoc.
+scripts/verify-upgrade-guides.spec.ts	read	Spec for the upgrade-guide layout, frontmatter, sections and word ceiling.
+scripts/verify-upgrade-guides.ts	read	85-line gate enforcing the docs/upgrade-guide/v<semver>/<item>/guide.md layout, exact frontmatter keys and the Change/Migration heading outline.
+scripts/verify-v3-event-vocabulary.spec.ts	read	Spec for the V3 event vocabulary check against a synthetic pinned writer commit.
+scripts/verify-v3-event-vocabulary.ts	read	105-line gate comparing the released V3 event vocabulary with an explicitly pinned local V3 writer commit, refusing a branch or abbreviated id.
+scripts/vitest-environment.compat.spec.ts	read	jsdom-environment spec proving the ResizeObserver fallback delivers one initial resize without measuring viewport geometry and supports unobserve/disconnect.
+scripts/volatile-config.fixture.ts	read	11-line Schemastery fixture with ordinary, volatile, nested-volatile and whole-object-volatile fields.
+scripts/volatile-config.spec.ts	read	Spec for Schemastery/Cordis volatile config semantics through direct and Loader updates, plus secret redaction.
+scripts/web-product-bundle-isolation.spec.ts	read	Spec exercising real Vite build inputs for experimental-package isolation, including files absent from ordinary chunk imports.
+scripts/web-product-bundle-isolation.ts	read	199-line Vite plugin that records the product's emitted chunk/asset graph and the physical file inputs so experimental packages can be excluded.
+scripts/windows-package-workflow.spec.ts	read	Spec asserting the windows-package.yml workflow shape: required inputs, permissions, concurrency with cancel-in-progress, and per-job runner and env.
+scripts/wine-windows-gates.sh	read	288-line bash script running the blocking Windows gates under Wine with a real win-x64 Node, snapshotting the tree so the checkout is never mutated, and checksum-verifying the Node zip.
+scripts/workspace-package-globs.spec.ts	read	Spec proving Windows-style manifest paths still select the packages a bundler must include.
+scripts/workspace-package-globs.ts	read	11-line helper converting discovered manifest paths into portable forward-slash workspace globs.

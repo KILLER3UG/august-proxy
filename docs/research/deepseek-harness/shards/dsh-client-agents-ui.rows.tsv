@@ -1,0 +1,259 @@
+packages/client/ui-agent-preset/locale/en.json	read	Locale metadata stub declaring only the namespace title "ui-agent-preset"; the real copy lives in src/client/locales.ts.
+packages/client/ui-agent-preset/locale/zh.json	read	Chinese locale metadata giving the package title and description for the locale picker.
+packages/client/ui-agent-preset/package.json	read	Manifest for @deepseek-ai/dsh-client-ui-agent-preset: web-only client plugin, injects session-controller/remotes/locale/conversation/session/settings/workspace/plugin-manager, exports "./client" and "./src/*".
+packages/client/ui-agent-preset/README.i18n.yaml	read	Per-heading EN/ZH hash record proving the English and Chinese READMEs stayed in sync; regenerated with verify-translation-pairing --write.
+packages/client/ui-agent-preset/README.md	read	Package reference: how the preset roster, the new-task default, the read-only composition viewer and the Creator entry behave, plus the explicit "Model Experience / KV Cache effect" statement that selecting a preset affects only later tasks.
+packages/client/ui-agent-preset/README.zh.md	read	Chinese translation of the ui-agent-preset README, matching the English section-for-section.
+packages/client/ui-agent-preset/src/client/AgentPresetLabel.module.css	read	Styling for the read-only session-header preset label, including a 540px container query that hides the label first as the title row narrows.
+packages/client/ui-agent-preset/src/client/AgentPresetLabel.tsx	read	Read-only header label that names the preset a running session was composed with; loads the roster only once a session reports a preset.
+packages/client/ui-agent-preset/src/client/AgentPresetSeat.module.css	read	Styling for the new-session preset chip including the per-character intro reveal animations and the reduced-motion override.
+packages/client/ui-agent-preset/src/client/AgentPresetSeat.tsx	read	The new-session hero chip: stages a preset pick, plays a per-character introduce animation, and shows a refusal Toast anchored to the composer card.
+packages/client/ui-agent-preset/src/client/AgentPresetSection.module.css	read	Styling for the Settings preset roster, its card grid, the read-only YAML viewer and the dashed Creator entry.
+packages/client/ui-agent-preset/src/client/AgentPresetSection.tsx	read	Settings section that lists the roster, offers "make default", opens each preset's declared composition as read-only YAML, and enters Creator mode.
+packages/client/ui-agent-preset/src/client/CreatePluginMenuItem.module.css	read	Styling for the Add-plugin menu entry's two-line copy and its two-line description clamp.
+packages/client/ui-agent-preset/src/client/CreatePluginMenuItem.tsx	read	Plugins-page menu entry that starts the Creator flow without sending a message, and explains why Creator is unavailable.
+packages/client/ui-agent-preset/src/client/guide-locales.ts	read	Long curated help copy for the four shipped presets (Standard, PTC, Minimal, Creator) in English and Chinese, explaining what each mode does.
+packages/client/ui-agent-preset/src/client/index.ts	read	Browser half: registers the hero chip, the header label and the settings section, and wires the shared seat/section/settings controllers into their slots.
+packages/client/ui-agent-preset/src/client/locales.ts	read	EN/ZH dictionaries for the preset surfaces, and the re-export of the registry's shared display fold so every surface reads one path.
+packages/client/ui-agent-preset/src/client/PresetGuideDialog.module.css	read	Styling for the read-only preset guide reader: tabbed panel, scrolling body, usage-example sections.
+packages/client/ui-agent-preset/src/client/PresetGuideDialog.tsx	read	Modal reader for a shipped preset's help, with per-tab scroll preservation, a manual Tab trap and a separate "usage" rendering mode.
+packages/client/ui-agent-preset/src/client/seat-store.ts	read	Hero-chip controller: stages the next session's preset, applies it when a blank session appears, and owns the one-shot "introduce" cue.
+packages/client/ui-agent-preset/src/client/section-store.ts	read	Settings controller: roster read, default write, read-only composition viewer, and the Coding-Tools-off reconciliation that resets a hidden PTC/Minimal default to Standard.
+packages/client/ui-agent-preset/src/client/settings-store.ts	read	Shared roster store: one agentPresets.list call, healthy-preset-only picker options, and the settings-namespace default writer.
+packages/client/ui-agent-preset/src/css-modules.d.ts	read	Ambient declaration that CSS module imports default-export a class-name record.
+packages/client/ui-agent-preset/src/index.ts	read	Node half: an empty apply() so the package appears as a Loader/host row; the browser half ships through exports["./client"].
+packages/client/ui-agent-preset/tests/apply.client.spec.ts	read	1387-line registration suite: the General row, the settings section, the chip and the label all come from one apply, and a pushed settings change refreshes the others.
+packages/client/ui-agent-preset/tests/components.client.spec.tsx	read	jsdom suite for the two conversation-adjacent surfaces: the new-session chip and the read-only header label.
+packages/client/ui-agent-preset/tests/create-plugin-menu-item.client.spec.tsx	read	jsdom suite for the Add-plugin entry: dismiss-before-start ordering, disabled states, and DOM-node stability across roster refreshes.
+packages/client/ui-agent-preset/tests/locales.client.spec.ts	read	Suite proving the four shipped presets localize in both languages while declared metadata for custom presets stays untranslated.
+packages/client/ui-agent-preset/tests/section-store.client.spec.ts	read	Suite for the settings controller: one shared roster read, a viewer that ignores superseded reads, and the Coding-Tools default reset.
+packages/client/ui-agent-preset/tests/section.client.spec.tsx	read	jsdom suite for the Settings section: card rendering, default selection, Creator entry and the truncated-description tooltip.
+packages/client/ui-agent-preset/tests/settings-store.client.spec.ts	read	Suite for the roster store and the seat controller: broken presets excluded, refusal reporting, stage application and consumption.
+packages/client/ui-agent-preset/tsconfig.json	read	Client tsconfig extending the shared base, with project references to cordis, locale, store, the session/UI packages and the preset registry.
+packages/client/ui-agent-preset/tsdown.config.ts	read	One-line tsdown config using the shared clientBundle helper and emitting only the type declarations alongside the bundle.
+packages/client/ui-approval/locale/en.json	read	Locale metadata stub declaring only the namespace title "ui-approval".
+packages/client/ui-approval/locale/zh.json	read	Chinese locale metadata for the approval package.
+packages/client/ui-approval/package.json	read	Manifest for @deepseek-ai/dsh-client-ui-approval, a web client plugin injecting remotes, session-controller, locale, conversation, renderer and session.
+packages/client/ui-approval/README.i18n.yaml	read	Per-heading EN/ZH hash record for the approval README pair.
+packages/client/ui-approval/README.md	read	Package reference: the approval takeover over the scoped Remote Event waterfall, the Enter/Escape key reservation, and the "Model Experience: None" statement.
+packages/client/ui-approval/README.zh.md	read	Chinese translation of the ui-approval README.
+packages/client/ui-approval/src/client/ApprovalPanel.module.css	read	Styling for the approval card: warning strip, capped scrolling body, right-aligned reject/allow action row.
+packages/client/ui-approval/src/client/ApprovalPanel.tsx	read	Composer takeover rendering one pending approval, with a shared pending-request lock, IME-safe Enter/Escape handling and optional Tool detail.
+packages/client/ui-approval/src/client/contract/slots.ts	read	The PendingApproval domain class and the composer/detail slot contract: settle-once, delegation, abort, and the decision vocabulary.
+packages/client/ui-approval/src/client/index.ts	read	Browser half: registers the approval dictionary, reserves the Enter/Escape shortcuts, claims the composer chain and installs the Remote Event listener.
+packages/client/ui-approval/src/client/locales.ts	read	EN/ZH approval dictionaries with the Chinese key set as the source of truth.
+packages/client/ui-approval/src/css-modules.d.ts	read	Ambient declaration that CSS module imports default-export a readonly class-name record.
+packages/client/ui-approval/src/index.ts	read	Node half: an empty apply() so the package appears in the host Loader without browser behavior.
+packages/client/ui-approval/tests/ui-approval.client.spec.tsx	read	jsdom suite: the waterfall listener, the pending-request lock, refusal handling, and the package's declared service edges.
+packages/client/ui-approval/tsconfig.json	read	Client tsconfig with project references to cordis, remotes, session-controller, llm, typert, locale, conversation, primitives, renderer, session, slots and shortcuts.
+packages/client/ui-approval/tsdown.config.ts	read	One-line tsdown config using the shared clientBundle helper.
+packages/client/ui-brand-official/locale/en.json	read	Locale metadata stub declaring only the namespace title "ui-brand-official".
+packages/client/ui-brand-official/locale/zh.json	read	Chinese locale metadata for the brand package.
+packages/client/ui-brand-official/package.json	read	Manifest for @deepseek-ai/dsh-client-ui-brand-official, injecting only the renderer and the sidebar.
+packages/client/ui-brand-official/README.i18n.yaml	read	Per-heading EN/ZH hash record for the brand README pair.
+packages/client/ui-brand-official/README.md	read	Package reference: build-profile gating of the sidebar brand, slot-occupant composition, and an explicit "Model Experience: None".
+packages/client/ui-brand-official/README.zh.md	read	Chinese translation of the ui-brand-official README.
+packages/client/ui-brand-official/src/client/Brand.tsx	read	Two tiny components rendering the official fish mark and the name wordmark for the sidebar brand slots.
+packages/client/ui-brand-official/src/client/index.ts	read	Browser half: returns early unless DSH_CLIENT_BUILD_PROFILE is "official", then fills the two sidebar brand slots as one nested inject set.
+packages/client/ui-brand-official/src/index.ts	read	Node half: an empty apply() giving the Loader a host row for the official brand package.
+packages/client/ui-brand-official/tests/browser-plugin.client.spec.tsx	read	jsdom suite proving profile gating, declaration-order independence, teardown, and that the conversation hero keeps its own fallback.
+packages/client/ui-brand-official/tsconfig.json	read	Client tsconfig extending the shared base with references to the renderer, sidebar and locale packages.
+packages/client/ui-brand-official/tsdown.config.ts	read	One-line tsdown config using the shared clientBundle helper.
+packages/client/ui-goal/locale/en.json	read	Locale metadata stub declaring only the namespace title "ui-goal".
+packages/client/ui-goal/locale/zh.json	read	Chinese locale metadata for the goal package.
+packages/client/ui-goal/package.json	read	Manifest for @deepseek-ai/dsh-client-ui-goal, injecting remotes, session-controller, locale, chat, conversation, renderer and session.
+packages/client/ui-goal/README.i18n.yaml	read	Per-heading EN/ZH hash record for the goal README pair.
+packages/client/ui-goal/README.md	read	Package reference: the goal strip, the durable /goal command-input bubble, the CAS-fenced mutations, and the "KV Cache effect" note that only an admitted context changes the request.
+packages/client/ui-goal/README.zh.md	read	Chinese translation of the ui-goal README.
+packages/client/ui-goal/src/client/activation-source.ts	read	Registrant-private activation source: epoch-guarded Remote reads so a stale HTTP result cannot overwrite a newer activation edge.
+packages/client/ui-goal/src/client/GoalBar.module.css	read	Styling for the goal strip and its inline edit form, matching the Todo/Queue panel family.
+packages/client/ui-goal/src/client/GoalBar.tsx	read	Goal strip docked above the composer: phase label, truncated objective, edit/pause/resume/clear, with a same-render single-flight guard.
+packages/client/ui-goal/src/client/GoalCommandInputView.module.css	read	Styling for the command-input bubble, mirroring the user bubble's width cap and the shared content font-size axis.
+packages/client/ui-goal/src/client/GoalCommandInputView.tsx	read	Right-aligned /goal input bubble that decorates only the leading command token as a chip.
+packages/client/ui-goal/src/client/GoalCommandReference.tsx	read	Display-only reference chip for a confirmed command token, with no activation action.
+packages/client/ui-goal/src/client/goal-command-input.ts	read	Conversation Definition projecting a durable /goal run as a separate command-input node anchored before the generic command result.
+packages/client/ui-goal/src/client/index.ts	read	Browser half: registers the GoalBar dock entry, the command-input node, the command reference rule, and the four CAS-fenced goal mutations.
+packages/client/ui-goal/src/client/locales.ts	read	EN/ZH goal dictionaries with the Chinese key set as the source of truth.
+packages/client/ui-goal/src/client/slots.ts	read	Type contract for the GoalBar's injected face, including the local no-current-goal failure.
+packages/client/ui-goal/src/client/user-text-rules.ts	read	User-text rule that marks a command token only inside a CONFIRMED execution range, using original UTF-16 offsets.
+packages/client/ui-goal/src/css-modules.d.ts	read	Ambient declaration that CSS module imports default-export a class-name record.
+packages/client/ui-goal/src/index.ts	read	Node half: an empty apply() so the goal surface plugin appears in the host Loader; the browser half ships via exports["./client"].
+packages/client/ui-goal/tests/activation-source.client.spec.ts	read	Suite for the activation source: stale reads lose to later events, running refreshes keep the last activation, subscriptions release with the last observer.
+packages/client/ui-goal/tests/browser-plugin.client.spec.tsx	read	jsdom suite over a real cordis Context: the dock entry registers, the four verbs read the current CAS ref, and a missing projection short-circuits.
+packages/client/ui-goal/tests/goal-command-input-styles.client.spec.ts	read	Reads the CSS text to assert the command bubble shares the user bubble's font family and size axis.
+packages/client/ui-goal/tests/goal-command-input.client.spec.tsx	read	Suite proving the command-input node is built before the generic command result and survives Session-log replay.
+packages/client/ui-goal/tests/goalbar.client.spec.tsx	read	jsdom suite for the GoalBar: nothing renders while loading/absent/complete, rapid clear clicks single-flight, and inline edit saves.
+packages/client/ui-goal/tests/user-text-rules.client.spec.ts	read	Suite for the command-reference rule: boundary checks, unordered facts, UTF-16 offsets and no command facts read without a slash token.
+packages/client/ui-goal/tsconfig.json	read	Client tsconfig with references to cordis, locale, store, chat, conversation, renderer, session, primitives, workspace and the goal domain package.
+packages/client/ui-goal/tsdown.config.ts	read	One-line tsdown config using the shared clientBundle helper.
+packages/client/ui-plan/locale/en.json	read	Locale metadata stub declaring only the namespace title "ui-workflow-run"-style namespace title for ui-plan.
+packages/client/ui-plan/locale/zh.json	read	Chinese locale metadata for the plan package.
+packages/client/ui-plan/package.json	read	Manifest for @deepseek-ai/dsh-client-ui-plan, injecting remotes, locale, conversation, sidebar-right, chat, user-questions, resources and session-controller.
+packages/client/ui-plan/README.i18n.yaml	read	Per-heading EN/ZH hash record for the plan README pair.
+packages/client/ui-plan/README.md	read	Package reference: the plan chip, submitted-plan cards, the sidebar review preview, and the explicit "entering or leaving plan mode changes the request prefix" KV-cache note.
+packages/client/ui-plan/README.zh.md	read	Chinese translation of the ui-plan README.
+packages/client/ui-plan/src/client/failure-line.ts	read	Maps a plan resource failure code to localized copy, and leaves transport diagnostics untouched.
+packages/client/ui-plan/src/client/index.ts	read	Browser half: registers the plan chip, the submitted-plan cards, the review-action slot, the sidebar tab type and the plan resource provider.
+packages/client/ui-plan/src/client/locales.ts	read	EN/ZH plan dictionaries with the Chinese key set as the source of truth.
+packages/client/ui-plan/src/client/plan-definition.ts	read	Conversation Definition turning native and PTC exit_plan_mode calls into one submitted-plan card per invocation.
+packages/client/ui-plan/src/client/plan-resource.ts	read	Resource provider that restores a plan from the Session snapshot and older history pages, reporting failures as typed Remote errors.
+packages/client/ui-plan/src/client/plan.ts	read	Plan text extraction from logged tool arguments, plus the durable plan resource address encode/parse pair.
+packages/client/ui-plan/src/client/PlanCard.tsx	read	Turn-tail plan cards and the review link that opens a pending plan automatically exactly once.
+packages/client/ui-plan/src/client/PlanModeControl.module.css	read	Styling for the plan status chip, including the glyph swap between the plan glyph and the circled close on hover.
+packages/client/ui-plan/src/client/PlanModeControl.tsx	read	The composer plan chip, rendered only when the folded host target is plan mode, executing /plan off and staying visible through failures.
+packages/client/ui-plan/src/client/PlanPreview.module.css	read	Styling for the plan card family and the sidebar plan document viewer.
+packages/client/ui-plan/src/client/PlanPreview.tsx	read	Read-only Markdown viewer for logged plans and temporary review documents, with localized loading/failure states.
+packages/client/ui-plan/src/client/review-preview.ts	read	Temporary review-preview address helpers; the review body lives in in-memory tab navigation and is never persisted.
+packages/client/ui-plan/src/client/review-store.ts	read	Session-scoped store recording which pending plans were already auto-opened, so a manual close survives a remount.
+packages/client/ui-plan/src/css-modules.d.ts	read	Ambient declaration that CSS module imports default-export a class-name record.
+packages/client/ui-plan/src/index.ts	read	Node half: an empty apply() so the plan package appears in the host Loader; the /plan behavior itself belongs to dsh-plan-mode.
+packages/client/ui-plan/tests/browser-plugin.client.spec.ts	read	Suite on a real SlotRegistry: the plan seat is occupied, /plan off is executed, failures fold into an inline error, and teardown empties the seat.
+packages/client/ui-plan/tests/plan-mode-control.client.spec.tsx	read	jsdom suite for the PlanChip: visibility rules, one-shot /plan off, the locked prop, and failures that keep the chip on screen.
+packages/client/ui-plan/tests/plan-preview.client.spec.tsx	read	jsdom suite for submitted-plan identity, the address round trip, the card list, the review opener and the localized failure lines.
+packages/client/ui-plan/tests/plan-resource.client.spec.ts	read	Suite for the plan history resource: exact-invocation restore, older-page paging, cancellation, and preserved Remote failures.
+packages/client/ui-plan/tsconfig.json	read	Client tsconfig with references to cordis, locale, store, session, chat, conversation, primitives, renderer, user-questions and the plan-mode domain package.
+packages/client/ui-plan/tsdown.config.ts	read	One-line tsdown config using the shared clientBundle helper.
+packages/client/ui-schedule/locale/en.json	read	Locale metadata stub declaring only the namespace title "ui-schedule".
+packages/client/ui-schedule/locale/zh.json	read	Chinese locale metadata for the schedule package.
+packages/client/ui-schedule/package.json	read	Manifest for @deepseek-ai/dsh-client-ui-schedule, injecting remotes, session/workspace controllers, connection, locale, conversation, layout, sidebar, sidebar-right, tool, workspace and primitives.
+packages/client/ui-schedule/README.i18n.yaml	read	Per-heading EN/ZH hash record for the schedule README pair.
+packages/client/ui-schedule/README.md	read	Package reference: the Automation tasks page, the right-Sidebar task tab, the reminder clock surfaces, and the documented zone/record semantics.
+packages/client/ui-schedule/README.zh.md	read	Chinese translation of the ui-schedule README.
+packages/client/ui-schedule/src/client/CalendarIcon.tsx	read	Hand-drawn 14px calendar glyph because the shared product icon set has none.
+packages/client/ui-schedule/src/client/catalog-source.ts	read	Authoritative Schedule catalog source: list/delete, change and reset invalidation, and the readRequest/readSettled counters that order reads without comparing clocks.
+packages/client/ui-schedule/src/client/CatalogFeedback.tsx	read	Shared catalog loading/error states: a centered spinner or failure on an empty panel, a compact notice when content is already shown.
+packages/client/ui-schedule/src/client/ClockPicker.module.css	read	Styling for the three scrolling clock columns inside the shared picker card.
+packages/client/ui-schedule/src/client/ClockPicker.tsx	read	Three-column hour/minute/second picker with a keyboard cursor that walks a column and composes a whole-second clock.
+packages/client/ui-schedule/src/client/DatePicker.module.css	read	Styling for the month calendar grid, weekday headings and today/picked marks.
+packages/client/ui-schedule/src/client/DatePicker.tsx	read	Month calendar for the one-shot date row, staging ISO text while the trigger shows YYYY/MM/DD.
+packages/client/ui-schedule/src/client/definition.ts	read	Sidebar-right tab-type definition for a retained task, plus the navigation-parameter narrowing.
+packages/client/ui-schedule/src/client/DeleteToast.tsx	read	One app-wide deletion-outcome store and overlay banner shared by every delete surface, so an outcome outlives the panel that asked for it.
+packages/client/ui-schedule/src/client/DeliveryHistory.tsx	read	Lazy newest-first delivery-record pages with explicit empty/error/cursor states, a two-line prompt clamp and the retention notice.
+packages/client/ui-schedule/src/client/frequency-locales.ts	read	Shared EN/ZH copy for the stored rule kinds, the cron sentence and the relative durations, used by both schedule namespaces.
+packages/client/ui-schedule/src/client/index.ts	read	Browser half: the global tasks page, the session-header catalog, the created-task turn card, and the two ambient sidebar-row seats.
+packages/client/ui-schedule/src/client/locales.ts	read	EN/ZH `schedule.catalog` dictionaries for the session-header catalog, the row mark and the hover-card task list.
+packages/client/ui-schedule/src/client/PickerPopover.module.css	read	Styling for the shared translucent popover card the timing pickers use.
+packages/client/ui-schedule/src/client/PickerPopover.tsx	read	Anchored, outside-dismissed, portal-rendered popover shell shared by the clock, date and zone pickers.
+packages/client/ui-schedule/src/client/recent-time-zones.ts	read	Browser-local list of the five most recently selected IANA zones, seeded from the device zone and UTC rather than the UI language.
+packages/client/ui-schedule/src/client/relative-clock.ts	read	Shared 30-second ticking clock for relative "time remaining" text, with the reason each other surface keeps its own beat.
+packages/client/ui-schedule/src/client/schedule-create-card.ts	read	Pure model that narrows a settled schedule_create result JSON into a ScheduleRecord, tolerating truncated or hand-edited logs.
+packages/client/ui-schedule/src/client/schedule-format.ts	read	Browser-safe formatting of stored rule kinds, the ICU zone inventory, the absolute/relative next-run line and the overdue-first record order.
+packages/client/ui-schedule/src/client/schedule-turn.ts	read	Turn-scoped accumulator for settled schedule_create results, published as turn data and bound by the turn's own end sequence.
+packages/client/ui-schedule/src/client/ScheduleCatalogAction.module.css	read	Styling for the session-header reminder popover and its per-row delete affordance.
+packages/client/ui-schedule/src/client/ScheduleCatalogAction.tsx	read	Session-header reminder catalog: an icon-only trigger whose accessible name carries the count, a portaled list, and per-row deletion.
+packages/client/ui-schedule/src/client/ScheduleCreateCard.module.css	read	Styling for the created-task transcript card and its raw-result fallback.
+packages/client/ui-schedule/src/client/ScheduleCreateCard.tsx	read	Transcript card for a schedule_create call, showing the created task's title and frequency and opening its detail.
+packages/client/ui-schedule/src/client/ScheduleTaskTab.tsx	read	Right-Sidebar task tab body, resolving its task from navigation parameters or the restored binding, and reporting the missing-task state.
+packages/client/ui-schedule/src/client/ScheduleTaskTabTitle.tsx	read	Sidebar chip that names the shown task's stored title, resolved through the same binding the body uses.
+packages/client/ui-schedule/src/client/ScheduleTurnCard.module.css	read	Styling for the turn-tail list that holds the created-task cards.
+packages/client/ui-schedule/src/client/ScheduleTurnCard.tsx	read	Turn-tail card list that reconciles each created task against the authoritative Host catalog before saying it was deleted.
+packages/client/ui-schedule/src/client/session-link.ts	read	Availability and label of a task's original Session, read from the public Session and Workspace feeds without activating anything.
+packages/client/ui-schedule/src/client/session-schedule-state.ts	read	Projection of the ONE shared Host catalog onto a Session's active tasks, stable across other Sessions' updates.
+packages/client/ui-schedule/src/client/SessionScheduleHover.tsx	read	Task section of the sidebar Session-row hover card, showing at most two tasks with a frozen clock.
+packages/client/ui-schedule/src/client/SessionScheduleMark.module.css	read	Styling for the sidebar row clock mark and the hover-card task rows.
+packages/client/ui-schedule/src/client/SessionScheduleMark.tsx	read	Sidebar Session-row clock mark, seated in the leading cell and stopped from activating the Session.
+packages/client/ui-schedule/src/client/task-cron.ts	read	Client-side five-field cron parser, localized sentence generator and structured-shape recognizer mirroring the Host's Vixie star rules.
+packages/client/ui-schedule/src/client/task-manager-locales.ts	read	EN/ZH `schedule.manager` dictionary: the tasks page, the detail tabs, timing rows, cron form and delete/toast copy.
+packages/client/ui-schedule/src/client/task-tab-bindings.ts	read	Durable localStorage recovery of which task a restored sidebar tab page last showed, keyed by Session and layout id.
+packages/client/ui-schedule/src/client/task-tab-target.ts	read	Resolves the task one task tab shows, from its navigation parameters or the stored binding, and drops mismatched entries.
+packages/client/ui-schedule/src/client/task-timing.ts	read	Exact persisted rule snapshots, native timing drafts, zone defaults and the Host failure-code to copy mapping.
+packages/client/ui-schedule/src/client/TaskDetail.tsx	read	2231-line task detail: the Rules/Records tabs, the Run time card (Repeat, date, time, zone, interval), the cron builder, the delivery history and confirmed deletion.
+packages/client/ui-schedule/src/client/TaskManagerIcon.tsx	read	Decorative clock glyph for the task-manager sidebar entry.
+packages/client/ui-schedule/src/client/TaskManagerPage.module.css	read	1475-line stylesheet for the Automation tasks page, its list, the detail panel and the notice/empty states, with mock-derived metrics.
+packages/client/ui-schedule/src/client/TaskManagerPage.tsx	read	The global Automation tasks page: local search, an All/Enabled/Inactive filter, the task list and the selected task's detail.
+packages/client/ui-schedule/src/client/TaskMenu.module.css	read	Local copy of the shared Menu card, with a pinned header slot, a portal mode and the keyboard-focus fill.
+packages/client/ui-schedule/src/client/TaskMenu.tsx	read	Schedule-local anchored dropdown with a pinned header, a data-menu-field keyboard handover, arrow walking and focus return.
+packages/client/ui-schedule/src/css-modules.d.ts	read	Ambient declaration that CSS module imports default-export a class-name record.
+packages/client/ui-schedule/src/index.ts	read	Node half: an empty apply() keeping the optional browser feature addressable from the host-owned Loader overlay.
+packages/client/ui-schedule/tests/browser-plugin.client.spec.ts	read	Suite over a real Context: every seat the plugin registers, the turn-tail card, the task tab binding and the readback ordering after a write.
+packages/client/ui-schedule/tests/catalog-source.client.spec.ts	read	Suite for the catalog source: settled-vs-loading semantics, shared in-flight reads, delete outcomes and the readRequest/readSettled ordering.
+packages/client/ui-schedule/tests/definition.client.spec.ts	read	18-line suite asserting the task tab type's id, kind, priority and locale-bound chip title.
+packages/client/ui-schedule/tests/delete-toast.client.spec.tsx	read	jsdom suite for the app-wide deletion toast: sequenced outcomes, the ignored pending outcome, and the success/warning banners.
+packages/client/ui-schedule/tests/delivery-history.client.spec.tsx	read	jsdom suite for the delivery history: newest-first paging, the two-line prompt clamp, empty/cursor/not-found states and unmount safety.
+packages/client/ui-schedule/tests/recent-time-zones.client.spec.ts	read	Suite for the browser-local recent-zone list: device-seeded defaults, promotion order and storage failures.
+packages/client/ui-schedule/tests/schedule-catalog-action.client.spec.tsx	read	jsdom suite for the session-header reminder popover: the count label, ordering, deletion, keyboard dismissal and the 1s clock lifecycle.
+packages/client/ui-schedule/tests/schedule-create-card.client.spec.tsx	read	jsdom suite for the created-task card: title fallbacks, the frequency line, the deleted state and the stylesheet invariants.
+packages/client/ui-schedule/tests/schedule-format.client.spec.ts	read	Suite for the browser-safe formatting: the ICU zone inventory, the zone label, relative times and the no-seconds clock line.
+packages/client/ui-schedule/tests/schedule-task-tab.client.spec.tsx	read	jsdom suite for the task tab: it renders the task its navigation names, recovers a restored tab from its binding, and names it in the chip.
+packages/client/ui-schedule/tests/schedule-turn-card.client.spec.tsx	read	jsdom suite for the turn-level created-task card: the turn accumulator, the turn-tail election, the catalog reconciliation and the location data.
+packages/client/ui-schedule/tests/session-link.client.spec.ts	read	Suite for the original-Session link: membership, archive state, and the title-or-id label.
+packages/client/ui-schedule/tests/session-schedule-hover.client.spec.tsx	read	jsdom suite for the hover-card task section: the two-task limit, the omission line, the frozen clock and the no-task cases.
+packages/client/ui-schedule/tests/session-schedule-mark.client.spec.tsx	read	jsdom suite for the sidebar clock mark: no mark before a settled read, one read for many rows, and no Session activation.
+packages/client/ui-schedule/tests/session-schedule-shared.client.spec.tsx	read	Suite proving the shared catalog selector keeps a row's render when another Session's tasks move.
+packages/client/ui-schedule/tests/session-schedule-state.client.spec.ts	read	Suite for the per-Session source and the shared catalog projection, including the unsettled/failed answers.
+packages/client/ui-schedule/tests/task-cron.client.spec.ts	read	Suite for the client cron parser: the Vixie star flags, the day-field conjunction, the sentence and the builder round trip.
+packages/client/ui-schedule/tests/task-detail.client.spec.tsx	read	jsdom suite for TaskDetail: draft merging under an authoritative refresh, the weekly/Wednesday seed, the menu close paths and the cron rows.
+packages/client/ui-schedule/tests/task-manager-page.client.spec.tsx	read	4368-line suite for the Automation tasks page: search and filters, the Rules/Records tabs, the interval units, the cron builder, the delete flow and the mock metrics.
+packages/client/ui-schedule/tests/task-menu.client.spec.tsx	read	jsdom suite for TaskMenu: the pinned header, the keyboard handover, the row walk, dismissal and focus return.
+packages/client/ui-schedule/tests/task-tab-bindings.client.spec.ts	read	Suite for the durable task-tab binding: per-tab entries, per-Session documents, mismatched-kind drops and storage failures.
+packages/client/ui-schedule/tests/task-timing.client.spec.tsx	read	Suite for the exact rule snapshots, the native drafts per rule kind, the zone fallbacks and the Host failure mapping.
+packages/client/ui-schedule/tests/zone-fixture.ts	read	Fixture helpers computing a zone's UTC offset and one that genuinely differs from the runner's own zone.
+packages/client/ui-schedule/tsconfig.json	read	Client tsconfig with references to cordis, locale, store, session, chat, conversation, primitives, renderer, sidebar, workspace and the schedule domain package.
+packages/client/ui-schedule/tsdown.config.ts	read	One-line tsdown config using the shared clientBundle helper.
+packages/client/ui-subagent/locale/en.json	read	Locale metadata stub declaring only the namespace title "ui-subagent".
+packages/client/ui-subagent/locale/zh.json	read	Chinese locale metadata for the subagent package.
+packages/client/ui-subagent/package.json	read	Manifest for @deepseek-ai/dsh-client-ui-subagent, injecting session-controller, locale, resources, chat, conversation, primitives, sidebar-right, input-trigger and workspace.
+packages/client/ui-subagent/README.i18n.yaml	read	Per-heading EN/ZH hash record for the subagent README pair.
+packages/client/ui-subagent/README.md	read	Package reference: the subagent catalog, continuation routing, the @ reference source, and the explicit "KV Cache effect: append-only" statement.
+packages/client/ui-subagent/README.zh.md	read	Chinese translation of the ui-subagent README.
+packages/client/ui-subagent/src/client/index.ts	read	Browser half: registers the lineage breadcrumb, the descendant-count action, the read-only composer takeover and the sidebar chat resource.
+packages/client/ui-subagent/src/client/locales.ts	read	EN/ZH `subagent` dictionaries for durations, token counts, modes, activity and the read-only composer copy.
+packages/client/ui-subagent/src/client/sidebar-chat/index.tsx	read	Right-Sidebar presentation of a child Session: canonical resource address, reference retention and a fixed local Chat view.
+packages/client/ui-subagent/src/client/sidebar-chat/SidebarChat.module.css	read	Five-line stylesheet giving the embedded sidebar chat a full-size flex frame.
+packages/client/ui-subagent/src/client/SubagentHeaderLineage.module.css	read	Styling for the lineage dropdown, its tree rows, the connector lines and the per-row metrics column.
+packages/client/ui-subagent/src/client/SubagentHeaderLineage.tsx	read	823-line header catalog: the lineage breadcrumb switcher, the descendant-count trigger, the lazily expanded tree, per-row activity, token totals and duration.
+packages/client/ui-subagent/src/client/SubagentReadOnlyComposer.module.css	read	Styling for the read-only composer replacement strip.
+packages/client/ui-subagent/src/client/SubagentReadOnlyComposer.tsx	read	Read-only composer replacement explaining why a one-shot, unknown-mode or parent-offline child cannot take input.
+packages/client/ui-subagent/src/css-modules.d.ts	read	Ambient declaration that CSS module imports default-export a class-name record.
+packages/client/ui-subagent/src/index.ts	read	Node half: an empty apply() giving the Loader a host row for the subagent surface package.
+packages/client/ui-subagent/tests/browser-plugin.client.spec.ts	read	Suite for the catalog actions and the read-only composer selector, including the running-parent-offline exception.
+packages/client/ui-subagent/tests/conversation-ui.client.spec.tsx	read	1252-line jsdom suite for the header catalog: rows, status dots, token totals, duration ticking, lazy expansion, migration-required and external leaves.
+packages/client/ui-subagent/tests/sidebar-chat.client.spec.tsx	read	jsdom suite for the sidebar chat: address round trip, rejected addresses, reference retention and the fixed local view.
+packages/client/ui-subagent/tsconfig.json	read	Client tsconfig with references to cordis, locale, store, session, chat, conversation, primitives, renderer, sidebar-right, workspace and the subagent domain package.
+packages/client/ui-subagent/tsdown.config.ts	read	One-line tsdown config using the shared clientBundle helper.
+packages/client/ui-user-questions/locale/en.json	read	Locale metadata stub declaring only the namespace title "ui-user-questions".
+packages/client/ui-user-questions/locale/zh.json	read	Chinese locale metadata for the user-questions package.
+packages/client/ui-user-questions/package.json	read	Manifest for @deepseek-ai/dsh-client-ui-user-questions, injecting remotes, session-controller, locale, conversation, renderer, session and chat.
+packages/client/ui-user-questions/README.i18n.yaml	read	Per-heading EN/ZH hash record for the user-questions README pair.
+packages/client/ui-user-questions/README.md	read	Package reference: the attached question card, the timed wait, the drafts, the late replies, the plan-review card and the documented cross-browser limits.
+packages/client/ui-user-questions/README.zh.md	read	Chinese translation of the ui-user-questions README.
+packages/client/ui-user-questions/src/client/contract/slots.ts	read	574-line domain contract: the PendingQuestion carrier, the waterfall and RPC channels, the plan-review narrowing and the card snapshot.
+packages/client/ui-user-questions/src/client/draft-store.ts	read	Session-scoped persisted store for unfinished answer drafts, with replace/clear/prune actions.
+packages/client/ui-user-questions/src/client/index.ts	read	Browser half: the question-card registry, the composer chain entry, the late-reply node and the Remote Event listener that answers the Host.
+packages/client/ui-user-questions/src/client/locales.ts	read	EN/ZH `question` dictionaries for the wait states, validation feedback, the plan-review actions and the reply labels.
+packages/client/ui-user-questions/src/client/PlanReviewPanel.module.css	read	Styling for the compact plan-review approval card with its warning strip and two-line summary.
+packages/client/ui-user-questions/src/client/PlanReviewPanel.tsx	read	Plan-review card: a warning strip, the plan title and summary, and Request-changes/Approve actions that answer with the asker's own labels.
+packages/client/ui-user-questions/src/client/question-reply.ts	read	Conversation Definition claiming the steered late-reply message and projecting it as question/answer pairs, with a clipboard formatter.
+packages/client/ui-user-questions/src/client/QuestionComposer.module.css	read	Styling for the question takeover card: the capped body, the option rows, the custom-answer field and the footer pager.
+packages/client/ui-user-questions/src/client/QuestionComposer.tsx	read	640-line composer takeover: the paged question flow, the auto-growing answer field, the recommended-label parsing, the skip path and the one-shot resubmit re-arm.
+packages/client/ui-user-questions/src/client/QuestionReplyView.module.css	read	Styling for the right-aligned late-reply bubble and its expanded question/answer detail list.
+packages/client/ui-user-questions/src/client/QuestionReplyView.tsx	read	Expandable late-reply bubble with a copy action whose text is identical whether the bubble is open or closed.
+packages/client/ui-user-questions/src/css-modules.d.ts	read	Ambient declaration that CSS module imports default-export a class-name record.
+packages/client/ui-user-questions/src/index.ts	read	Node half: an empty apply() so the package appears in the host Loader without registering a model-facing tool.
+packages/client/ui-user-questions/tests/browser-plugin.client.spec.ts	read	764-line suite over the scoped Remote Event: claim attach, delegation, timeout, the continued path, the panel provider and the inbox sweep.
+packages/client/ui-user-questions/tests/node-plugin.client.spec.ts	read	27-line suite proving the node half registers no model-facing ask_user_question tool.
+packages/client/ui-user-questions/tests/pending-question.client.spec.ts	read	Suite for the carrier: settle-once, the focus-held countdown, the wait disposition, publication of real state changes and refusal to cancel without a channel.
+packages/client/ui-user-questions/tests/plan-review-panel.client.spec.tsx	read	jsdom suite for the plan-review card: the narrowing rules, the approve label, the continued path, the re-arm on failure and the English dictionary.
+packages/client/ui-user-questions/tests/question-draft-store.client.spec.ts	read	Suite for the draft store: persistence across store recreation, per-request isolation and pruning of drafts no live card owns.
+packages/client/ui-user-questions/tests/question-reply.client.spec.ts	read	Suite for the late-reply projection: source matching, payload narrowing, the exclusive claim of the generic message node, and the clipboard text.
+packages/client/ui-user-questions/tests/QuestionReplyView.client.spec.tsx	read	jsdom suite for the reply bubble: expansion, copy text and confirmation, the skipped-question mark and the raw-text fallback.
+packages/client/ui-user-questions/tests/user-questions-composer.client.spec.tsx	read	939-line jsdom suite for the composer: the recommended default, IME Enter, skip, multi-select, the timed card, the resubmit re-arm and the read-only review card.
+packages/client/ui-user-questions/tsconfig.json	read	Client tsconfig with references to cordis, locale, store, session, chat, conversation, primitives, renderer, sidebar-right and the user-questions domain package.
+packages/client/ui-user-questions/tsdown.config.ts	read	One-line tsdown config using the shared clientBundle helper.
+packages/client/ui-workflow-run/locale/en.json	read	Locale metadata stub declaring only the namespace title "ui-workflow-run".
+packages/client/ui-workflow-run/locale/zh.json	read	Chinese locale metadata for the workflow-run package.
+packages/client/ui-workflow-run/package.json	read	Manifest for @deepseek-ai/dsh-client-ui-workflow-run, injecting session-controller, locale, chat, conversation, renderer, session and workspace.
+packages/client/ui-workflow-run/README.i18n.yaml	read	Per-heading EN/ZH hash record for the workflow-run README pair.
+packages/client/ui-workflow-run/README.md	read	Package reference: the durable workflow-run node, the nested phase/member disclosure and the "Model Experience: None" statement.
+packages/client/ui-workflow-run/README.zh.md	read	Chinese translation of the ui-workflow-run README.
+packages/client/ui-workflow-run/src/client/index.ts	read	Browser half: registers the workflow-run Conversation Definition, the dictionary and the keyed Chat renderer.
+packages/client/ui-workflow-run/src/client/locales.ts	read	EN/ZH `workflowRun` dictionaries for the run title, phase names, member names and the five statuses.
+packages/client/ui-workflow-run/src/client/workflow-definition.ts	read	198-line Definition folding the four durable tool-workflow events into one keyed node, with phase grouping and interrupt inference.
+packages/client/ui-workflow-run/src/client/WorkflowRunPanel.module.css	read	Styling for the run/phase headers and member rows, all on the shared content font-size axis.
+packages/client/ui-workflow-run/src/client/WorkflowRunPanel.tsx	read	489-line panel: status-driven run/phase disclosure, deferred clean collapse that waits for focus, and live-only member navigation.
+packages/client/ui-workflow-run/src/css-modules.d.ts	read	Ambient declaration that CSS module imports default-export a class-name record.
+packages/client/ui-workflow-run/src/index.ts	read	Node half: an empty apply() giving the Loader a host row for the workflow-run surface package.
+packages/client/ui-workflow-run/tests/panel-styles.client.spec.ts	read	Reads the CSS text to assert the panel follows the Settings font-size axis, including the phase status column width.
+packages/client/ui-workflow-run/tests/workflow-run.client.spec.tsx	read	969-line suite: the Definition's deterministic replay, the interrupt inference, and every disclosure and navigation rule of the panel.
+packages/client/ui-workflow-run/tsconfig.json	read	Client tsconfig with references to cordis, locale, store, session, chat, conversation, primitives, renderer, workspace and the workflow domain packages.
+packages/client/ui-workflow-run/tsdown.config.ts	read	One-line tsdown config using the shared clientBundle helper.

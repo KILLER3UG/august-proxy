@@ -1,0 +1,210 @@
+packages/ai/scripts/ai-gateway-pricing.ts	read	Converts Vercel AI Gateway $/token pricing into pi's $/1M ModelCost; each rate carries its own prompt-length brackets, every bracket start >0 becomes a request-wide cost tier.
+packages/ai/scripts/check-model-data.ts	read	Thin CLI that runs validateGeneratedModelData(packageRoot) and exits 1 with the "run npm run hydrate:model-data" hint when the generated catalog is stale.
+packages/ai/scripts/generate-models.ts	read	3632-line catalog generator: fetches models.dev / OpenRouter / AI Gateway / Radius, applies per-provider compat tables, writes src/providers/data/*.json + .models.ts shards + models.generated.ts. Read head (options, compat tables), the models.dev loader and the generateModels() entry; the per-provider model tables in the middle were not read line by line.
+packages/ai/scripts/generate-test-image.ts	read	Generates a 200x200 white PNG with a red circle into test/data/red-circle.png using node-canvas; a fixture generator, no harness logic.
+packages/ai/scripts/hydrate-model-catalog.ts	read	Rehydrates src/providers/data/ from a published models.all.json offline: groups entries by API, writes a fixed-epoch manifest, validates the staged directory, then renames it into place.
+packages/ai/scripts/model-data.ts	read	Validator for the generated catalog: parses models.generated.ts imports with a regex, cross-checks provider shards, per-model shape, manifest schema version and sha256 file hashes; also groups entries by API into type:id keys.
+packages/ai/scripts/models-dev-reasoning-options.ts	read	Turns models.dev reasoning_options (toggle / effort / budget_tokens) into pi's ThinkingLevelMap; unmapped levels become null so the adapter knows they are unsupported.
+packages/ai/scripts/openrouter-catalog.ts	read	Builds the OpenRouter chat/image/classifier catalogs from three listings; only tool-capable models are kept, anthropic/* go to the anthropic-messages API, image/decision models come from the modality-filtered listings.
+packages/ai/scripts/openrouter-reasoning-options.ts	read	Maps OpenRouter's reasoning metadata (supported_efforts / mandatory) to a ThinkingLevelMap, reusing the models.dev effort conversion; mandatory reasoning means off: null.
+packages/ai/src/api/anthropic-messages.lazy.ts	read	Four-line lazy wrapper: anthropicMessagesApi() returns lazyApi(() => import("./anthropic-messages.ts")).
+packages/ai/src/api/anthropic-messages.ts	read	Anthropic Messages adapter (1690 lines): hand-rolled SSE decoder, OAuth "Claude Code" impersonation mode, mid-conversation system/tool-change betas, adaptive vs budget thinking, cache_control placement, strict-tool downgrade retry.
+packages/ai/src/api/azure-openai-config.ts	read	Resolves the Azure base URL, api-version and deployment name per request; normalizes Azure hosts to /openai/v1 and maps model ids to deployment names via AZURE_OPENAI_DEPLOYMENT_NAME_MAP.
+packages/ai/src/api/azure-openai-responses.lazy.ts	read	Four-line lazy wrapper for azure-openai-responses.ts.
+packages/ai/src/api/azure-openai-responses.ts	read	Azure OpenAI Responses adapter: deployment name as request model, shared processResponsesStream, prompt_cache_key from the session id, no prompt_cache_retention (ChatGPT tokens unsupported).
+packages/ai/src/api/bedrock-converse-stream.lazy.ts	read	Lazy wrapper that imports bedrock-converse-stream.ts through a variable specifier so bundlers cannot follow it into the Node-only AWS SDK; setBedrockProviderModule lets a Bun build register a static module instead.
+packages/ai/src/api/bedrock-converse-stream.ts	read	Bedrock ConverseStream adapter (1428 lines): SigV4-signed requests with caller headers injected via a Smithy build-step middleware, region/ARN resolution, proxy agents, cache points, redacted reasoning replay. Read lines 1-610 and 900-1139; the block-delta handlers (611-899) and tail (1140-1428) were sampled, not read line by line.
+packages/ai/src/api/classifier-shared.ts	read	Shared classifier plumbing: postClassifierRequest does one bearer-auth JSON POST with a per-attempt timeout and provider retries; parseClassifierUsage prices usage from the catalog.
+packages/ai/src/api/cloudflare-ai-binding.ts	read	Wraps the Workers AI binding's fetch() as a drop-in FetchFunction so a Worker can call the AI Gateway without an API token; the sentinel cf-aig-authorization header satisfies the auth check and is stripped by the gateway.
+packages/ai/src/api/cloudflare-workers-ai-system-one.lazy.ts	read	Six-line lazy wrapper exposing classify() for the cloudflare-workers-ai-system-one classifier API.
+packages/ai/src/api/cloudflare-workers-ai-system-one.ts	read	Cloudflare Workers AI System One transport: POSTs { model, input } to /run and unwraps either the third-party run record or the direct Cloudflare result envelope; image form chosen by model id.
+packages/ai/src/api/cloudflare.ts	read	Five Cloudflare endpoint templates (Workers AI direct + REST, AI Gateway compat / openai / anthropic passthrough) with {CLOUDFLARE_ACCOUNT_ID} and {CLOUDFLARE_GATEWAY_ID} placeholders.
+packages/ai/src/api/constrained-sampling.ts	read	Turns a tool schema into the strict JSON-Schema subset providers accept (all properties required, additionalProperties false, optional props made nullable) and throws UnsupportedStrictJsonSchemaError when the schema cannot be made strict; also resolves grammar (lark/regex) constrained tools.
+packages/ai/src/api/github-copilot-headers.ts	read	Derives Copilot's dynamic headers from the transcript: X-Initiator user/agent from the last message role, plus Copilot-Vision-Request when any user or tool-result content carries an image.
+packages/ai/src/api/google-generative-ai.lazy.ts	read	Four-line lazy wrapper for google-generative-ai.ts.
+packages/ai/src/api/google-generative-ai.ts	read	Gemini adapter via @google/genai: content parts become thinking/text/tool blocks, thought signatures are retained per block, usage splits cached content out of prompt tokens, thinking budget tables are keyed on the 2.5 model family.
+packages/ai/src/api/google-shared.ts	read	Shared Gemini/Vertex conversion: thinking-level vs thinking-budget selection by model id, thought-signature validation (same provider+model, valid base64), Gemini 3+ tool-call id rules, tool declaration format choice, and a retry helper that repairs the SDK error shape.
+packages/ai/src/api/google-vertex.lazy.ts	read	Four-line lazy wrapper for google-vertex.ts.
+packages/ai/src/api/google-vertex.ts	read	Vertex AI adapter: ADC or API-key client, project/location resolution, {location} base-URL templates, same Gemini content and thinking handling as the Gemini adapter.
+packages/ai/src/api/lazy.ts	read	lazyStream() returns a stream synchronously while async setup (auth resolution, dynamic import) runs behind it, converting setup failures into a terminal error event; lazyApi() adapts a dynamically imported module to ProviderStreams.
+packages/ai/src/api/llama-cpp-classify.lazy.ts	read	Six-line lazy wrapper exposing classify() for the llama-cpp-classify API.
+packages/ai/src/api/llama-cpp-classify.ts	read	Turns a local llama.cpp server into a classifier without generating text: each question is rendered as a labelled prompt, the server returns pre-sampling log-probabilities over the label tokens, and the answer is the softmax over them. Read lines 1-360 of 461; the readout/escalation tail was sampled.
+packages/ai/src/api/mistral-conversations.lazy.ts	read	Four-line lazy wrapper for mistral-conversations.ts.
+packages/ai/src/api/mistral-conversations.ts	read	Mistral Chat Completions adapter: hand-written SSE reader, 9-character tool-call id normalizer with hash fallback, camelCase→snake_case wire remap, x-affinity session header for prompt caching. Read lines 1-479 of 952; the event consumer and payload builder tails were sampled.
+packages/ai/src/api/openai-codex-responses.lazy.ts	read	Four-line lazy wrapper for openai-codex-responses.ts.
+packages/ai/src/api/openai-codex-responses.ts	read	Codex adapter (1724 lines): WebSocket transport with a per-session connection cache and automatic SSE fallback, zstd request-body compression for the SSE path, JWT account-id extraction, own retry policy with a retry-delay cap. Read lines 1-999; the WebSocket send/receive and header builders (1000-1724) were sampled.
+packages/ai/src/api/openai-completions.lazy.ts	read	Four-line lazy wrapper for openai-completions.ts.
+packages/ai/src/api/openai-completions.ts	read	OpenAI Chat Completions adapter (1744 lines): the compat-flag engine that drives ~30 per-provider quirks (max_tokens field, developer role, thinking format per vendor), cache_control emulation, tool-call id normalization, and usage parsing that subtracts cache read/write from prompt tokens.
+packages/ai/src/api/openai-decisions.lazy.ts	read	Six-line lazy wrapper exposing classify() for the openai-decisions API.
+packages/ai/src/api/openai-decisions.ts	read	OpenAI Decisions API adapter: state is sent as JSON text, bool questions become predicates with the true/false meanings appended to the instructions, and 504 is excluded from retries because the Cloudflare front door times out on very large inputs.
+packages/ai/src/api/openai-prompt-cache.ts	read	clampOpenAIPromptCacheKey truncates a session id to OpenAI's 64-character prompt_cache_key limit, counted in code points.
+packages/ai/src/api/openai-responses-shared.ts	read	Shared OpenAI Responses conversion and stream processing (887 lines): additional_tools / tool_search tool-change encodings, configuration_update items so effort changes keep the prompt cache, reasoning-signature backfill for Azure, and a refusal to hand over tool calls whose arguments never completed.
+packages/ai/src/api/openai-responses.lazy.ts	read	Four-line lazy wrapper for openai-responses.ts.
+packages/ai/src/api/openai-responses.ts	read	OpenAI Responses adapter: Sign-in-with-ChatGPT detection (non sk- key on api.openai.com) suppresses unsupported request fields, service-tier pricing multipliers, and the configuration_update effort path.
+packages/ai/src/api/openrouter-images.lazy.ts	read	Six-line lazy wrapper exposing generateImages() for the openrouter-images API.
+packages/ai/src/api/openrouter-images.ts	read	Image generation over OpenRouter's chat completions endpoint with modalities [image, text]; data-URL images are parsed back into base64 content blocks and usage is priced from the catalog.
+packages/ai/src/api/pi-messages.lazy.ts	read	Four-line lazy wrapper for pi-messages.ts.
+packages/ai/src/api/pi-messages.ts	read	pi's own wire protocol: one POST of { model, context, options } to <baseUrl>/messages, an SSE stream of serialized assistant-message events, and a terminal done/error event carrying usage and a server-side rewrite impact summary.
+packages/ai/src/api/simple-options.ts	read	Provider-neutral option building: clamps maxTokens against the estimated context plus a 4096-token safety margin, merges model/request sampling params, and splits a shared response ceiling between thinking budget and answer room.
+packages/ai/src/api/system-one-shared.ts	read	System One classifier transport abstraction: three image encodings (assets / images / state-image-urls), bool→noul wire mapping, and answer parsing that fails loudly when a question is unanswered.
+packages/ai/src/api/transform-messages.ts	read	Normalizes any transcript before it hits a provider: downgrades images for non-vision models, drops another model's thinking, inserts synthetic error tool results for orphaned tool calls, and holds back system messages that would land between a tool call and its results.
+packages/ai/src/api/typesafe-system-one.lazy.ts	read	Six-line lazy wrapper exposing classify() for the typesafe-system-one API.
+packages/ai/src/api/typesafe-system-one.ts	read	TypeSafe's native System One protocol; OpenRouter serves the same protocol with images as state-image-urls, TypeSafe as assets plus the TypeSafe-Danger-Zone-Images opt-in header.
+packages/ai/src/auth/context.ts	read	Default AuthContext: process.env lookup (empty in browsers) and node:fs access for file existence with ~ expansion; node builtins are imported through a variable specifier so browser bundlers skip them.
+packages/ai/src/auth/credential-store.ts	read	InMemoryCredentialStore: one credential per provider, serialized writes through a per-provider promise chain so modify() is the only write path.
+packages/ai/src/auth/helpers.ts	read	envApiKeyAuth() is the standard api-key auth (stored key wins, then env vars) with a prompt-based login; lazyOAuth() defers loading a Node-only OAuth flow behind a bundler-opaque dynamic import.
+packages/ai/src/auth/oauth/anthropic.ts	read	Anthropic Claude Pro/Max OAuth: PKCE against claude.ai, loopback callback on port 53692 with a free-port fallback, plus a copy-code headless mode; the credential expires five minutes early.
+packages/ai/src/auth/oauth/callback-server.ts	read	Shared loopback OAuth callback server (node:http) with state checking, single-claim protection and a waitForCallbackOrManualInput() race against a pasted redirect URL for SSH/headless sessions.
+packages/ai/src/auth/oauth/device-code.ts	read	RFC 8628 device-code poller: honors the server's interval, applies the +5s slow_down rule, and reports a distinct message for a timeout caused by slow_down (WSL/VM clock drift).
+packages/ai/src/auth/oauth/github-copilot.ts	read	GitHub Copilot device-code OAuth plus a second-stage Copilot token exchange, per-account model catalog parsing with a picker/policy fallback, and model enablement through the /models/{id}/policy endpoint; toAuth() derives the proxy base URL from the token.
+packages/ai/src/auth/oauth/kimi-coding.ts	read	Kimi Code device-code OAuth against auth.kimi.com with a host override env var, trusted-http verification URIs, and a refresh path with three retries. Read lines 1-120 of 296; the token/refresh tail was sampled.
+packages/ai/src/auth/oauth/load.ts	read	Loaders for every OAuth flow through a variable specifier, with registerBundledOAuthFlowLoaders() as the escape hatch for a standalone Bun binary.
+packages/ai/src/auth/oauth/meta.ts	read	Meta Model API device-code flow where the identity token is not renewable: it is stored as `refresh` and exchanged for a short-lived minted key stored as `access`, so the standard OAuth refresh machinery re-mints the key. Read lines 1-120 of 208; the mint tail was sampled.
+packages/ai/src/auth/oauth/openai-chatgpt.ts	read	Sign in with ChatGPT flow using a dynamically registered client id (issued in the callback), a 3-minute expiry margin, and its own callback server. Read lines 1-140 of 309; the token-exchange tail was sampled.
+packages/ai/src/auth/oauth/openai-codex.ts	read	Codex ChatGPT OAuth with two methods (browser PKCE on port 1455 and headless device code), an account id extracted from the access-token JWT, and a parseAuthorizationInput that accepts a raw code, a URL, a fragment or a query string.
+packages/ai/src/auth/oauth/openrouter.ts	read	OpenRouter exchanges the code for a permanent user-controlled API key rather than a token pair, so refresh() is a no-op and the credential carries an infinite expiry.
+packages/ai/src/auth/oauth/pkce.ts	read	Web Crypto PKCE: 32 random bytes as the verifier, SHA-256 digest as the S256 challenge, base64url-encoded; works in Node 20+ and browsers.
+packages/ai/src/auth/oauth/radius.ts	read	Radius gateway OAuth: the authorization endpoint is discovered from GET /v1/oauth, then either a browser PKCE flow or a device-code grant; OAuth errors are mapped onto pending / slow_down / failed. Read lines 1-140 of 321; the browser and device tails were read.
+packages/ai/src/auth/oauth/xai.ts	read	xAI device-code OAuth with a strictly https validation of the verification URI so a hostile response cannot make the client open something else. Read lines 1-120 of 239; the token tail was sampled.
+packages/ai/src/auth/resolve.ts	read	Auth resolution for the whole Models collection: a stored credential owns the provider (no silent env fallback), OAuth refresh runs under the credential-store lock and survives cancellation once started, and tokens with under five minutes left are refreshed.
+packages/ai/src/auth/types.ts	read	The auth contract: CredentialStore (modify is the only write path), ApiKeyAuth, OAuthAuth with the refresh/toAuth split, AuthContext, and the AuthPrompt/AuthEvent interaction vocabulary.
+packages/ai/src/bedrock-provider.ts	read	Six-line static re-export of the bedrock stream/streamSimple functions for the Bun build that cannot follow the variable-specifier dynamic import.
+packages/ai/src/bun-oauth.ts	read	Registers the OAuth flows statically embedded in the standalone Bun binary via registerBundledOAuthFlowLoaders.
+packages/ai/src/cli.ts	read	Dev CLI (npx pi-ai login|list) that runs an OAuth login and writes the credential to auth.json; prompts are answered from a readline interface.
+packages/ai/src/compat.ts	read	Temporary compatibility entrypoint preserving the old global pi-ai API (global stream()/complete() with env key injection, the api-registry, the deprecated catalog getters); deleted with the coding-agent ModelManager migration.
+packages/ai/src/compat/extension-oauth-types.ts	read	Legacy extension OAuth callback surface (onAuth/onDeviceCode/onPrompt/onSelect) kept only for coding-agent extension compatibility.
+packages/ai/src/env-api-keys.ts	read	Provider→env-var map used for env discovery and status; reports only real API-key variables and returns the "<authenticated>" sentinel for ADC / Bedrock ambient credentials.
+packages/ai/src/image-models.ts	read	Compat reads of the generated image catalog (getImageModel / getImageProviders / getImageModels), each marked deprecated in favour of the Models collection.
+packages/ai/src/images-api-registry.ts	read	Registry mapping an image API id to its generateImages implementation; the wrapper asserts model.api matches the registered api.
+packages/ai/src/images.ts	read	Global generateImages() that dispatches on model.api through the images registry; auth must be passed explicitly, Models.generateImages() is the preferred route.
+packages/ai/src/index.ts	read	Side-effect-free public entrypoint: types, the event stream, transcript/validation/retry/overflow helpers, the auth contract and the Models collection; no generated catalogs, provider factories or OAuth implementations.
+packages/ai/src/legacy-api-aliases.ts	read	Deprecated flat aliases (streamAnthropic, streamSimpleOpenAICompletions, ...) each pointing at the current lazy wrapper, with a deprecation notice naming the replacement.
+packages/ai/src/model-catalog.ts	read	Types the generated catalog: flattens the per-API JSON groups into ChatModelCatalog / ImageModelCatalog / ClassifierModelCatalog keyed by model id, with the api inferred from the group.
+packages/ai/src/models-store.ts	read	ModelsStore contract for persisted dynamic catalogs (models / lastModified / checkedAt / etag) plus an in-memory implementation that structuredClones on read and write.
+packages/ai/src/models.generated.ts	read	Auto-generated aggregator: re-exports every provider's MODELS / IMAGE_MODELS / CLASSIFIER_MODELS from the per-provider .models.ts shards. Read the import block; the export block is the same pattern for 40 providers.
+packages/ai/src/models.ts	read	The core abstraction (1299 lines): the Provider and Models interfaces, ModelsImpl with generation-guarded provider refresh, auth application and header merge order, createProvider() with per-api dispatch, cost calculation with request-wide pricing tiers, and thinking-level clamping.
+packages/ai/src/oauth.ts	read	Ten-line type-only compatibility entrypoint re-exporting the legacy extension OAuth types.
+packages/ai/src/providers/all.ts	read	Registers every built-in provider factory and exposes typed reads of the generated catalog (getBuiltinModel / getBuiltinModels / getBuiltinProviders) plus the generation timestamp from the data manifest.
+packages/ai/src/providers/amazon-bedrock.models.ts	read	Generated shard: imports src/providers/data/amazon-bedrock.json and flattens it into the chat/image/classifier catalogs for the amazon-bedrock provider.
+packages/ai/src/providers/amazon-bedrock.ts	read	Bedrock provider with a custom ApiKeyAuth offering bearer-token / AWS-profile / credential-chain login and detecting six ambient AWS credential sources.
+packages/ai/src/providers/ant-ling.models.ts	read	Generated shard flattening data/ant-ling.json into the ant-ling catalogs.
+packages/ai/src/providers/ant-ling.ts	read	Ant Ling provider: an OpenAI-completions endpoint at api.ant-ling.com with the ANT_LING_API_KEY env key.
+packages/ai/src/providers/anthropic.models.ts	read	Generated shard flattening data/anthropic.json into the anthropic catalogs.
+packages/ai/src/providers/anthropic.ts	read	Anthropic provider whose ApiKeyAuth resolves a stored key, ANTHROPIC_AUTH_TOKEN (sent as Bearer), the OAuth token env, then workload-identity federation ids carried as provider env.
+packages/ai/src/providers/azure.models.ts	read	Generated shard flattening data/azure.json into the azure catalogs.
+packages/ai/src/providers/azure.ts	read	Azure provider: the endpoint and deployment are resolved per request inside lazyStream so an unconfigured endpoint errors on the stream instead of throwing out of stream().
+packages/ai/src/providers/baseten.models.ts	read	Generated shard flattening data/baseten.json into the baseten catalogs.
+packages/ai/src/providers/baseten.ts	read	Baseten provider: an OpenAI-completions endpoint at inference.baseten.co with the BASETEN_API_KEY env key.
+packages/ai/src/providers/cerebras.models.ts	read	Generated shard flattening data/cerebras.json into the cerebras catalogs.
+packages/ai/src/providers/cerebras.ts	read	Cerebras provider: an OpenAI-completions endpoint at api.cerebras.ai with the CEREBRAS_API_KEY env key.
+packages/ai/src/providers/cloudflare-ai-gateway.models.ts	read	Generated shard flattening data/cloudflare-ai-gateway.json into the cloudflare-ai-gateway catalogs.
+packages/ai/src/providers/cloudflare-ai-gateway.ts	read	Cloudflare AI Gateway provider: the api map is pinned to all three APIs because the upstream gateway catalog drops and restores workers-ai entries, which would otherwise reject the openai-completions entry.
+packages/ai/src/providers/cloudflare-auth.ts	read	Cloudflare api-key auth for Workers AI and the AI Gateway; the gateway variant sends cf-aig-authorization and nulls Authorization/x-api-key so a BYOK key cannot override the stored one.
+packages/ai/src/providers/cloudflare-stream.ts	read	Wraps an API implementation so {CLOUDFLARE_ACCOUNT_ID} and {CLOUDFLARE_GATEWAY_ID} placeholders in the base URL materialize from the resolved provider env before dispatch; same wrapper for classifiers.
+packages/ai/src/providers/cloudflare-workers-ai.models.ts	read	Generated shard flattening data/cloudflare-workers-ai.json into the Workers AI chat and classifier catalogs.
+packages/ai/src/providers/cloudflare-workers-ai.ts	read	Cloudflare Workers AI provider: OpenAI-completions chat plus the System One classifier, both through the placeholder-resolving wrapper.
+packages/ai/src/providers/compat-schema.ts	read	The compat-flag vocabulary (664 lines) as TypeBox schemas: per-API capability flags with descriptions, OpenRouter/Vercel routing preferences, and a merge that throws when a duplicate property has no explicit override.
+packages/ai/src/providers/data-json.d.ts	read	Ambient declaration for `import ... with { type: "json" }` so the generated catalog JSON files typecheck.
+packages/ai/src/providers/deepseek.models.ts	read	Generated shard flattening data/deepseek.json into the deepseek catalogs.
+packages/ai/src/providers/deepseek.ts	read	DeepSeek provider: an OpenAI-completions endpoint at api.deepseek.com with the DEEPSEEK_API_KEY env key.
+packages/ai/src/providers/faux.ts	read	A scriptable fake provider used by tests and the CLI: it replays queued AssistantMessages as a realistic delta stream, models prompt-cache read/write by measuring the common prompt prefix, and supports deferred responses. Read lines 1-499 of 727; the registration tail was sampled.
+packages/ai/src/providers/fireworks.models.ts	read	Generated shard flattening data/fireworks.json into the fireworks catalogs.
+packages/ai/src/providers/fireworks.ts	read	Fireworks provider: serves both anthropic-messages and openai-completions from api.fireworks.ai/inference.
+packages/ai/src/providers/github-copilot.models.ts	read	Generated shard flattening data/github-copilot.json into the github-copilot catalogs.
+packages/ai/src/providers/github-copilot.ts	read	GitHub Copilot provider with a filterModels hook that narrows the catalog to the model ids the signed-in account may use, read from the OAuth credential.
+packages/ai/src/providers/google-vertex.models.ts	read	Generated shard flattening data/google-vertex.json into the google-vertex catalogs.
+packages/ai/src/providers/google-vertex.ts	read	Google Vertex provider whose ApiKeyAuth accepts an API key, ADC, or a service-account file and requires project and location alongside the credential.
+packages/ai/src/providers/google.models.ts	read	Generated shard flattening data/google.json into the google catalogs.
+packages/ai/src/providers/google.ts	read	Google provider: the Gemini API at generativelanguage.googleapis.com/v1beta with the GEMINI_API_KEY env key.
+packages/ai/src/providers/groq.models.ts	read	Generated shard flattening data/groq.json into the groq catalogs.
+packages/ai/src/providers/groq.ts	read	Groq provider: an OpenAI-completions endpoint at api.groq.com/openai/v1 with the GROQ_API_KEY env key.
+packages/ai/src/providers/huggingface.models.ts	read	Generated shard flattening data/huggingface.json into the huggingface catalogs.
+packages/ai/src/providers/huggingface.ts	read	Hugging Face provider: the router endpoint at router.huggingface.co/v1 with HF_TOKEN as the key.
+packages/ai/src/providers/images/register-builtins.ts	read	Registers the built-in image APIs (currently only openrouter-images) into the images registry; the OpenRouter implementation is loaded lazily and a load failure becomes an error image result.
+packages/ai/src/providers/kimi-coding.models.ts	read	Generated shard flattening data/kimi-coding.json into the kimi-coding catalogs.
+packages/ai/src/providers/kimi-coding.ts	read	Kimi For Coding provider with both an API key and the Kimi Code subscription OAuth.
+packages/ai/src/providers/meta.models.ts	read	Generated shard flattening data/meta.json into the meta catalogs.
+packages/ai/src/providers/meta.ts	read	Meta provider: OpenAI Responses at api.meta.ai/v1 with an API key or the Meta (Muse subscription) OAuth.
+packages/ai/src/providers/minimax-cn.models.ts	read	Generated shard flattening data/minimax-cn.json into the minimax-cn catalogs.
+packages/ai/src/providers/minimax-cn.ts	read	MiniMax CN provider: the Anthropic-compatible endpoint at api.minimaxi.com/anthropic.
+packages/ai/src/providers/minimax.models.ts	read	Generated shard flattening data/minimax.json into the minimax catalogs.
+packages/ai/src/providers/minimax.ts	read	MiniMax provider: the Anthropic-compatible endpoint at api.minimax.io/anthropic.
+packages/ai/src/providers/mistral.models.ts	read	Generated shard flattening data/mistral.json into the mistral catalogs.
+packages/ai/src/providers/mistral.ts	read	Mistral provider: the native mistral-conversations API at api.mistral.ai.
+packages/ai/src/providers/model-schema.ts	read	TypeBox schemas for the catalog fields: thinking levels, input modalities, cache retention, prompt-cache lifetimes, per-Million cost rates with request-wide tiers, and the image input limits (resize profile, max per message/request).
+packages/ai/src/providers/moonshotai-cn.models.ts	read	Generated shard flattening data/moonshotai-cn.json into the moonshotai-cn catalogs.
+packages/ai/src/providers/moonshotai-cn.ts	read	Moonshot AI CN provider: an OpenAI-completions endpoint at api.moonshot.cn/v1 sharing the MOONSHOT_API_KEY env name.
+packages/ai/src/providers/moonshotai.models.ts	read	Generated shard flattening data/moonshotai.json into the moonshotai catalogs.
+packages/ai/src/providers/moonshotai.ts	read	Moonshot AI provider: an OpenAI-completions endpoint at api.moonshot.ai/v1.
+packages/ai/src/providers/nvidia.models.ts	read	Generated shard flattening data/nvidia.json into the nvidia catalogs.
+packages/ai/src/providers/nvidia.ts	read	NVIDIA provider: the NIM endpoint at integrate.api.nvidia.com/v1 with the NVIDIA_API_KEY env key.
+packages/ai/src/providers/openai-codex.models.ts	read	Generated shard flattening data/openai-codex.json into the openai-codex catalogs.
+packages/ai/src/providers/openai-codex.ts	read	OpenAI Codex (legacy) provider: OAuth only, baseUrl chatgpt.com/backend-api, served by the openai-codex-responses adapter.
+packages/ai/src/providers/openai.models.ts	read	Generated shard flattening data/openai.json into the openai chat, image and classifier catalogs.
+packages/ai/src/providers/openai.ts	read	OpenAI provider: the Responses API plus the Decisions classifier, with filterAllModels dropping classifiers for a ChatGPT subscription credential because that route rejects those tokens.
+packages/ai/src/providers/opencode-go.models.ts	read	Generated shard flattening data/opencode-go.json into the opencode-go catalogs.
+packages/ai/src/providers/opencode-go.ts	read	OpenCode Go provider: four wire APIs all wrapped with the OpenCode per-conversation session header.
+packages/ai/src/providers/opencode-headers.ts	read	Adds OpenCode's required x-opencode-session routing header from options.sessionId before dispatch, without overwriting a caller-supplied one.
+packages/ai/src/providers/opencode.models.ts	read	Generated shard flattening data/opencode.json into the opencode catalogs.
+packages/ai/src/providers/opencode.ts	read	OpenCode Zen provider: four wire APIs all wrapped with the session header, plus the System One classifier at /zen/v1/systemone.
+packages/ai/src/providers/openrouter-api.ts	read	Converts OpenRouter's $/token pricing to pi's $/1M rates; prompt-length overrides become request-wide tiers and time-of-day overrides are dropped because ModelCost cannot express them.
+packages/ai/src/providers/openrouter.models.ts	read	Generated shard flattening data/openrouter.json into the openrouter chat, image and classifier catalogs.
+packages/ai/src/providers/openrouter.ts	read	OpenRouter provider: two chat APIs plus images and classifiers, and personalizeOpenRouterCatalog() that narrows the catalog to what the key may use using GET /models/user.
+packages/ai/src/providers/qwen-token-plan-cn.models.ts	read	Generated shard flattening data/qwen-token-plan-cn.json into the qwen-token-plan-cn catalogs.
+packages/ai/src/providers/qwen-token-plan-cn.ts	read	Qwen Token Plan CN provider: the Aliyun compatible-mode endpoint in cn-beijing.
+packages/ai/src/providers/qwen-token-plan-individual.models.ts	read	Generated shard flattening data/qwen-token-plan-individual.json into the qwen-token-plan-individual catalogs.
+packages/ai/src/providers/qwen-token-plan-individual.ts	read	Qwen Token Plan Individual provider: the same ap-southeast-1 compatible-mode endpoint as the plan provider but a separate model list.
+packages/ai/src/providers/qwen-token-plan.models.ts	read	Generated shard flattening data/qwen-token-plan.json into the qwen-token-plan catalogs.
+packages/ai/src/providers/qwen-token-plan.ts	read	Qwen Token Plan provider: the Aliyun compatible-mode endpoint in ap-southeast-1.
+packages/ai/src/providers/radius-config.ts	read	Radius gateway config: normalizes the gateway URL, validates the /v1/config payload entry by entry, and turns it into pi-messages models; a 512-char cap keeps the error body small.
+packages/ai/src/providers/radius.models.ts	read	Generated shard flattening data/radius.json into the radius catalogs.
+packages/ai/src/providers/radius.ts	read	Radius provider: a hand-written Provider (not createProvider) whose refreshModels restores the stored catalog, imports the legacy credential-embedded catalog, then fetches /v1/config; the dynamic catalog replaces the shipped baseline once known.
+packages/ai/src/providers/together.models.ts	read	Generated shard flattening data/together.json into the together catalogs.
+packages/ai/src/providers/together.ts	read	Together provider: an OpenAI-completions endpoint at api.together.ai/v1.
+packages/ai/src/providers/typesafe.models.ts	read	Generated shard flattening data/typesafe.json into the typesafe catalogs.
+packages/ai/src/providers/typesafe.ts	read	TypeSafe provider: classifier-only, exposing the typesafe-system-one API and no chat implementation.
+packages/ai/src/providers/vercel-ai-gateway.models.ts	read	Generated shard flattening data/vercel-ai-gateway.json into the vercel-ai-gateway catalogs.
+packages/ai/src/providers/vercel-ai-gateway.ts	read	Vercel AI Gateway provider: anthropic-messages chat plus the TypeSafe System One classifier at /typesafe/v1/systemone.
+packages/ai/src/providers/xai.models.ts	read	Generated shard flattening data/xai.json into the xai catalogs.
+packages/ai/src/providers/xai.ts	read	xAI provider: OpenAI Responses at api.x.ai/v1 with an API key or the SuperGrok/X Premium subscription OAuth.
+packages/ai/src/providers/xiaomi-token-plan-ams.models.ts	read	Generated shard flattening data/xiaomi-token-plan-ams.json into the xiaomi-token-plan-ams catalogs.
+packages/ai/src/providers/xiaomi-token-plan-ams.ts	read	Xiaomi Token Plan AMS provider: the token-plan-ams.xiaomimimo.com compatible-mode endpoint.
+packages/ai/src/providers/xiaomi-token-plan-cn.models.ts	read	Generated shard flattening data/xiaomi-token-plan-cn.json into the xiaomi-token-plan-cn catalogs.
+packages/ai/src/providers/xiaomi-token-plan-cn.ts	read	Xiaomi Token Plan CN provider: the token-plan-cn.xiaomimimo.com compatible-mode endpoint.
+packages/ai/src/providers/xiaomi-token-plan-sgp.models.ts	read	Generated shard flattening data/xiaomi-token-plan-sgp.json into the xiaomi-token-plan-sgp catalogs.
+packages/ai/src/providers/xiaomi-token-plan-sgp.ts	read	Xiaomi Token Plan SGP provider: the token-plan-sgp.xiaomimimo.com compatible-mode endpoint.
+packages/ai/src/providers/xiaomi.models.ts	read	Generated shard flattening data/xiaomi.json into the xiaomi catalogs.
+packages/ai/src/providers/xiaomi.ts	read	Xiaomi provider: the MiMo compatible-mode endpoint at api.xiaomimimo.com/v1.
+packages/ai/src/providers/zai-coding-cn.models.ts	read	Generated shard flattening data/zai-coding-cn.json into the zai-coding-cn catalogs.
+packages/ai/src/providers/zai-coding-cn.ts	read	Z.AI Coding CN provider: the open.bigmodel.cn coding paas endpoint.
+packages/ai/src/providers/zai.models.ts	read	Generated shard flattening data/zai.json into the zai catalogs.
+packages/ai/src/providers/zai.ts	read	Z.AI provider: the api.z.ai coding paas endpoint.
+packages/ai/src/session-resources.ts	read	Registry of per-session cleanup callbacks (used by the Codex WebSocket cache) that aggregates failures into one AggregateError.
+packages/ai/src/telemetry.ts	read	Declares the pi.ai.request / pi.ai.poll telemetry schema and observeModelRequest(), which turns one streamed response into a span plus duration, first-chunk, token and cost metrics; content is never recorded, only block character counts.
+packages/ai/src/types.ts	read	The wire-neutral type vocabulary (908 lines): Message / ContentBlock / ToolCall / Usage / StopReason, the SystemMessage section and tool-delta semantics, the AssistantMessageEvent protocol, and the Model / ImageModel / ClassifierModel catalog shapes.
+packages/ai/src/utils/abort-signals.ts	read	combineAbortSignals() merges several signals into one and returns a cleanup function that removes every listener.
+packages/ai/src/utils/abort.ts	read	operationSignal() gives optional public signals a non-aborted default; raceWithAbortSignal() stops waiting on abort while still observing the abandoned promise so a later rejection is always handled.
+packages/ai/src/utils/diagnostics.ts	read	Small helpers for the redacted diagnostics array carried on AssistantMessage: formatThrownValue, extractDiagnosticError and appendAssistantMessageDiagnostic.
+packages/ai/src/utils/error-body.ts	read	Normalizes provider HTTP errors across SDK shapes (Mistral statusCode/body, openai status/error, Bedrock $metadata/$response): extracts status and body, refuses to treat a class instance as a body, and composes a display string without double-printing.
+packages/ai/src/utils/estimate.ts	read	Context-token estimation: the last usable assistant usage is the anchor and only the trailing messages are estimated; a message newer than the usage (a compaction summary) invalidates it.
+packages/ai/src/utils/event-stream.ts	read	EventStream is a FIFO queue with an async iterator and a final-result promise; AssistantMessageEventStream adds monotonic durationMs to the terminal message unless it predates the stream.
+packages/ai/src/utils/hash.ts	read	shortHash is a two-lane FNV-style hash producing a short base36 string, used to shorten tool-call and item ids that exceed provider limits.
+packages/ai/src/utils/headers.ts	read	headersToRecord and providerHeadersToRecord; the latter merges header sources case-insensitively and treats a null value as a suppression of that default.
+packages/ai/src/utils/identity.ts	read	ClientIdentity: the User-Agent mode and the provider attribution headers (OpenRouter HTTP-Referer / title / categories, NVIDIA invoke-origin, OpenCode client), plus withClientIdentity() which wraps a Models collection with a default identity.
+packages/ai/src/utils/json-parse.ts	read	parseToolCallArguments never keeps a partial prefix: malformed arguments become {} plus an argumentsError describing the problem; parseStreamingJson falls back to partial-json; repairJson escapes raw control characters and doubles invalid backslashes.
+packages/ai/src/utils/model-operations.ts	read	Model-type helpers: models without `type` are chat models, plus the assert* functions and the error-result builders used by the never-rejecting image and classifier paths.
+packages/ai/src/utils/models-error.ts	read	ModelsError with a code (model_source / model_validation / provider / stream / auth / oauth); the cause detail is folded into the message because callers surface error.message only.
+packages/ai/src/utils/node-http-proxy.ts	read	Resolves an HTTP/HTTPS proxy for a target URL with full no_proxy parsing (wildcards, ports, CIDR-free host suffixes); SOCKS and PAC URLs are refused with an explicit message.
+packages/ai/src/utils/oauth-page.ts	read	Self-contained dark-themed success/failure HTML for the OAuth callback page, with every interpolated value HTML-escaped.
+packages/ai/src/utils/overflow.ts	read	Context-overflow detection across ~25 provider error shapes, with exclusions for throttling/rate-limit text, plus silent-overflow (usage.input > contextWindow) and length-stop-with-zero-output detection and a recoverable-length predicate.
+packages/ai/src/utils/provider-env.ts	read	Provider env lookup order: scoped overrides, then process.env, then a /proc/self/environ fallback for Bun binaries whose process.env is empty inside Linux sandboxes.
+packages/ai/src/utils/provider-retry.ts	read	Reproduces the OpenAI/Anthropic SDK retry policy with an interruptible sleep; a server-requested delay above maxRetryDelayMs fails immediately instead of being absorbed, and x-should-retry overrides the status-based decision.
+packages/ai/src/utils/retry.ts	read	Two retry layers: the provider-level retry with the pinned status set and the assistant-message retry classifier, whose non-retryable list keeps quota and billing exhaustion from being retried while transient transport text is retried.
+packages/ai/src/utils/sanitize-unicode.ts	read	Removes unpaired UTF-16 surrogates, which otherwise cause JSON serialization errors at several providers, while preserving correctly paired emoji.
+packages/ai/src/utils/sleep.ts	read	A 14-line abortable sleep that rejects with signal.reason.
+packages/ai/src/utils/text.ts	read	contentText and the system-message renderers: getSystemMessageText joins content and sections; renderSystemMessageUpdate frames a later system message by section name so the model can relate it to the original.
+packages/ai/src/utils/transcript.ts	read	The transcript algebra (263 lines): normalizeContext produces the branded TranscriptContext, system messages replay into one prompt with named sections and a tool set, and resolveTranscriptTools splits tool declarations per transport capability (none / additions / changes).
+packages/ai/src/utils/typebox-helpers.ts	read	StringEnum builds a plain string-enum JSON schema for providers that reject anyOf/const.
+packages/ai/src/utils/uuid.ts	read	uuidv7: a time-ordered id with a monotonic timestamp guard and a 41-bit sequence, so ids sort by creation time.
+packages/ai/src/utils/version.ts	read	Two-line constant PI_AI_VERSION = "1.4.0", kept in sync with package.json by scripts/sync-versions.js.
+packages/ai/src/utils/validation.ts	read	Tool-argument validation: TypeBox compile cache, optional-null normalization, JSON-Schema coercion for non-TypeBox schemas, and an error message that reports the failing path and echoes the received arguments back to the model.

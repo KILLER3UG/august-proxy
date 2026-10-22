@@ -1,0 +1,144 @@
+src/components/connectors/header.cpp	read	Header strip: flips pin type between pinHeader and pinNormal, stacks pins behind the parent, and swaps the header_U/header_D pixmaps rotated to match the component rotation.
+src/components/connectors/header.h	read	Declares Header : ConnBase with the pointDown() accessor and an updatePins() override; no engine behaviour of its own.
+src/components/connectors/socket.cpp	read	Hot-pluggable socket: re-probes its mates every simulation frame via connectPins(false) and powers the circuit off when a mate is lost.
+src/components/connectors/socket.h	read	Declares Socket : ConnBase with updateStep() and connectPins(bool); the whole behaviour is the per-frame re-probe.
+src/components/connectors/tunnel.cpp	read	Named-net registry: static name-to-tunnel-list map, an m_blocked re-entrancy guard on group re-linking, HTML-entity decoding of names, and group show/hide/rename.
+src/components/connectors/tunnel.h	read	Declares Tunnel : Component with the static m_tunnels registry, m_tunUid, m_packed and the m_blocked recursion guard.
+src/components/logic/adc.cpp	read	Analog-to-digital converter: caches the m_ratio scaling of input voltage to a parallel output word and clamps to m_maxValue.
+src/components/logic/adc.h	read	Declares ADC : LogicComponent with maxVolt()/setMaxVolt()/setNumOutputs() and the protected m_ratio/m_maxValue pair.
+src/components/logic/bcdbase.cpp	read	Holds the 17-entry seven-segment bitmap table, decodes four BCD bits into an index, and accepts a CSV of custom segment masks.
+src/components/logic/bcdbase.h	read	Declares BcdBase : LogicComponent, shared base of BcdTo7S and SevenSegmentBCD, holding m_segments[17] and m_digit.
+src/components/logic/bcdto7s.cpp	read	BCD-to-seven-segment logic block with an optional inverted reset pin and an output-enable; propNotFound migrates the retired Reset_Inverted property.
+src/components/logic/bcdto7s.h	read	Declares BcdTo7S : BcdBase with the optional m_resetPin and the m_useReset flag.
+src/components/logic/bcdtodec.cpp	read	4-to-10/16 one-hot decoder publishing 1<<dec in a single output word, with a 16-bit mode switch.
+src/components/logic/bcdtodec.h	read	Declares BcdToDec : LogicComponent with the _16_Bits switch that selects 10 or 16 outputs.
+src/components/logic/bincounter.cpp	read	Configurable up/down binary counter with parallel load, RCO/RBO and bidirectional mode; the control pins keep fixed ids above the data pins.
+src/components/logic/bincounter.h	read	Declares BinCounter : LogicComponent with six optional control pins held separately from the data pins.
+src/components/logic/buffer.cpp	read	One-input buffer: inherits Gate's default calcOutput, adds a small-symbol variant that repositions the pins, and clears the OE pin label.
+src/components/logic/buffer.h	read	Declares Buffer : Gate with the m_small flag and a setTristate() override.
+src/components/logic/bus.cpp	read	Bus splitter exposing individual bit pins with a settable start bit; registerEnode maps the bus node onto the bit pin inside the line range.
+src/components/logic/bus.h	read	Declares Bus : Component + eElement with m_busPin0/m_busPin1 and the numLines/startBit properties.
+src/components/logic/counter.cpp	read	Simple up-counter with an optional Set pin; it wraps to zero past the top value and drives its single output bit high only at the top.
+src/components/logic/counter.h	read	Declares Counter : LogicComponent with m_Counter/m_TopValue and the optional m_setPin.
+src/components/logic/dac.cpp	read	Digital-to-analogue converter: accumulates the input word and applies the analogue voltage in runEvent() so the propagation delay is honoured.
+src/components/logic/dac.h	read	Declares DAC : LogicComponent with m_maxVolt/m_maxValue and the m_val accumulator.
+src/components/logic/dectobcd.cpp	read	10/16-to-4 priority encoder publishing index+1 in one output word, with a 16-bit mode.
+src/components/logic/dectobcd.h	read	Declares DecToBcd : LogicComponent with the _16_Bits switch and the m_bits input count.
+src/components/logic/demux.cpp	read	One-to-eight demultiplexer publishing 1<<address; setAddrBits hides and disconnects surplus pins and resizes the symbol from the address size.
+src/components/logic/demux.h	read	Declares Demux : LogicComponent with a trapezoidal shape() override and the address-size property.
+src/components/logic/dynamic_memory.cpp	read	DRAM with RAS/CAS/WE/OE, a multiplexed row/column address, per-row refresh timestamps and a refresh-error flag.
+src/components/logic/dynamic_memory.h	read	Declares DynamicMemory : LogicComponent + MemData with the RAM vector, the refresh table and the RAS/CAS/WE/OE pins.
+src/components/logic/flipflopbase.cpp	read	Shared flip-flop base: set/reset override the clock, stamp() randomises the initial Q, and propNotFound migrates the old invert properties.
+src/components/logic/flipflopbase.h	read	Declares FlipFlopBase : LogicComponent with the virtual calcOutput() and the packed Q/!Q output-word convention.
+src/components/logic/flipflopd.cpp	read	D flip-flop whose entire behaviour is one line in calcOutput(), with the pins declared by the compact init() string DSL.
+src/components/logic/flipflopd.h	read	Declares FlipFlopD : FlipFlopBase overriding only calcOutput().
+src/components/logic/flipflopjk.cpp	read	JK flip-flop using the characteristic equation (J&&!Q)||(!K&&Q) evaluated against the current output pin state.
+src/components/logic/flipflopjk.h	read	Declares FlipFlopJK : FlipFlopBase overriding only calcOutput().
+src/components/logic/flipfloprs.cpp	read	Clocked RS flip-flop overriding voltChanged() rather than calcOutput(); it removes the inherited UseRS property.
+src/components/logic/flipfloprs.h	read	Declares FlipFlopRS : FlipFlopBase overriding voltChanged().
+src/components/logic/flipflopt.cpp	read	T flip-flop toggling by reading the !Q output pin; T low leaves the output word untouched so the part holds its state.
+src/components/logic/flipflopt.h	read	Declares FlipFlopT : FlipFlopBase overriding only calcOutput().
+src/components/logic/fulladder.cpp	read	N-bit ripple adder; the carry-out is relocated into bit 0 of the same output word by a shift.
+src/components/logic/fulladder.h	read	Declares FullAdder : IoComponent + eElement with a getPin() override that maps the legacy pin names.
+src/components/logic/function.cpp	read	Scriptable combinational block: registers an AngelScript object type, generates the script from the pin list and the per-output expressions, and rewrites C-style operators to AngelScript's.
+src/components/logic/function.h	read	Declares Function : IoComponent + ScriptBase with one expression per output pin and a per-output editor button.
+src/components/logic/gate.cpp	read	Gate base: counts the high inputs and passes the COUNT to a virtual calcOutput(int), which is the whole family abstraction.
+src/components/logic/gate.h	read	Declares Gate : LogicComponent with the virtual calcOutput(int inputs) and the m_path geometry.
+src/components/logic/gate_and.cpp	read	AND gate: inherits the default calcOutput unchanged and only overrides updatePath() to draw the D shape.
+src/components/logic/gate_and.h	read	Declares AndGate : Gate overriding only updatePath().
+src/components/logic/gate_or.cpp	read	OR gate: calcOutput is a single comparison (inputs > 0) and updatePath draws the concave shape.
+src/components/logic/gate_or.h	read	Declares OrGate : Gate overriding calcOutput() and updatePath().
+src/components/logic/gate_xor.cpp	read	XOR gate: calcOutput is inputs == 1; the extra arc is painted separately so it stays out of the hit-test shape.
+src/components/logic/gate_xor.h	read	Declares XorGate : Gate overriding calcOutput(), updatePath() and paint().
+src/components/logic/i2cram.cpp	read	I2C RAM with a three-phase address/data decoder, a device address derived from the A0-A2 pins, and contents persisted only when Persistent is set.
+src/components/logic/i2cram.h	read	Declares I2CRam : IoComponent + TwiModule + MemData with the m_phase state machine.
+src/components/logic/i2ctoparallel.cpp	read	I2C-to-8-bit-port expander with an open-collector active-low interrupt and a port-value reference used to re-arm the interrupt.
+src/components/logic/i2ctoparallel.h	read	Declares I2CToParallel : IoComponent + TwiModule with the interrupt pin and eight open-collector outputs.
+src/components/logic/latchd.cpp	read	N-bit D latch whose trigger type is a property; updateSize() grows the symbol by one row per enabled control pin.
+src/components/logic/latchd.h	read	Declares LatchD : LogicComponent with the channel count, an optional reset pin and setTrigger()/setTristate() overrides.
+src/components/logic/lm555.cpp	read	555 timer built from three real eResistors plus comparators; the discharge pin is a switchable 1-ohm resistor and the control pin gets a fallback node.
+src/components/logic/lm555.h	read	Declares Lm555 : Component + eElement owning the internal resistors, the ePins, the threshold eNode and the propagation delay.
+src/components/logic/magnitudecomp.cpp	read	N-bit magnitude comparator whose equality branch reproduces the 7485's non-standard cascade-input behaviour.
+src/components/logic/magnitudecomp.h	read	Declares MagnitudeComp : IoComponent + eElement with the settable bit width.
+src/components/logic/memory.cpp	read	RAM/ROM with CS/WE/OE, bidirectional data pins and a synchronous-mode gate that only acts on a CS or WE change.
+src/components/logic/memory.h	read	Declares Memory : IoComponent + eElement + MemData with the RAM vector and the CS/WE/OE pins.
+src/components/logic/mux.cpp	read	Eight-to-one multiplexer publishing Y and !Y as bits 0 and 1 of one output word; setAddrBits disconnects the unused data pins.
+src/components/logic/mux.h	read	Declares Mux : LogicComponent with a trapezoidal shape() override and the address-size property.
+src/components/logic/sevensegment_bcd.cpp	read	Graphical seven-segment display drawing each segment from the bitmap; setLinkedValue reads index 0 as a digit and index 1 as a raw segment mask.
+src/components/logic/sevensegment_bcd.h	read	Declares SevenSegmentBCD : BcdBase with optional enable and dot pins and setLinkedTo/setLinkedValue overrides.
+src/components/logic/shiftreg.cpp	read	Shift register with parallel load and bidirectional shift; the select pin is inverted and the word is masked to the register width.
+src/components/logic/shiftreg.h	read	Declares ShiftReg : LogicComponent with the six control pins held outside the general input array.
+src/components/meters/ampmeter.cpp	read	Ammeter with 1 microohm series resistance that republishes the reading on the meter's own source pin.
+src/components/meters/ampmeter.h	read	Declares Amperimeter : Meter overriding updateStep() to publish the current.
+src/components/meters/freqmeter.cpp	read	Frequency meter measuring the period between successive maxima, with a wave-lost timeout expressed in simulation time.
+src/components/meters/freqmeter.h	read	Declares FreqMeter : Component + eElement with the hysteresis filter, the period counters and the canvas display.
+src/components/meters/lachannel.cpp	read	Logic analyzer channel: circular value/time buffers, two-threshold hysteresis, and bus values reconstructed from the per-bit eNodes.
+src/components/meters/lachannel.h	read	Declares LaChannel : DataChannel, a friend of LAnalizer, with the bus bit-index to eNode map.
+src/components/meters/logicanalizer.cpp	read	Eight-channel logic analyzer that can probe a named tunnel when a pin is unconnected and exports a VCD-style file with $var and $dumpvars.
+src/components/meters/logicanalizer.h	read	Declares LAnalizer : PlotBase with the rising/falling thresholds, the trigger stability counter and the two widgets.
+src/components/meters/meter.cpp	read	Meter base: an eResistor with a third source pin that republishes the reading; formats the value and flags an out-of-range reading as crashed.
+src/components/meters/meter.h	read	Declares Meter : Component + eResistor with the unit, the display text item and the output pin.
+src/components/meters/oscope.cpp	read	Four-channel scope with a shared ground pin, a tunnel fallback for unconnected channels, even-cycle trigger centring and canvas/floating-window modes.
+src/components/meters/oscope.h	read	Declares Oscope : PlotBase with per-channel time and volt position arrays.
+src/components/meters/oscopechannel.cpp	read	Scope channel measuring the envelope, amplitude and period; multiple pin changes within one simulation step collapse into a single sample.
+src/components/meters/oscopechannel.h	read	Declares OscopeChannel : DataChannel with the min/max/mid envelope and the period counters.
+src/components/meters/probe.cpp	read	Non-invasive voltage probe: when unconnected it reads the voltage of whatever Pin or ConnectorLine is geometrically underneath it.
+src/components/meters/probe.h	read	Declares Probe : Component + eElement with a threshold, a breakpoint mode and 45-degree rotation overrides.
+src/components/meters/voltmeter.cpp	read	Voltmeter modelled as zero admittance, measuring differentially across its own two ePins.
+src/components/meters/voltmeter.h	read	Declares Voltmeter : Meter overriding updateStep() to publish the differential voltage.
+src/components/micro/dht22.h	read	Declares Dht22 : Component + eElement with the temperature/humidity properties and the protocol state-machine fields.
+src/components/micro/dht22.cpp	read	DHT11/DHT22 sensor implementing the real handshake and 40-bit frame with 27 and 70 microsecond bit timings scheduled in simulation time.
+src/components/micro/ds1307.h	read	Declares DS1307 : Component + TwiModule with the 64-byte register array and the hand-written BCD helpers.
+src/components/micro/ds1307.cpp	read	I2C real-time clock delegating the time keeping to RtClock and mapping the DS1307 register layout onto the I2C byte handlers.
+src/components/micro/ds1621.h	read	Declares DS1621 : IoComponent + TwiModule with the two-byte temperature and threshold registers.
+src/components/micro/ds1621.cpp	read	I2C thermometer whose conversion takes 750 ms of simulated time and whose alarm polarity is set by the config register.
+src/components/micro/ds18b20.h	read	Declares Ds18b20 : Component + OneWire with the dsCommand_t enumeration of the six 1-Wire function commands.
+src/components/micro/ds18b20.cpp	read	1-Wire thermometer with a CRC8 scratchpad, a ROM family code of 0x28 and a resolution-dependent conversion busy time.
+src/components/micro/esp01.h	read	Declares Esp01 : Component + UsartModule + eElement with the espAction_t deferred-action enum and the TCP socket map.
+src/components/micro/esp01.cpp	read	ESP-01 AT-command interpreter that opens real QTcpSocket connections and drips its replies out one byte at a time.
+src/components/micro/ky023.h	read	Declares KY023 : Component + eElement wrapping a joystick widget plus a push switch.
+src/components/micro/ky023.cpp	read	Dual-axis joystick converting the widget position to two output voltages; the push switch is modelled by changing the output impedance.
+src/components/micro/ky040.h	read	Declares KY040 : Component + eElement with the two quadrature phase counters and the detent count.
+src/components/micro/ky040.cpp	read	Rotary encoder decoding true quadrature from two counters ten apart, with explicit dial wrap-around compensation before differencing.
+src/components/micro/rtclock.h	read	Declares RtClock : eElement with the current time and the square-wave divider state; the output pin is supplied by the owner.
+src/components/micro/rtclock.cpp	read	Self-rearming 32768 Hz clock that counts seconds and toggles the output only at divisors of 32768.
+src/components/micro/sdcard.h	read	Declares SdCard : Component + SpiModule with the canned CSD/CID/SCR/OCR/status blobs and the CRC7/CRC16 helpers.
+src/components/micro/sdcard.cpp	read	SD card in SPI mode backed by a real disk image: six-state command decoder, CRC7 on commands, CRC16 on data blocks and a ten-transaction boot delay.
+src/components/micro/serialport.h	read	Declares SerialPort : Component + UsartModule + eElement wrapping a QSerialPort with queued in and out byte buffers.
+src/components/micro/serialport.cpp	read	Serial-port bridge that drains the OS port in the simulation update step and transmits into the circuit one byte per frame.
+src/components/micro/serialterm.h	read	Declares SerialTerm : Component + UsartModule + eElement owning a Terminal window and the open button.
+src/components/micro/serialterm.cpp	read	Serial terminal bridge feeding both the interactive terminal and the read-only serial monitor from the same USART.
+src/components/micro/sr04.h	read	Declares SR04 : Component + eElement with the slider-versus-analogue distance switch and the echo width.
+src/components/micro/sr04.cpp	read	Ultrasonic sensor computing the echo width from the speed of sound, clamped to the real 2 cm and 38 ms limits.
+src/components/micro/touchpad.h	read	Declares TouchPad : Component + eElement with the four leg resistors, the touch resistor and two internal eNodes.
+src/components/micro/touchpad.cpp	read	Resistive touchpad modelled as a four-resistor bridge whose leg resistances are set from the touch coordinates.
+src/components/micro/touchpadwidget.h	read	Declares TouchPadWidget : QWidget exposing the pointer position with -1 as the not-touching sentinel.
+src/components/micro/touchpadwidget.cpp	read	Mouse-capture widget; hover alone reads as a touch and a pointer leaving the widget resets to not-touching.
+src/components/subcircuits/board.h	read	Declares BoardSubc : SubCircuit with the attached-shield list and the parent-board pointer.
+src/components/subcircuits/board.cpp	read	Board subcircuit that refuses to become a logic symbol while shields are attached and serialises its shields before itself.
+src/components/subcircuits/chip.h	read	Declares Chip : Component + eElement with the package list, the pin map, the NC-pin list and the background data.
+src/components/subcircuits/chip.cpp	read	Generic packaged IC: parses package and pin descriptions out of the circuit file and reconciles pins by id across package changes.
+src/components/subcircuits/logicsubc.h	read	Declares LogicSubc : SubCircuit holding the thresholds, the impedances and the three timing values.
+src/components/subcircuits/logicsubc.cpp	read	Logic subcircuit that pushes its electrical contract down into every child by rewriting the children's property strings.
+src/components/subcircuits/module.h	read	Declares ModuleSubc : ShieldSubc with the z-order property that selects the attach target.
+src/components/subcircuits/module.cpp	read	Plug-in module that attaches to a colliding board by z-order and renames its tunnels per instance; carries a FIXME UNDOREDO marker.
+src/components/subcircuits/shield.h	read	Declares ShieldSubc : BoardSubc with the persisted board id and the attach position.
+src/components/subcircuits/shield.cpp	read	Shield attach/detach lifecycle: reparenting, tunnel renaming and remapping the persisted board id on reload.
+src/components/subcircuits/subcircuit.h	read	Declares SubCircuit : Chip with the inflated child list, the pin tunnels, the main-component map and the global/local device caches.
+src/components/subcircuits/subcircuit.cpp	read	Subcircuit as a nested document: searches four candidate files, re-inflates children with instanceId@uid mangling and saves per-instance main-component property overrides.
+src/components/switches/keypad.h	read	Declares KeyPad : Component + eElement composed of PushBase children, optional eDiode children and per-cell eNodes.
+src/components/switches/keypad.cpp	read	Matrix keypad whose optional diodes are real engine elements preventing ghosting; the whole matrix is rebuilt on any size change.
+src/components/switches/mech_contact.h	read	Declares MechContact : Component + eElement holding the pole and throw counts and the contact resistors.
+src/components/switches/mech_contact.cpp	read	Mechanical contact where closed means a 1e3 admittance on one resistor and open means 0, with complementary contacts for double throw.
+src/components/switches/push_base.h	read	Declares PushBase : SwitchBase with the pressed/released slots and the keyEvent hook.
+src/components/switches/push_base.cpp	read	Push button input handling shared by mouse and keyboard, with the normally-closed inversion applied in the handler.
+src/components/switches/push.h	read	Declares Push : PushBase overriding SetupSwitches() because a push button has no coil pins.
+src/components/switches/push.cpp	read	Momentary push button with its own pin and resistor construction and a closed/open drawing convention.
+src/components/switches/relay.h	read	Declares Relay : MechContact owning an Inductor child and separate pick-up and drop-out current thresholds.
+src/components/switches/relay.cpp	read	Relay with genuine hysteresis: picks up above IOn and drops out below IOff, with the coil as a real inductor child component.
+src/components/switches/switch_base.h	read	Declares SwitchBase : MechContact with the keyboard shortcut, the button proxy and the stored key-event connection handle.
+src/components/switches/switch_base.cpp	read	Toggling switch base that defers the contact update to updateStep() and unsubscribes from the global key signal in its destructor.
+src/components/switches/switch.h	read	Declares Switch : SwitchBase with the hidden Checked property and setLinkedValue() for external driving.
+src/components/switches/switch.cpp	read	Toggling switch that acts on key release and applies linked values immediately, bypassing the deferred update.
+src/components/switches/switchdip.h	read	Declares SwitchDip : Component + eElement holding the button list and the bit-mask state.
+src/components/switches/switchdip.cpp	read	DIP switch bank modelled by cross-assigning the two pins' eNodes and stamping an admittance from the bit mask; defaults to all switches on.

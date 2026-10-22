@@ -1,0 +1,139 @@
+packages/web/AGENTS.md	read	Single-rule package overlay: reject redirects on credential-bearing provider requests, with regression coverage proving the redirect target is never contacted.
+packages/web/README.i18n.yaml	read	Per-heading en/zh hash record for the web group README; regenerable via `pnpm run verify-translation-pairing --write`.
+packages/web/README.md	read	Package map for the seven-package web family: the ctx.web service, five provider backends, and the model-facing tool-web.
+packages/web/README.zh.md	read	Chinese mirror of the web group README; same seven-package table, same ctx-web key column.
+packages/web/tool-web/locale/en.json	read	Five-line locale stub: meta.title = "tool-web"; no other strings.
+packages/web/tool-web/locale/zh.json	read	Chinese locale stub: title "网页搜索与读取工具" plus a one-line description.
+packages/web/tool-web/package.json	read	Declares @deepseek-ai/dsh-tool-web; peer-deps on dsh-llm/dsh-system-prompt/dsh-tools/dsh-web, runtime deps turndown + @joplin/turndown-plugin-gfm.
+packages/web/tool-web/README.i18n.yaml	read	151-line per-heading en/zh hash record for tool-web README.md.
+packages/web/tool-web/README.md	read	Model Experience section per surface (system prompt, tool schemas, search result, fetch result, argument errors), each with token effect and KV-cache effect; plus known limits.
+packages/web/tool-web/README.zh.md	read	Chinese mirror of the tool-web README, including the identical three prompt-guidance strings and the KV-cache paragraphs.
+packages/web/tool-web/src/fetch.ts	read	web_fetch tool: turndown HTML→markdown with hidden/active-element stripping, a 512-level lexical nesting preflight, whole-output char cap, WeakMap render memo, and presentation meta.
+packages/web/tool-web/src/index.ts	read	Plugin entry: config schema (search/fetch toggles, result/query caps, per-tool timeout budgets, output cap), positive-integer validation, tool registration.
+packages/web/tool-web/src/search.ts	read	web_search tool: argument validation, concurrent multi-query fan-out with fused abort, round-robin merge, model-facing formatting, structured presentation meta.
+packages/web/tool-web/src/trust.ts	read	Seven-line module exporting EXTERNAL_WEB_CONTENT_NOTICE, the one untrusted-data label both web tools prepend.
+packages/web/tool-web/src/turndown-plugin-gfm.d.ts	read	Ambient module declaration for the untyped @joplin/turndown-plugin-gfm, declaring only the composite `gfm` plugin.
+packages/web/tool-web/tests/integration.spec.ts	read	Integration over the real fetch backend, real Exa provider, real seam, real tool registry and the timeout policy; asserts TOOL_TIMEOUT beats the provider backstop.
+packages/web/tool-web/tests/load-path.spec.ts	read	41-line guard: a namespace plugin must have no default export or `unwrapExports` collapses it and drops `inject`.
+packages/web/tool-web/tests/spill.spec.ts	read	Showcase: a large web_fetch result is auto-spilled by the generic spill stack, with no tool-specific spill code; the model sees a preview + locator.
+packages/web/tool-web/tests/tool-web.spec.ts	read	987-line suite covering search/fetch formatting, presentation meta round-trips, HTML conversion safety, config validation, scope-aware prompt guidance and the real registry execution path.
+packages/web/tool-web/tsconfig.json	read	Project references for tool-web: tools, system-prompt, timeout-policy, and the web seam.
+packages/web/web-deepseek-api/locale/en.json	read	Locale stub: meta.title = "web-deepseek-api".
+packages/web/web-deepseek-api/locale/zh.json	read	Chinese locale stub describing the DeepSeek Search/Fetch API providers.
+packages/web/web-deepseek-api/package.json	read	@deepseek-ai/dsh-web-deepseek-api; optional peer dep on dsh-deepseek-account, dev-deps on dsh-http-proxy and dsh-credentials-local.
+packages/web/web-deepseek-api/README.i18n.yaml	read	49-line per-heading en/zh hash record for the web-deepseek-api README.
+packages/web/web-deepseek-api/README.md	read	Documents the account-token vs API-key authentication split, the ori_question behaviour, the endpoint-guidance failure text, and that no retry or provider fallback occurs.
+packages/web/web-deepseek-api/README.zh.md	read	Chinese mirror of the web-deepseek-api README.
+packages/web/web-deepseek-api/src/fetch.ts	read	DeepSeekFetchApiProvider: one POST to `{baseURL}/fetch`, returns the API's Markdown as a text body with a synthetic HTTP 200.
+packages/web/web-deepseek-api/src/index.ts	read	Plugin entry: volatile config (apiKey, apiKeyEnv, baseURL, count, sendOriginalQuestion); registers both providers over one live settings section.
+packages/web/web-deepseek-api/src/search.ts	read	DeepSeekSearchApiProvider: one POST to `{baseURL}/search`, maps results[] into WebSearchSource, bounds `count` by the request's maxResults, and sends a 128-char ori_question.
+packages/web/web-deepseek-api/src/transport.ts	read	Shared auth/transport: account-token vs API-key headers, per-operation credential resolution under a signal, redirect rejection, and endpoint-recovery guidance text.
+packages/web/web-deepseek-api/tests/credentials.spec.ts	read	Proves the API key is re-resolved per request (a stored or rotated key needs no restart) and that an empty credential or env value counts as missing.
+packages/web/web-deepseek-api/tests/egress.spec.ts	read	40-line egress check: the Search API request goes through the installed HTTP proxy as an absolute-form REQ.
+packages/web/web-deepseek-api/tests/fetch.spec.ts	read	Fetch API contract: posts the url, returns Markdown as text, rejects malformed bodies, reports every non-2xx as a retrieval failure, and names the shared base in guidance.
+packages/web/web-deepseek-api/tests/redirect.spec.ts	read	Real-HTTP proof that `redirect: 'error'` blocks 301/302/303/307/308 before the Location target is contacted, contrasted with default fetch following a 307.
+packages/web/web-deepseek-api/tests/search.spec.ts	read	Search API contract: response mapping, availability predicates, ori_question derivation from the latest human prompt, and account-route authentication.
+packages/web/web-deepseek-api/tests/transport.spec.ts	read	313-line transport suite: account token precedence, 401 sign-in guidance, abort vs error classification, and credential-resolution failure mapping.
+packages/web/web-deepseek-api/tests/web-deepseek-api.e2e.ts	read	Real-API probe, self-skipping without DEEPSEEK_API_KEY and DEEPSEEK_SEARCH_API_TEST_BASE_URL.
+packages/web/web-deepseek-api/tsconfig.json	read	Project references for web-deepseek-api, including launch-environment, agent, session, credentials and http-proxy.
+packages/web/web-fetch-http/locale/en.json	read	Locale stub: meta.title = "web-fetch-http".
+packages/web/web-fetch-http/locale/zh.json	read	Chinese locale stub describing anonymous public-page fetching.
+packages/web/web-fetch-http/package.json	read	@deepseek-ai/dsh-web-fetch-http; runtime deps ipaddr.js and undici 8.11.2, peer deps dsh-timeout, dsh-web, dsh-http-proxy.
+packages/web/web-fetch-http/README.i18n.yaml	read	61-line per-heading en/zh hash record for the web-fetch-http README.
+packages/web/web-fetch-http/README.md	read	Documents the two-layer timeout (provider backstop vs tool-call budget), the transport guarantees, and the eight WebError codes.
+packages/web/web-fetch-http/README.zh.md	read	Chinese mirror of the web-fetch-http README.
+packages/web/web-fetch-http/src/index.ts	read	Plugin entry: config schema with safe defaults, positive-finite and non-negative-integer validation, Node timer-range check, and provider registration.
+packages/web/web-fetch-http/src/network.ts	read	Public-address resolution, DNS64/NAT64 prefix discovery, and the pinned undici lookup that serves only the validated answer set.
+packages/web/web-fetch-http/src/policy.ts	read	Network-free policy half: URL scheme/credential/length validation, same-origin comparison, content-type classification and charset decoding.
+packages/web/web-fetch-http/src/provider.ts	read	HttpFetchProvider: same-origin redirect following with re-validation, byte/char caps, charset decode, and abort-vs-timeout classification by signal reason.
+packages/web/web-fetch-http/tests/fetch-http.spec.ts	read	628-line suite: policy helpers, public-address acceptance table, NAT64 cases, byte/char caps, redirect budgets, body cancellation on error paths, and plugin config validation.
+packages/web/web-fetch-http/tests/proxy.spec.ts	read	Proves a proxied hop never resolves a public address, a non-proxied hop still does, and a private IP literal is refused even through a proxy.
+packages/web/web-fetch-http/tsconfig.json	read	Project references for web-fetch-http: timeout util, the web seam, and the http-proxy util.
+packages/web/web-search-deepseek/locale/en.json	read	Locale stub: meta.title = "web-search-deepseek".
+packages/web/web-search-deepseek/locale/zh.json	read	Chinese locale stub describing DeepSeek-backed web search.
+packages/web/web-search-deepseek/package.json	read	@deepseek-ai/dsh-web-search-deepseek; optional peer dep dsh-deepseek-account, dev-deps dsh-http-proxy and dsh-credentials-local.
+packages/web/web-search-deepseek/README.i18n.yaml	read	88-line per-heading en/zh hash record for the web-search-deepseek README.
+packages/web/web-search-deepseek/README.md	read	Documents the account-route authentication, the log-only request event, the structured-blocks-only rule, and the four known limits.
+packages/web/web-search-deepseek/README.zh.md	read	Chinese mirror of the web-search-deepseek README.
+packages/web/web-search-deepseek/src/index.ts	read	Plugin entry: volatile config, credential/environment resolution, `$DEEPSEEK_SEARCH_BASE_URL` fallback, and the `web/deepseek-search-llm-request` session-event hook.
+packages/web/web-search-deepseek/src/provider.ts	read	DeepSeekSearchProvider: one Messages call with the native web_search_20250305 tool, thinking disabled, strict block parsing, and citation-snippet joining by URL.
+packages/web/web-search-deepseek/src/types.ts	read	Provider-private Anthropic wire types: web_search_tool_result blocks, text-block citations, and the response/error envelopes.
+packages/web/web-search-deepseek/tests/deepseek.e2e.ts	read	Disabled real-API probe; its body stays because mocks cannot confirm the live wire shape.
+packages/web/web-search-deepseek/tests/deepseek.spec.ts	read	739-line suite: citation joining, strict-mode failures, account authentication, the mid-search settings-change snapshot, plugin registration and the Loader unwrap path.
+packages/web/web-search-deepseek/tests/egress.spec.ts	read	40-line egress check: the Messages request goes through the installed proxy as an absolute-form REQ.
+packages/web/web-search-deepseek/tests/redirect.spec.ts	read	Real-HTTP proof that a 3xx from the search endpoint is refused before the Location target is contacted.
+packages/web/web-search-deepseek/tests/settings.spec.ts	read	Proves a stored endpoint change is served by the next search without re-registering the provider.
+packages/web/web-search-deepseek/tsconfig.json	read	Project references for web-search-deepseek, including launch-environment, agent, session and credentials.
+packages/web/web-search-exa/package.json	read	@deepseek-ai/dsh-web-search-exa; peer dep dsh-launch-environment and dsh-web, dev-dep dsh-http-proxy; no locale files in `files`.
+packages/web/web-search-exa/README.i18n.yaml	read	61-line per-heading en/zh hash record for the web-search-exa README.
+packages/web/web-search-exa/README.md	read	Documents the portable-snippet-only and no-invented-answers rules and the three known limits, including error-shape-based abort classification.
+packages/web/web-search-exa/README.zh.md	read	Chinese mirror of the web-search-exa README.
+packages/web/web-search-exa/src/index.ts	read	Plugin entry: config schema plus `$EXA_API_KEY` fallback through the launch environment; registers the provider.
+packages/web/web-search-exa/src/provider.ts	read	ExaSearchProvider: POST `{baseURL}/search` with highlights; maps the first non-blank highlight to snippet and drops snippet-less results.
+packages/web/web-search-exa/src/types.ts	read	Exa wire types only — request, result, response and error envelopes; no runtime code.
+packages/web/web-search-exa/tests/egress.spec.ts	read	40-line egress check: the Exa search request goes through the installed proxy.
+packages/web/web-search-exa/tests/exa.e2e.ts	read	Real-API smoke that self-skips without $EXA_API_KEY.
+packages/web/web-search-exa/tests/exa.spec.ts	read	261-line suite: result mapping and drop rule, availability predicates, request mapping, abort/error classification and plugin registration.
+packages/web/web-search-exa/tsconfig.json	read	Project references for web-search-exa: launch-environment, the web seam and the http-proxy util.
+packages/web/web-search-perplexity/package.json	read	@deepseek-ai/dsh-web-search-perplexity; peer deps dsh-launch-environment and dsh-web, dev-dep dsh-http-proxy.
+packages/web/web-search-perplexity/README.i18n.yaml	read	82-line per-heading en/zh hash record for the web-search-perplexity README.
+packages/web/web-search-perplexity/README.md	read	Documents the trusted generated answer, structured-sources-win rule, and the URL-only citation fallback.
+packages/web/web-search-perplexity/README.zh.md	read	Chinese mirror of the web-search-perplexity README.
+packages/web/web-search-perplexity/src/index.ts	read	Plugin entry: config schema plus `$PERPLEXITY_API_KEY` fallback; registers the provider.
+packages/web/web-search-perplexity/src/provider.ts	read	PerplexitySearchProvider: POST `{baseURL}/chat/completions`, the generated answer becomes content, sources prefer search_results over citations.
+packages/web/web-search-perplexity/src/types.ts	read	Perplexity wire types only, including the optional `search_results` and `citations` citation shapes.
+packages/web/web-search-perplexity/tests/egress.spec.ts	read	40-line egress check: the Perplexity chat-completions request goes through the installed proxy.
+packages/web/web-search-perplexity/tests/perplexity.e2e.ts	read	Real-API smoke that self-skips without $PERPLEXITY_API_KEY.
+packages/web/web-search-perplexity/tests/perplexity.spec.ts	read	243-line suite: response mapping, availability, request mapping, error/abort classification and plugin registration.
+packages/web/web-search-perplexity/tsconfig.json	read	Project references for web-search-perplexity: launch-environment, the web seam and the http-proxy util.
+packages/web/web/locale/en.json	read	Locale stub: meta.title = "web".
+packages/web/web/locale/zh.json	read	Chinese locale stub: title "网页访问服务" plus a one-line description.
+packages/web/web/package.json	read	@deepseek-ai/dsh-web; peer deps dsh-llm and cordis, runtime dep schemastery; the seam package itself.
+packages/web/web/README.i18n.yaml	read	67-line per-heading en/zh hash record for the dsh-web README.
+packages/web/web/README.md	read	Documents the six provider-selection outcomes and the three design commitments (one seam, order-independent selection, the service owns the result bound).
+packages/web/web/README.zh.md	read	Chinese mirror of the dsh-web README, same selection table.
+packages/web/web/src/index.ts	read	WebRuntime service: two provider registries, execution-time order-independent selection, and the seam-owned maxResults truncation.
+packages/web/web/src/types.ts	read	Vocabulary: the closed WebFetchBody union, the WebSearch/WebFetch request-result pairs, and the open-coded WebError taxonomy.
+packages/web/web/tests/web.spec.ts	read	236-line suite for the seam: registration/disposal, the six selection outcomes, maxResults enforcement and a live-config change applied without remounting.
+packages/web/web/tsconfig.json	read	Project references for the web seam: cosmokit, cordis, schemastery and the llm package.
+packages/jobs/jobs-local/locale/en.json	read	Locale stub: meta.title = "jobs-local".
+packages/jobs/jobs-local/locale/zh.json	read	Chinese locale stub describing in-process background task management.
+packages/jobs/jobs-local/package.json	read	@deepseek-ai/dsh-jobs-local; peer deps dsh-agent, dsh-scope, dsh-jobs, dsh-timeout; dev-dep dsh-agent-loop-testkit.
+packages/jobs/jobs-local/README.i18n.yaml	read	70-line per-heading en/zh hash record for the jobs-local README.
+packages/jobs/jobs-local/README.md	read	Documents per-owner admission, the settlement/teardown order, the session timing records, and the three known limits including non-guaranteed final settlement persistence.
+packages/jobs/jobs-local/README.zh.md	read	Chinese mirror of the jobs-local README.
+packages/jobs/jobs-local/src/events.ts	read	JobEventHub: scope-layered routing for `{ owner }`, `{ owners: 'all' }` and `{ owners: 'scope' }` subscriptions with per-listener containment.
+packages/jobs/jobs-local/src/index.ts	read	LocalJobRegistry: admission, owner isolation, bounded ring, first-wins settlement, owner cleanup and non-deadlocking teardown.
+packages/jobs/jobs-local/src/pump.ts	read	startPump: registry-owned pull pump at a fixed cadence, one timer per job, final drain before settlement, per-source spill reporting.
+packages/jobs/jobs-local/src/ring.ts	read	OutputRing: absolute byte offsets, head eviction, UTF-8-safe tail trimming with a gap marker, and lossy-not-error reads.
+packages/jobs/jobs-local/tests/events.spec.ts	read	146-line suite: owner/all/scope delivery rules, listener containment, disposer and fiber-driven unregistration, layer lifetime.
+packages/jobs/jobs-local/tests/jobs.spec.ts	read	1659-line behaviour suite: admission limits, controller handshake, read/readAt cursor separation, kill/wait/remove semantics, owner isolation, teardown, ring retention and session lifecycle records.
+packages/jobs/jobs-local/tests/loader-composition.spec.ts	read	66-line real-Loader composition test proving the provider-owned admission config is applied from a Cordis row.
+packages/jobs/jobs-local/tests/pump.spec.ts	read	156-line pump suite: cadence, per-source offsets, gap marking, spill withdrawal, rejected settlement, and one-timer-per-job accounting.
+packages/jobs/jobs-local/tests/ring.spec.ts	read	65-line ring suite: byte offsets, foreign-offset reads, head eviction, UTF-8-safe oversized tail, and on-demand re-trim.
+packages/jobs/jobs-local/tsconfig.json	read	Project references for jobs-local: agent, scope, timeout util and the jobs seam.
+packages/jobs/jobs/README.i18n.yaml	read	61-line per-heading en/zh hash record for the dsh-jobs README.
+packages/jobs/jobs/README.md	read	Documents the registry contract, the ownership boundary, the controller requirement, and the five design commitments of the abstract seam.
+packages/jobs/jobs/README.zh.md	read	Chinese mirror of the dsh-jobs README.
+packages/jobs/jobs/package.json	read	@deepseek-ai/dsh-jobs; exports ./brand and ./view subpaths so browser programs avoid the agent dependency; optional peer dep dsh-workspace.
+packages/jobs/jobs/src/archive-admission.ts	read	installJobArchiveAdmission: reports the Session's running/stopping jobs as the `job` activity family and kills them with reason "session archived" on stop.
+packages/jobs/jobs/src/brand.ts	read	28-line leaf: the branded JobId type and its constructor, importable without the agent dependency.
+packages/jobs/jobs/src/index.ts	read	Abstract JobRegistry service: the contract in JSDoc, the abstract members, and a loud throw when the seam itself is loaded.
+packages/jobs/jobs/src/types.ts	read	Shared job vocabulary: JobSpec, JobHandle, JobHooks, JobOutcome, JobEvent, the read results, and the session-event declarations.
+packages/jobs/jobs/src/view.ts	read	Client-safe leaf: JobView, JobChunk, JobStatus and the merge-extensible JobKindMap, plus the workspace activity-kind merge.
+packages/jobs/jobs/tests/archive-admission.spec.ts	read	145-line suite driving the archive-admission listeners through the abstract list/kill alone, including a producer that refuses cancel.
+packages/jobs/jobs/tests/service.spec.ts	read	152-line seam suite: a stub subclass serves the API, the projection kind stays an open string, a second implementation throws, and the abstract seam fails at load.
+packages/jobs/jobs/tsconfig.json	read	Project references for dsh-jobs: brand util, agent, session and the workspace package.
+packages/jobs/README.i18n.yaml	read	25-line per-heading en/zh hash record for the jobs group README.
+packages/jobs/README.md	read	Package map for the three-package jobs family: the registry contract, the process-local storage, and the model-facing controls.
+packages/jobs/README.zh.md	read	Chinese mirror of the jobs group README.
+packages/jobs/tool-jobs/locale/en.json	read	Locale stub: meta.title = "tool-jobs".
+packages/jobs/tool-jobs/locale/zh.json	read	Chinese locale stub describing the background task tools.
+packages/jobs/tool-jobs/package.json	read	@deepseek-ai/dsh-tool-jobs; peer deps agent, llm, output-retention, system-prompt, jobs, tools.
+packages/jobs/tool-jobs/README.i18n.yaml	read	97-line per-heading en/zh hash record for the tool-jobs README.
+packages/jobs/tool-jobs/README.md	read	Documents the three tools, the two notice-delivery lanes, the wake budget, and the known limits (stranded notice, unrestored budget, single-consumer reads).
+packages/jobs/tool-jobs/README.zh.md	read	Chinese mirror of the tool-jobs README.
+packages/jobs/tool-jobs/src/index.ts	read	Plugin entry: job_output/job_list/job_kill registration, the settlement subscription with the wake budget, the model-kill set, and producer-owned output capping.
+packages/jobs/tool-jobs/src/render.ts	read	Model-facing rendering: the ownership-free public projection, the `[status: …]` line, and renderModelDelta's stdout / `[stderr]` / dropped-output notice.
+packages/jobs/tool-jobs/tests/tool-jobs.spec.ts	read	1237-line suite: tool rendering, output capping across policy outcomes, wait semantics, list/kill contracts, and every completion-notice delivery lane.
+packages/jobs/tool-jobs/tsconfig.json	read	Project references for tool-jobs: output-retention util, agent, system-prompt, tools and the jobs seam.

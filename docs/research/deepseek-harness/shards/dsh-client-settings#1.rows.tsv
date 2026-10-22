@@ -1,0 +1,233 @@
+packages/client/ui-settings-account/locale/en.json	read	Package locale metadata only (title ui-settings-account); real copy lives in code dictionaries.
+packages/client/ui-settings-account/locale/zh.json	read	Chinese package-locale metadata: title 账号设置界面, description 管理 DeepSeek 登录，并打开平台账单页面。
+packages/client/ui-settings-account/package.json	read	Account plugin manifest; dsh.client.inject lists api-remotes/locale/ui-chat/ui-layout/ui-settings/ui-theme; depends on big.js and schemastery.
+packages/client/ui-settings-account/README.i18n.yaml	read	Per-heading bilingual pairing hashes for README.md / README.zh.md.
+packages/client/ui-settings-account/README.md	read	Account package reference: login state, Platform billing, bonus notices, quota notice, shared native Platform view, Desktop onboarding; states Model Experience and KV Cache effect are None.
+packages/client/ui-settings-account/README.zh.md	read	Chinese mirror of the account README with the same normative claims (no polling of the bonus read, loopback-only Web sign-in).
+packages/client/ui-settings-account/src/client/account-avatar.ts	read	Shared single account-picture load; ignores the same URL, drops superseded callbacks via an image-identity guard, sets referrerPolicy no-referrer, and reports a rendered-image failure back into shared state.
+packages/client/ui-settings-account/src/client/account-refresh.ts	read	refreshAfterReturn awaits the pre-return read (swallowing its failure) and then requests a fresh snapshot.
+packages/client/ui-settings-account/src/client/AccountAvatar.module.css	read	One rule: a round, cropped avatar image filling its 24px/32px box.
+packages/client/ui-settings-account/src/client/AccountAvatar.tsx	read	Decorative avatar that renders the shared picture only when the shared load is ready, else the account icon.
+packages/client/ui-settings-account/src/client/AccountMenu.module.css	read	Launcher geometry (24px avatar, 44px row, 36x36 collapsed trigger) and the wider signed-out menu rows.
+packages/client/ui-settings-account/src/client/AccountMenu.tsx	read	Sidebar account launcher, menu rows, bonus-notice stack, sign-in and sign-out dialogs; a settingsOpen false-to-true edge is one Settings entry and re-reads once.
+packages/client/ui-settings-account/src/client/AccountNotice.module.css	read	Stack geometry: each deeper card sits 4px above the previous and narrows by the 272/280 ratio; the foreground alone sets the stack height.
+packages/client/ui-settings-account/src/client/AccountNotice.tsx	read	Visible notice stack; the display signal is a rAF followed by a setTimeout(0) plus a visible document, and the card measures no cover so it reports under an open overlay too.
+packages/client/ui-settings-account/src/client/AccountOnboarding.tsx	read	Credential-onboarding step: claims the onboarding flag while mounted and completes itself once the account reports credential-stored.
+packages/client/ui-settings-account/src/client/AccountPlatformHost.tsx	read	The single shell.overlay entry that renders the account feature's one native Platform page and notifies its owner with the exit reason.
+packages/client/ui-settings-account/src/client/AccountQuotaNotice.tsx	read	Account take-over of the frame-wide quota notice: waits for the first account snapshot, renders nothing while a native page shows, and calls keepOpen() before requesting the top-up page.
+packages/client/ui-settings-account/src/client/AccountSection.module.css	read	Account card material (0.5px settings-card stroke, --dsw-radius-xl), balance rows, the View-on-Platform link treatment and the signed-out layout.
+packages/client/ui-settings-account/src/client/AccountSection.tsx	read	Account settings page: identity card, separate recharge and granted-bonus rows, Usage/Top-up links, signed-out prompt; a failed wallet read stays usable as a Platform link.
+packages/client/ui-settings-account/src/client/assets.d.ts	read	Ambient declarations for *.webp and *.svg so the illustrations embed in the client bundle.
+packages/client/ui-settings-account/src/client/assets/onboarding-back.svg	read	Three-line Figma back-arrow glyph, used as a CSS mask on the onboarding Back button.
+packages/client/ui-settings-account/src/client/assets/onboarding-code.svg	read	40x40 Figma code/development glyph for the purpose card.
+packages/client/ui-settings-account/src/client/assets/onboarding-compact.svg	read	40x40 Figma exit-fullscreen glyph for the compact work-detail option.
+packages/client/ui-settings-account/src/client/assets/onboarding-detailed.svg	read	36x36 Figma browse-outline glyph for the detailed work-detail option.
+packages/client/ui-settings-account/src/client/assets/onboarding-office.svg	read	40x40 Figma document glyph for the office purpose card.
+packages/client/ui-settings-account/src/client/assets/onboarding-recharge-dark.webp	skipped	Binary WebP recharge illustration (~207 KB); container header and size read, pixel payload not decoded line by line.
+packages/client/ui-settings-account/src/client/assets/onboarding-recharge-zh-dark.webp	skipped	Binary WebP Chinese dark recharge illustration (~225 KB); container header and size read, pixel payload not decoded line by line.
+packages/client/ui-settings-account/src/client/assets/onboarding-recharge-zh.webp	skipped	Binary WebP Chinese recharge illustration (~180 KB); container header and size read, pixel payload not decoded line by line.
+packages/client/ui-settings-account/src/client/assets/onboarding-recharge.webp	skipped	Binary WebP recharge illustration (~182 KB); container header and size read, pixel payload not decoded line by line.
+packages/client/ui-settings-account/src/client/assets/onboarding-standard.svg	read	36x36 Figma checklist glyph for the standard work-detail option.
+packages/client/ui-settings-account/src/client/assets/onboarding-welcome-dark.webp	skipped	Binary WebP dark welcome illustration (~408 KB); container header and size read, pixel payload not decoded line by line.
+packages/client/ui-settings-account/src/client/assets/onboarding-welcome-zh-dark.webp	skipped	Binary WebP Chinese dark welcome illustration (~390 KB); container header and size read, pixel payload not decoded line by line.
+packages/client/ui-settings-account/src/client/assets/onboarding-welcome-zh.webp	skipped	Binary WebP Chinese welcome illustration (~393 KB); container header and size read, pixel payload not decoded line by line.
+packages/client/ui-settings-account/src/client/assets/onboarding-welcome.webp	skipped	Binary WebP welcome illustration (~415 KB); container header and size read, pixel payload not decoded line by line.
+packages/client/ui-settings-account/src/client/authorize-url.ts	read	Appends theme=light|dark to an authorization URL without dropping any Host-supplied parameter.
+packages/client/ui-settings-account/src/client/bonus-notices.ts	read	Bonus notice lifecycle: one read in force at a time (a newer read supersedes an older), unparsable expiry is not expiry, doubling acknowledgement backoff that never outlives the session, and a seen card survives an empty read.
+packages/client/ui-settings-account/src/client/browser-login.ts	read	Preopens a blank tab during the user's click, nulls opener, navigates once when the authorize URL arrives, and closes the tab on failure, expiry or cancellation.
+packages/client/ui-settings-account/src/client/client-metadata.ts	read	Per-call client identity (build version, UI language, UTC offset in seconds east); a build with no DSH_CLIENT_VERSION throws.
+packages/client/ui-settings-account/src/client/contact-url.ts	read	Builds the questionnaire URL: hide_/prefill_ pairs for uid, source, harness_version and device_info, and deletes the six unsupported fields' parameters.
+packages/client/ui-settings-account/src/client/DesktopOnboarding.module.css	read	The full onboarding visual system: Figma-positioned artwork, credit and card grids, animated conic-gradient selection border, brand font weights, darwin drag clearance and four breakpoints.
+packages/client/ui-settings-account/src/client/DesktopOnboarding.tsx	read	Onboarding flow coordinator: four pages, a 40ms fade transition that tolerates cancellation, once-per-page analytics events, the shared recharge request and the two skip confirmations.
+packages/client/ui-settings-account/src/client/DesktopOnboardingEntry.tsx	read	Framework-hook projection into the onboarding view; retains the last page for a 180ms exit, and removes it immediately under reduced motion.
+packages/client/ui-settings-account/src/client/formatBalance.ts	read	Platform Web currency formatting on big.js: truncated cents, <0.01 for positive sub-cent, negative amounts with a 0.01 minimum magnitude.
+packages/client/ui-settings-account/src/client/index.ts	read	Account plugin browser half: shared snapshot, account stream, generation-fenced profile/balance reads, bonus controller, shared Platform channel, Desktop onboarding controller and every slot registration.
+packages/client/ui-settings-account/src/client/locales.ts	read	Account dictionary; the Chinese object is typed against the English key set, so a missing translation is a compile error.
+packages/client/ui-settings-account/src/client/locales/onboarding.ts	read	Onboarding copy in its own module; the English object is typed against the Chinese key set (compile-time bilingual pairing).
+packages/client/ui-settings-account/src/client/LogoutIcon.tsx	read	Inline Figma logout glyph (decorative, aria-hidden) for theme-aware rendering.
+packages/client/ui-settings-account/src/client/notice-transition.ts	read	FLIP-style card promotion: measure survivors, cancel animations, flushSync the dismissal, then animate each survivor from its old rectangle over 250ms.
+packages/client/ui-settings-account/src/client/onboarding-balance.ts	read	hasOnboardingCredit counts purchased and granted wallets and does not treat a pending query as zero.
+packages/client/ui-settings-account/src/client/onboarding-contract.ts	read	Pure view inputs of the onboarding flow: DesktopOnboardingState, OnboardingChange and DesktopOnboardingProps.
+packages/client/ui-settings-account/src/client/onboarding-credentials.ts	read	Reads API-key presence through the boolean-only dshOnboarding bridge; a missing bridge or failed read rejects rather than reporting absent.
+packages/client/ui-settings-account/src/client/onboarding-state.ts	read	Resumable onboarding controller: verifies saved values rather than just acceptance, re-checks the account status around each write, freezes creditFunded at first entry, and retries exactly the failed step.
+packages/client/ui-settings-account/src/client/OnboardingConfirmation.tsx	read	The two skip/credit confirmations as focus-contained headless Modals with backdropBlur disabled.
+packages/client/ui-settings-account/src/client/OnboardingCreditStep.tsx	read	Credit page whose action ordering is fixed at first entry and whose buttons are disabled in the impossible states.
+packages/client/ui-settings-account/src/client/OnboardingPurposeStep.tsx	read	Two independently selectable work-purpose cards combining into a both value; descriptions never change on select/deselect.
+packages/client/ui-settings-account/src/client/OnboardingIllustration.tsx	read	Renders the light and dark artwork as two images, with the CSS theme selector deciding which is visible.
+packages/client/ui-settings-account/src/client/OnboardingProcessStep.tsx	read	Work-detail radio group with roving focus: arrows move selection and focus together and wrap around.
+packages/client/ui-settings-account/src/client/OnboardingSurface.module.css	read	Overlay surface, 180ms exit animation, darwin transparency, and the -webkit-app-region rules that clear the inherited no-drag and keep an 8px native resize margin.
+packages/client/ui-settings-account/src/client/OnboardingSurface.tsx	read	Body-portaled onboarding stage that makes #root inert and transparent for its lifetime and restores the previous inline opacity.
+packages/client/ui-settings-account/src/client/OnboardingWelcomeStep.tsx	read	Welcome page with a required explicit Get started and the en/zh, light/dark illustration pair.
+packages/client/ui-settings-account/src/client/overlay-inert.ts	read	Ref-counted inert ownership in a WeakMap; restores the element's original inert value only when the last owner releases, and the release is idempotent.
+packages/client/ui-settings-account/src/client/platform-pages.ts	read	Shared native Platform page channel: a newer request installs itself before retiring the previous owner, and the release is token-guarded so a stale owner cannot close the replacement.
+packages/client/ui-settings-account/src/client/PlatformOverlay.module.css	read	Full-window native overlay, the Windows caption clearance token, the darwin traffic-light spacer, the 48px return bar and an embedded base64 spinner.
+packages/client/ui-settings-account/src/client/PlatformOverlay.tsx	read	Desktop native Platform viewport; inertness and focus are restored in the layout cleanup so a Modal mounted in the same commit records the restored focus first.
+packages/client/ui-settings-account/src/client/SignInDialog.module.css	read	Headless dialog geometry, right-aligned action row, underline link treatment and the reduced-motion spinner.
+packages/client/ui-settings-account/src/client/SignInDialog.tsx	read	Authorization dialog: copyable link with a 2s label restore, clipboard failure that does not interrupt sign-in, and network copy shown only for the no-response error code.
+packages/client/ui-settings-account/src/client/SignOutDialog.tsx	read	Sign-out confirmation with idle/running/unknown impact copy; a failure keeps the dialog open for retry.
+packages/client/ui-settings-account/src/contact-config.ts	read	Public questionnaire options and the two bonus-acknowledgement retry timings, with an HTTPS-only schema pattern for the form URL.
+packages/client/ui-settings-account/src/css-modules.d.ts	read	Ambient *.module.css and *.css declarations; boilerplate.
+packages/client/ui-settings-account/src/index.ts	read	Host half: combines the public contact config with the volatile onboarding fields and publishes the contact options into the page bootstrap via webserver/index-inject.
+packages/client/ui-settings-account/src/onboarding-settings.ts	read	The ui-settings-account namespace: onboarding progress fields with explicitly nullable unsaved choices and a format version.
+packages/client/ui-settings-account/tests/account-avatar.client.spec.ts	read	Shared image load: pending/successful loads are shared, failures retried only on request, replaced and disposed callbacks discarded, superseded failure reports ignored.
+packages/client/ui-settings-account/tests/account-refresh.client.spec.ts	read	Post-return ordering: the new query starts after the pre-return one settles and a failed pre-return query does not block it.
+packages/client/ui-settings-account/tests/account.client.spec.tsx	read	Account UI: no invented profile/balance data, sign-in and cancel states, the sign-out impact matrix, themed authorization link, balance formatting, one-read-per-Settings-entry and the notice reporting its display once.
+packages/client/ui-settings-account/tests/apply.client.spec.ts	read	Account plugin in the shipped composition: browser vs Desktop sign-in, the quota claim, the questionnaire prefill rules, the shared avatar, coalesced and stale-rejected refreshes, the Platform page ownership and the API-key defaults.
+packages/client/ui-settings-account/tests/bonus-notices.client.spec.ts	read	Bonus lifecycle in full: activation-only reads, acknowledgement after a presented frame, doubling backoff, session re-entry, abandoned in-flight reads, expired-award suppression and sign-out dropping the pending acknowledgement.
+packages/client/ui-settings-account/tests/browser-login.client.spec.ts	read	Tab ownership: one navigation, closure on failure/expiry/cancel, the blocked-popup route and a waiting frame that arrived before the initial response.
+packages/client/ui-settings-account/tests/client-metadata.client.spec.ts	read	Client identity: the UTC offset as seconds east, re-sampled per call, and a versionless build refused.
+packages/client/ui-settings-account/tests/config.client.spec.ts	read	Host half: the contact options injected into the page bootstrap and released on disposal; the settings scope configured with auto false.
+packages/client/ui-settings-account/tests/contact-url.client.spec.ts	read	Questionnaire URL rules: hide/prefill pairs, percent-encoding, omitted context, HTTPS-only schema, the six unsupported fields dropped, physical resolution rounding.
+packages/client/ui-settings-account/tests/desktop-onboarding-entry.client.spec.tsx	read	Entry behaviour: the 180ms exit, the workspace inert until unmount, the loading overlay, notices withheld through exit, and immediate removal on sign-out.
+packages/client/ui-settings-account/tests/desktop-onboarding.client.spec.tsx	read	Onboarding pages: mandatory welcome, credit always offering recharge and only confirming a known zero, purpose combining, radio arrow keys, aria-disabled instead of disabled while saving, and once-only analytics.
+packages/client/ui-settings-account/tests/expected/account-en.txt	read	File snapshot: the signed-in account card in English.
+packages/client/ui-settings-account/tests/expected/account-signed-out-en.txt	read	File snapshot: the signed-out account prompt in English.
+packages/client/ui-settings-account/tests/expected/account-signed-out-zh.txt	read	File snapshot: the signed-out account prompt in Chinese.
+packages/client/ui-settings-account/tests/expected/account-zh.txt	read	File snapshot: the signed-in account card in Chinese.
+packages/client/ui-settings-account/tests/expected/avatar-retry.txt	read	File snapshot: the six published avatar load states across the retry sequence.
+packages/client/ui-settings-account/tests/expected/bonus-en.txt	read	File snapshot: the account card with recharge and bonus wallets in English.
+packages/client/ui-settings-account/tests/expected/bonus-zh.txt	read	File snapshot: the account card with recharge and bonus wallets in Chinese.
+packages/client/ui-settings-account/tests/expected/details-en.txt	read	File snapshot: the account card with a masked profile and formatted balances in English.
+packages/client/ui-settings-account/tests/expected/details-zh.txt	read	File snapshot: the account card with a masked profile and formatted balances in Chinese.
+packages/client/ui-settings-account/tests/expected/expired-en.txt	read	File snapshot: the credential-expiry toast copy in English.
+packages/client/ui-settings-account/tests/expected/expired-zh.txt	read	File snapshot: the credential-expiry toast copy in Chinese.
+packages/client/ui-settings-account/tests/expected/login-active-error-en.txt	read	File snapshot: the login dialog's error state during an active attempt in English.
+packages/client/ui-settings-account/tests/expected/login-active-error-zh.txt	read	File snapshot: the login dialog's error state during an active attempt in Chinese.
+packages/client/ui-settings-account/tests/expected/login-copy-failed-en.txt	read	File snapshot: the clipboard-failure copy in the waiting login dialog, English.
+packages/client/ui-settings-account/tests/expected/login-copy-failed-zh.txt	read	File snapshot: the clipboard-failure copy in the waiting login dialog, Chinese.
+packages/client/ui-settings-account/tests/expected/login-en.txt	read	File snapshot: the idle login dialog in English.
+packages/client/ui-settings-account/tests/expected/login-failed-en.txt	read	File snapshot: the failed login dialog in English.
+packages/client/ui-settings-account/tests/expected/login-no-response-en.txt	read	File snapshot: the network-troubleshooting login copy in English.
+packages/client/ui-settings-account/tests/expected/login-no-response-zh.txt	read	File snapshot: the network-troubleshooting login copy in Chinese.
+packages/client/ui-settings-account/tests/expected/login-timeout-en.txt	read	File snapshot: the timed-out login dialog in English.
+packages/client/ui-settings-account/tests/expected/login-timeout-zh.txt	read	File snapshot: the timed-out login dialog in Chinese.
+packages/client/ui-settings-account/tests/expected/login-waiting-en.txt	read	File snapshot: the waiting-for-sign-in dialog in English.
+packages/client/ui-settings-account/tests/expected/login-waiting-zh.txt	read	File snapshot: the waiting-for-sign-in dialog in Chinese.
+packages/client/ui-settings-account/tests/expected/login-zh.txt	read	File snapshot: the idle login dialog in Chinese.
+packages/client/ui-settings-account/tests/expected/menu-en.txt	read	File snapshot: the signed-in account menu items in English.
+packages/client/ui-settings-account/tests/expected/menu-signed-out-en.txt	read	File snapshot: the signed-out account menu items in English.
+packages/client/ui-settings-account/tests/expected/menu-signed-out-zh.txt	read	File snapshot: the signed-out account menu items in Chinese.
+packages/client/ui-settings-account/tests/expected/menu-zh.txt	read	File snapshot: the signed-in account menu items in Chinese.
+packages/client/ui-settings-account/tests/expected/notice.txt	read	File snapshot: the bonus notice card copy.
+packages/client/ui-settings-account/tests/expected/onboarding-credit-en.txt	read	File snapshot: the onboarding credit page in English.
+packages/client/ui-settings-account/tests/expected/onboarding-credit.txt	read	File snapshot: the onboarding credit page in Chinese.
+packages/client/ui-settings-account/tests/expected/onboarding-preferences.json	read	File snapshot: the whole purpose x process matrix of applied onboarding preferences.
+packages/client/ui-settings-account/tests/expected/onboarding-process-en.txt	read	File snapshot: the onboarding work-detail page in English.
+packages/client/ui-settings-account/tests/expected/onboarding-process.txt	read	File snapshot: the onboarding work-detail page in Chinese.
+packages/client/ui-settings-account/tests/expected/onboarding-purpose-en.txt	read	File snapshot: the onboarding purpose page in English.
+packages/client/ui-settings-account/tests/expected/onboarding-purpose.txt	read	File snapshot: the onboarding purpose page in Chinese.
+packages/client/ui-settings-account/tests/expected/onboarding-welcome-en.txt	read	File snapshot: the onboarding welcome page in English.
+packages/client/ui-settings-account/tests/expected/onboarding-welcome.txt	read	File snapshot: the onboarding welcome page in Chinese.
+packages/client/ui-settings-account/tests/expected/platform-error-en.txt	read	File snapshot: the native Platform load-failure surface in English.
+packages/client/ui-settings-account/tests/expected/platform-error-zh.txt	read	File snapshot: the native Platform load-failure surface in Chinese.
+packages/client/ui-settings-account/tests/expected/platform-header-en.txt	read	File snapshot: the native Platform return bar in English.
+packages/client/ui-settings-account/tests/expected/platform-header-zh.txt	read	File snapshot: the native Platform return bar in Chinese.
+packages/client/ui-settings-account/tests/expected/profile-before-balance.txt	read	File snapshot: the account card with the profile ready and the balance still loading.
+packages/client/ui-settings-account/tests/expected/sign-out-idle-en.txt	read	File snapshot: the sign-out confirmation with no running tasks, English.
+packages/client/ui-settings-account/tests/expected/sign-out-idle-zh.txt	read	File snapshot: the sign-out confirmation with no running tasks, Chinese.
+packages/client/ui-settings-account/tests/expected/sign-out-running-en.txt	read	File snapshot: the sign-out confirmation with running tasks, English.
+packages/client/ui-settings-account/tests/expected/sign-out-running-zh.txt	read	File snapshot: the sign-out confirmation with running tasks, Chinese.
+packages/client/ui-settings-account/tests/expected/sign-out-unknown-en.txt	read	File snapshot: the sign-out confirmation with an unknown task state, English.
+packages/client/ui-settings-account/tests/expected/sign-out-unknown-zh.txt	read	File snapshot: the sign-out confirmation with an unknown task state, Chinese.
+packages/client/ui-settings-account/tests/formatBalance.client.spec.ts	read	A table of Platform currency rules including exponent notation such as 0E-16 and 5e0.
+packages/client/ui-settings-account/tests/initialization.client.spec.ts	read	Default-model initialization outcomes: the account stream keeps reading and a failure is logged without marking the account failed.
+packages/client/ui-settings-account/tests/notice-transition.client.spec.ts	read	Promotion animation: no animation when unavailable or reduced-motion, and the exact transform a survivor receives from its old rectangle.
+packages/client/ui-settings-account/tests/notice.client.spec.tsx	read	The display signal: copy without moving focus, report only after a presented frame, deferral while hidden, dismissal counting as seen, expired awards not rendering, and back cards inaccessible until promotion.
+packages/client/ui-settings-account/tests/onboarding-credentials.client.spec.ts	read	API-key presence bridge: present/absent, a preserved read failure, and a rejected missing bridge.
+packages/client/ui-settings-account/tests/onboarding-state.client.spec.ts	read	Onboarding controller: bonus-only credit, refusal handling, the frozen creditFunded decision, resumption, API-key defaults once, write serialisation, per-namespace retry ordering and disposal cancellation.
+packages/client/ui-settings-account/tests/onboarding-surface.client.spec.tsx	read	Primitive behaviour: body portaling, #root inert for exactly its lifetime, restoring an earlier overlay's root state, and double-release safety of the ref-counted inert.
+packages/client/ui-settings-account/tests/onboarding.client.spec.tsx	read	The credential step claims onboarding while mounted, offers the API-key fallback, completes after login and releases the claim on unmount.
+packages/client/ui-settings-account/tests/platform-overlay-caption.client.spec.ts	read	A CSS-text test: jsdom has no layout, so the Windows caption-clearance declaration is asserted by reading the stylesheet.
+packages/client/ui-settings-account/tests/platform-pages.client.spec.ts	read	Shared channel: idle close ignored, owner retired once, stale release cannot clear the replacement, teardown drops without retiring, and a throwing subscriber does not stop the others.
+packages/client/ui-settings-account/tests/quota-notice-hold.client.spec.tsx	read	Composition bench with the Chat quota host, the shared Platform host and the account page: notice deferral behind an open page, focus handover to the revealed Modal, newest-failure replacement and hold release.
+packages/client/ui-settings-account/tests/quota-notice.client.spec.tsx	read	The notice contract: keepOpen() is called before the page request (asserted by invocationCallOrder), the Modal defers while a page shows, the first snapshot is awaited, and the hold is released on sign-out or unmount.
+packages/client/ui-settings-account/tests/sign-in-dialog.client.spec.tsx	read	Login dialog: the two choices, timeout requiring explicit retry, cancel-before-dismiss, the committing attempt resisting Escape, the 2s copy-label restore and the no-response-only network copy.
+packages/client/ui-settings-account/tests/sign-out-dialog.client.spec.tsx	read	Sign-out impact copy matrix, three dismissal routes, and a failure keeping the dialog open with dismissal blocked while in flight.
+packages/client/ui-settings-account/tsconfig.json	read	Client project referencing cordis, api/remotes, locale, store, ui-settings, ui-primitives, ui-renderer, ui-slots, ui-theme, deepseek-account, ui-settings-models, host/webserver, schemastery, ui-chat, ui-layout, settings and product-analytics.
+packages/client/ui-settings-account/tsdown.config.ts	read	Three-line clientBundle config shared by every client package in the shard.
+packages/client/ui-settings-agent-loop/locale/en.json	read	Package locale metadata only (title ui-settings-agent-loop).
+packages/client/ui-settings-agent-loop/locale/zh.json	read	Chinese package-locale metadata: title 智能体运行设置, description 配置同时执行的工具调用数量上限。
+packages/client/ui-settings-agent-loop/package.json	read	Manifest; injects locale, ui-settings and ui-plugin-manager; describes the parallel tool-call cap of the agent-loop namespace.
+packages/client/ui-settings-agent-loop/README.i18n.yaml	read	Per-section bilingual pairing hashes for the agent-loop README.
+packages/client/ui-settings-agent-loop/README.md	read	Package reference for the agent-loop settings page; states the page exists only while the Host serves the agent-loop namespace and that Model Experience and KV Cache effect are None.
+packages/client/ui-settings-agent-loop/README.zh.md	read	Chinese mirror of the agent-loop page reference.
+packages/client/ui-settings-agent-loop/src/client/agent-loop-card-controller.ts	read	Staged form over the agent-loop namespace exposing one number, maxParallelToolCalls; the namespace string is spelled rather than imported because a client package must not depend on a Host package.
+packages/client/ui-settings-agent-loop/src/client/AgentLoopCard.tsx	read	Renders the one-liner in summary view or a SettingsForm with a single numeric field carrying the Overridden badge, Reset to default and the invalid-number message.
+packages/client/ui-settings-agent-loop/src/client/index.ts	read	Browser half: registers the settings.agentLoop dictionary and the page into plugins.item inside configForms.whileServed, so it withdraws when the Host stops serving the namespace.
+packages/client/ui-settings-agent-loop/src/client/locales.ts	read	Page dictionary including the unavailable and read-only states, plus formLabels(t) which pulls the shared form frame copy from the same dictionary.
+packages/client/ui-settings-agent-loop/src/css-modules.d.ts	read	Ambient *.module.css declaration; boilerplate.
+packages/client/ui-settings-agent-loop/src/index.ts	read	An empty Host apply() that exists only to hold a Loader row for the browser half.
+packages/client/ui-settings-agent-loop/tests/apply.client.spec.ts	read	What the browser half registers and when: the Host apply is inert, the inject list is exact, the page appears and withdraws with the namespace, and it collapses on teardown.
+packages/client/ui-settings-agent-loop/tests/card.client.spec.tsx	read	The card rendering: summary one-liner, staging and saving the only field, a staged reset, and the unavailable/read-only states.
+packages/client/ui-settings-agent-loop/tests/controller.client.spec.ts	read	The controller against an accepting stub Host: one mutate with a set op, the field becoming overridden, and a read-only document reported.
+packages/client/ui-settings-agent-loop/tsconfig.json	read	Client project referencing locale, cordis, store, test-runtime, ui-primitives, ui-renderer, ui-plugin-manager, ui-settings, api/remotes and ui-slots.
+packages/client/ui-settings-agent-loop/tsdown.config.ts	read	clientBundle config identical to the other three client packages.
+packages/client/ui-settings-general/locale/en.json	read	Package locale metadata only (title ui-settings-general).
+packages/client/ui-settings-general/locale/zh.json	read	Chinese package-locale metadata: title 通用设置与欢迎提示, description 提供通用设置、设置窗口文案和首次使用提示。
+packages/client/ui-settings-general/package.json	read	Manifest; injects ui-settings, locale, connection, api-remotes, ui-sidebar, shortcuts, modules and ui-layout; exports an extra ./types subpath.
+packages/client/ui-settings-general/README.i18n.yaml	read	Per-section bilingual pairing hashes for the shell README.
+packages/client/ui-settings-general/README.md	read	Shell reference: the 800x800 panel, the Disconnected/Reconnecting/Connected indicator with its 800ms hold and 2s recovery, the Service-version-changed dialog, the Desktop update row, the shortcut, General and onboarding.
+packages/client/ui-settings-general/README.zh.md	read	Chinese mirror of the shell reference with the same timings and portal rationale.
+packages/client/ui-settings-general/src/client/chrome.module.css	read	One rule: the trigger label only guards against overflow during the sidebar collapse crossfade.
+packages/client/ui-settings-general/src/client/chrome.tsx	read	Three tiny content components: the trigger icon plus wide-column label, the panel title, and the close button's visually-hidden label.
+packages/client/ui-settings-general/src/client/CurrentVersionRow.module.css	read	One rule: the version row's padding, 14/22 type and overflow-wrap.
+packages/client/ui-settings-general/src/client/CurrentVersionRow.tsx	read	Renders DSH_CLIENT_VERSION through the localized template; a partial build without version metadata omits the row entirely.
+packages/client/ui-settings-general/src/client/desktop-update-source.ts	read	One shared subscription to the optional Electron preload; the initial status promise publishes only if no subscription event arrived first, and dispose() ignores late completions.
+packages/client/ui-settings-general/src/client/DesktopUpdateIndicator.module.css	read	The 28px brand-blue indicator with a 14px icon slot and 4px gap, the 6px collapsed-rail dot, and the reduced-motion spinner rule.
+packages/client/ui-settings-general/src/client/DesktopUpdateIndicator.tsx	read	The update row and collapsed badge: nine classified failure strings, a busy-phase set, and a tooltip that shows only the supplied version.
+packages/client/ui-settings-general/src/client/DeveloperToolsRow.module.css	read	One rule: the row's 24px gap, the 0.5px bottom separator and the 12/18 description type.
+packages/client/ui-settings-general/src/client/DeveloperToolsRow.tsx	read	The Coding Tools switch: disables duplicate input while a write settles and shows a localized role=alert on a failed write.
+packages/client/ui-settings-general/src/client/GeneralSection.module.css	read	One rule: the column strips the trailing separator wherever it ends, using the slot's data-slot attribute.
+packages/client/ui-settings-general/src/client/GeneralSection.tsx	read	A one-line column rendering settings.general.item; the section supplies nothing, so each row owns its label, value and write path.
+packages/client/ui-settings-general/src/client/HostReleasePrompt.module.css	read	The four-column transition grid, a solid green arrow for the completed Host switch and a dashed grey arrow for the page switch only a reload completes.
+packages/client/ui-settings-general/src/client/HostReleasePrompt.tsx	read	The Service-version-changed dialog: versions when they differ and commits otherwise, with initial focus deliberately on Not now so a pending Enter cannot reload.
+packages/client/ui-settings-general/src/client/index.ts	read	Shell browser half: the five chrome seats, two General rows, the dictionaries, the sidebar badge, the sidebar.settings occupant and the host-release-change overlay; nav rows are cached on (ledger version, locale revision).
+packages/client/ui-settings-general/src/client/locales.ts	read	Shell dictionary; the Chinese object is the key-set source of truth and the English one is type-checked complete against it.
+packages/client/ui-settings-general/src/client/settings-document-store.ts	read	Availability of the optional native settings document derived from the shared mirror, with concurrent open gestures collapsing behind an in-flight flag.
+packages/client/ui-settings-general/src/client/SettingsDocumentAction.module.css	read	One rule: the error string is truncated to 180px with an ellipsis rather than wrapping.
+packages/client/ui-settings-general/src/client/SettingsDocumentAction.tsx	read	Header action that renders nothing until the Host confirms hasDocument, keeps itself available on a native-open failure and disables while a request is in flight.
+packages/client/ui-settings-general/src/client/SettingsRoot.module.css	read	The 800x800 panel, 188px nav rail, 40px nav cells, mask and scrollbar-elevation rebinding, with a comment that the height comes from the viewport so the panel does not resize under the pointer.
+packages/client/ui-settings-general/src/client/SettingsRoot.tsx	read	The trigger row and the modal panel: an 800ms connecting minimum-visible hold, a 2s recovery window measured from visibility, a body portal, and closing the panel when an onboarding step appears beneath it.
+packages/client/ui-settings-general/src/client/shell-contract.ts	read	Prop types of the sidebar.settings occupant; placed here because they reference the sidebar slot type and ui-settings must not depend on a ui-* presentation package.
+packages/client/ui-settings-general/src/client/shell-store.ts	read	The shell owner store (open, activeId) with open/close/select/openSection actions shared by the mouse and command entry points.
+packages/client/ui-settings-general/src/css-modules.d.ts	read	Ambient *.module.css and *.css declarations; boilerplate.
+packages/client/ui-settings-general/src/index.ts	read	Host half: welcomeNoticeVersion is a volatile field of the ui-settings-general entry and the shell itself stays policy-free.
+packages/client/ui-settings-general/src/types.ts	read	Type-only Desktop update declarations: nine failure kinds, the presentation, and a bridge that cannot select artifacts or authorize installation.
+packages/client/ui-settings-general/tests/apply.client.spec.ts	read	The five seats, the dictionaries, the locale-following nav label with no ledger churn, the loopback-only document action, remote locale updates after a commit and reconnect, Loader-rebuild re-registration and the release-change overlay.
+packages/client/ui-settings-general/tests/components.client.spec.tsx	read	Individual components: the collapsed badge yielding to connection feedback, the developer-tools switch, the chrome content, the General section, the document action, the localized release label and the release-change dialog's version-vs-commit rule.
+packages/client/ui-settings-general/tests/desktop-update.client.spec.tsx	read	Update carrier behaviour: newest event wins over a slower initial status, connection priority, busy phases suppressing the action, late events ignored after disposal and version-only tooltips.
+packages/client/ui-settings-general/tests/settings-document-store.client.spec.ts	read	Document store: metadata load, absent/failed/rejected metadata unavailable without opening, concurrent gestures collapsing, and availability recovering through a mirror refresh.
+packages/client/ui-settings-general/tests/settings-root.client.spec.tsx	read	Shell behaviour: trigger naming in both locales, the outage-recovery sequence with its holds, the three close paths with focus restoration, nav projection and glyphs, the onboarding coordinator and the effective shortcut binding.
+packages/client/ui-settings-general/tests/shell.client.spec.ts	read	Shell in the assembled client: one carrier subscription for both update locations, the sidebar.settings occupation and seven child slots, stable ledger projections, Account first only while signed in, and survival across a Loader rebuild.
+packages/client/ui-settings-general/tests/config.host.spec.ts	read	Host half: the welcome-notice preference updates without remounting and the package stays off the generated Settings pages.
+packages/client/ui-settings-general/tsconfig.client.json	read	Client project over src/client, src/types.ts and the CSS ambient declarations, with references to cordis, schemastery, ui-slots, ui-primitives, ui-renderer, ui-session, store, ui-settings, locale, connection, api/remotes, ui-sidebar, shortcuts, modules and ui-layout.
+packages/client/ui-settings-general/tsconfig.host.json	read	Host project over src/index.ts and src/types.ts only, referencing cordis, schemastery and settings/settings.
+packages/client/ui-settings-general/tsconfig.json	read	Solution file with two project references and no files of its own.
+packages/client/ui-settings-general/tsdown.config.ts	read	clientBundle config identical to the other three client packages.
+packages/client/ui-settings/locale/en.json	read	Package locale metadata only (title ui-settings).
+packages/client/ui-settings/locale/zh.json	read	Chinese package-locale metadata: title 设置界面框架, description 提供设置页面的基础表单和插件扩展位置。
+packages/client/ui-settings/package.json	read	Manifest; injects api-remotes only, so the base is the lowest layer of the settings family.
+packages/client/ui-settings/README.i18n.yaml	read	Per-section bilingual pairing hashes for the settings base README.
+packages/client/ui-settings/README.md	read	Base plugin reference: namespace-scoped forms, atomic multi-field updates, schema validation, concurrent-change protection, whileServed, the settings slot family and the observable success/failure contract.
+packages/client/ui-settings/README.zh.md	read	Chinese mirror of the base plugin reference.
+packages/client/ui-settings/src/client/config-form-types.ts	read	Snapshot and form types; a field's PRESENCE in the user layer is what marks it overridden, since comparing values cannot.
+packages/client/ui-settings/src/client/config-form.ts	read	Per-namespace form over the shared mirror: structured-copied queued ops, a revision fence, only the latest settlement publishing, refusal recovery for the latest write only, a kept-fulfilled queue tail and a decoder that refuses non-object sections.
+packages/client/ui-settings/src/client/contract/slots.ts	read	The canonical home of every settings slot type, with the reason the shell holds zero copy of its own and why the general.item type lives in the base layer.
+packages/client/ui-settings/src/client/developer-tools.ts	read	Wraps one config form into an observable boolean that fires only on a real change, defaulting to disabled until an accepted value arrives.
+packages/client/ui-settings/src/client/index.ts	read	Browser half: creates the schema service, the single describe mirror and the ConfigForms service, and subscribes the mirror to document-updated and connection/reset; documents the type-only api-remotes import that avoids a Host tsc deadlock.
+packages/client/ui-settings/src/client/schema.ts	read	Synchronous schema service: rehydrate, validate, nodeAtPath, getPath, hasPath and immutable setPath/deletePath that copy only the path spine.
+packages/client/ui-settings/src/client/settings-mirror.ts	read	The one settings.describe reader: folds concurrent loads into one rerun, fences stale reads with a generation counter, keeps the last good view on failure and folds write answers in without a wire read.
+packages/client/ui-settings/src/css-modules.d.ts	read	Ambient *.module.css and *.css declarations; boilerplate.
+packages/client/ui-settings/src/developer-tools-settings.ts	read	The ui-settings namespace constant, the enabled boolean and its default-on schemastery field.
+packages/client/ui-settings/src/index.ts	read	Host registration of the developer-tool preference as a volatile field, configured with auto false so the browser owns the presentation.
+packages/client/ui-settings/tests/config-form.client.spec.ts	read	The form contract: last-good-value retention, decode overrides, serialized writes, one copied multi-field mutation behind one fence, an editor-owned fence, sibling visibility of a write answer, refusal recovery, queue survival, disposal and base/user projection.
+packages/client/ui-settings/tests/config.host.spec.ts	read	Host half: the preference defaults on, persists valid choices, rejects a non-boolean and stays off the generated Settings pages.
+packages/client/ui-settings/tests/developer-tools.client.spec.ts	read	Preference behaviour: a refused write rejects after recovery, a delayed read withholds features, an unavailable namespace keeps them disabled and one instance is shared.
+packages/client/ui-settings/tests/plugin.client.spec.ts	read	Base plugin lifecycle: mounts both services, reads eagerly once, refreshes on document-updated and connection/reset, and retires everything on disposal.
+packages/client/ui-settings/tests/schema.client.spec.ts	read	Schema service: rehydration, non-Error throw stringification, nested path reads, presence-by-existence, immutable set/delete and object/dict/array traversal.
+packages/client/ui-settings/tests/settings-mirror.client.spec.ts	read	Mirror concurrency contract, including a named regression about a load landing between a run settling and its slot clearing.
+packages/client/ui-settings/tests/while-served.client.spec.ts	read	The served-namespace watch: a registration lives exactly while the Host serves one of the namespaces, and ending the watch is harmless.
+packages/client/ui-settings/tsconfig.client.json	read	Client project over src excluding src/index.ts, so the Host half is not compiled into the browser graph.
+packages/client/ui-settings/tsconfig.host.json	read	Host project over only developer-tools-settings.ts and index.ts.
+packages/client/ui-settings/tsconfig.json	read	Solution file with two project references and no files of its own.
+packages/client/ui-settings/tsdown.config.ts	read	clientBundle config identical to the other three client packages.

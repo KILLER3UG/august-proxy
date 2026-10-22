@@ -1,0 +1,231 @@
+packages/fs/fs-local/package.json	read	ESM manifest for @deepseek-ai/dsh-fs-local; deps chokidar 5.0.0 (watcher) and koffi 3.1.1 (lazy Win32 FFI), peer deps dsh-fs and cordis.
+packages/fs/fs-local/README.i18n.yaml	read	Per-heading bilingual hash pairing record for the package README; same generated format across the group.
+packages/fs/fs-local/README.md	read	Package reference: realpath identity, atomic publication, one mutation critical section, config table, and a candid limitations list.
+packages/fs/fs-local/README.zh.md	read	Chinese translation of the package README; frontmatter and overview read, line count matches the English file.
+packages/fs/fs-local/src/fsio.ts	read	Cordis-free raw IO: realpath identity resolution, probes, bounded reads, the private-staging-dir atomic write and the literal edit.
+packages/fs/fs-local/src/index.ts	read	LocalFileSystem provider wiring: per-target FIFO mutation lock, version guards, bounded diff basis, chokidar watch.
+packages/fs/fs-local/src/win32.ts	read	Lazy koffi bindings for GetFileSecurityW/SetFileSecurityW/ReplaceFileW so atomic replacement preserves the target DACL.
+packages/fs/fs-local/tests/filesystem.spec.ts	read	Provider contract suite: resolve/stat/lstat/read/list/write/edit, symlink identity, the stat budget and concurrent-write outcomes.
+packages/fs/fs-local/tests/fsio.spec.ts	read	Raw-IO suite: target resolution, probes, listing, read races, staging-dir safety, literal edit and CRLF round-trip.
+packages/fs/fs-local/tests/watch.spec.ts	read	Watcher lifecycle suite: directory watches, cancellation before and during acquisition, error reporting.
+packages/fs/fs-local/tests/win32.spec.ts	read	Windows DACL helper suite: protected DACL copy, descriptor probe failure, install and replacement failure.
+packages/fs/fs-local/tsconfig.json	read	Project-reference tsconfig (rootDir src, outDir lib/types) with vendor and sibling fs project references.
+packages/fs/fs-observation-policy/locale/en.json	read	Two-line locale stub carrying the English plugin-catalog title.
+packages/fs/fs-observation-policy/locale/zh.json	read	Chinese locale stub with the plugin title and a one-line description.
+packages/fs/fs-observation-policy/package.json	read	ESM manifest with no runtime dependencies; peer deps dsh-fs and cordis only; exports the locale JSON.
+packages/fs/fs-observation-policy/README.i18n.yaml	read	Per-heading bilingual hash pairing record for the package README.
+packages/fs/fs-observation-policy/README.md	read	Package reference: event-gate-not-service concept, the three intent decisions, single-slot first-wins, HMR disposal, limitations.
+packages/fs/fs-observation-policy/README.zh.md	read	Chinese translation of the package README; frontmatter and overview read, line count matches the English file.
+packages/fs/fs-observation-policy/src/index.ts	read	The three fs/* listeners and the WeakMap observed-state gate deriving write and edit intents from recorded observations.
+packages/fs/fs-observation-policy/src/types.ts	read	FsObservationActor: the minimal structural view of the opaque event actor, kept dependency-free on purpose.
+packages/fs/fs-observation-policy/tests/policy.spec.ts	read	Gate suite: the two intent decisions, present/absent transitions, multi-owner isolation, first-wins short-circuit, disposal.
+packages/fs/fs-observation-policy/tsconfig.json	read	Project-reference tsconfig (rootDir src, outDir lib/types) with vendor and sibling fs project references.
+packages/fs/fs-sandbox/locale/en.json	read	Two-line locale stub carrying the English plugin-catalog title.
+packages/fs/fs-sandbox/locale/zh.json	read	Chinese locale stub with the plugin title and a one-line description.
+packages/fs/fs-sandbox/package.json	read	ESM manifest, no runtime deps; peer deps dsh-fs, dsh-fs-local, dsh-sandbox, dsh-sandbox-policy and cordis.
+packages/fs/fs-sandbox/README.i18n.yaml	read	Per-heading bilingual hash pairing record for the package README.
+packages/fs/fs-sandbox/README.md	read	Package reference: canonicalize-then-contain fence, per-call policy, threat model, parity with the bash runner through writableRoots.
+packages/fs/fs-sandbox/README.zh.md	read	Chinese translation of the package README; frontmatter and overview read, line count matches the English file.
+packages/fs/fs-sandbox/src/containment.ts	read	isPathUnder: lexical fast path plus a filesystem-identity ancestor walk so 8.3 aliases and casing cannot defeat containment.
+packages/fs/fs-sandbox/src/index.ts	read	SandboxedFileSystem: the per-call mode fence that re-canonicalizes and mutates the checked identity, denying with FS_SANDBOX_DENIED.
+packages/fs/fs-sandbox/tests/containment.spec.ts	read	Containment helper suite: equal paths, descendants, Windows case-insensitivity, alias-equivalent roots, regular-file path segments.
+packages/fs/fs-sandbox/tests/fs-sandbox.spec.ts	read	Fence suite: read-only denial, workspace-write containment and symlink-out denial, danger-full-access, per-call policy override, HMR.
+packages/fs/fs-sandbox/tsconfig.json	read	Project-reference tsconfig with references to fs, fs-local, sandbox and sandbox-policy.
+packages/fs/fs/package.json	read	ESM manifest for the ctx.fs seam; peer deps dsh-brand, dsh-llm, dsh-sandbox and cordis.
+packages/fs/fs/README.i18n.yaml	read	Per-heading bilingual hash pairing record for the seam README.
+packages/fs/fs/README.md	read	Package reference: contract over mechanism, policy off the base class, editText on the seam, bounds at the seam, the fs/* events.
+packages/fs/fs/README.zh.md	read	Chinese translation of the seam README; frontmatter and overview read, line count matches the English file.
+packages/fs/fs/src/index.ts	read	The FileSystem service definition and the three-event fs/* policy vocabulary with the single-slot waterfall shape.
+packages/fs/fs/src/types.ts	read	Filesystem vocabulary: branded target/version ids, observations, write/edit shapes and the FsErrorCode taxonomy.
+packages/fs/fs/tests/service.spec.ts	read	Seam suite: registration, duplicate-service rejection, disposal, every primitive, the brand factories and FsError identity.
+packages/fs/fs/tsconfig.json	read	Project-reference tsconfig with references to vendor packages, util/brand, llm/llm and sandbox/sandbox.
+packages/fs/README.i18n.yaml	read	Per-heading bilingual hash pairing record for the package-group README.
+packages/fs/README.md	read	Package-group map: the seven fs packages, their ctx keys, and the no-timeout-by-design stance.
+packages/fs/README.zh.md	read	Chinese translation of the package-group README; frontmatter and overview read, line count matches the English file.
+packages/fs/tool-fs-search/locale/en.json	read	Two-line locale stub carrying the English plugin-catalog title.
+packages/fs/tool-fs-search/locale/zh.json	read	Chinese locale stub with the plugin title and a one-line description.
+packages/fs/tool-fs-search/package.json	read	ESM manifest; runtime dep @vscode/ripgrep (packaged binary) and schemastery; peer deps subprocess, spill, retention, timeout, tools, working-directory.
+packages/fs/tool-fs-search/README.i18n.yaml	read	Per-heading bilingual hash pairing record for the package README.
+packages/fs/tool-fs-search/README.md	read	Package reference: glob/grep tables, config table, deployment requirement, SEARCH_* codes, two budgets and two artifacts, limitations.
+packages/fs/tool-fs-search/README.zh.md	read	Chinese translation of the package README; frontmatter and overview read, line count matches the English file.
+packages/fs/tool-fs-search/src/direct-call.ts	read	acceptedDirectCallValue: the predicate that lets only a still-owned direct top-level call spill its result.
+packages/fs/tool-fs-search/src/glob.ts	read	The glob tool: fixed rg --files argv with paired VCS excludes, top-level cross-directory sampling, capped inline page and spill.
+packages/fs/tool-fs-search/src/grep.ts	read	The grep tool: rg --json argv, record parsing with a malformed-output failure, include validation, per-line previews and grouping.
+packages/fs/tool-fs-search/src/index.ts	read	Plugin entry: config with a required sampling choice, positive-integer cap validation and the glob/grep registration.
+packages/fs/tool-fs-search/src/presentation.ts	read	Search-card projection: the shape-discriminated SearchMeta, the independent meta byte cap and the defensive narrowing back to a view.
+packages/fs/tool-fs-search/src/ripgrep.d.ts	read	Ambient module declaration for the untyped @vscode/ripgrep package, exposing rgPath.
+packages/fs/tool-fs-search/src/search-core.ts	read	Shared search plumbing: the SEARCH_* error vocabulary, the --no-config ripgrep spawn, retention helpers and the spill handoff.
+packages/fs/tool-fs-search/tests/integration.spec.ts	read	Real subprocess plus real rg suite: glob discovery, VCS exclusion even when the root is the VCS dir, grep grouping, hostile patterns, leading-dash patterns.
+packages/fs/tool-fs-search/tests/load-path.spec.ts	read	Real-load-path guard: no default export, name/inject/Config survive unwrapping, and the plugin boots over ctx.subprocess.
+packages/fs/tool-fs-search/tests/presentation.spec.ts	read	Projection suite: grouping, total/truncation reporting, the meta byte cap keeping one oversized group, and defensive narrowing.
+packages/fs/tool-fs-search/tests/rg-path.spec.ts	read	Lazy ripgrep resolution suite: a missing binary fails the first search with SEARCH_FAILED and keeps failing (memoised).
+packages/fs/tool-fs-search/tests/rg-sidecar.spec.ts	read	Resolution suite: pkg sidecar, Windows sidecar name, dependency path, packaged-without-sidecar fallback and Electron ASAR unpack.
+packages/fs/tool-fs-search/tests/tools.spec.ts	read	Search tool suite: registration, config validation, argv construction, exit classification, raw-output overflow, sampling and the result paths.
+packages/fs/tool-fs-search/tsconfig.json	read	Project-reference tsconfig with references to retention, llm, session, tools, system-prompt, shell, spill, timeout and working-directory.
+packages/fs/tool-fs/locale/en.json	read	Two-line locale stub carrying the English plugin-catalog title.
+packages/fs/tool-fs/locale/zh.json	read	Chinese locale stub with the plugin title and a one-line description.
+packages/fs/tool-fs/package.json	read	ESM manifest; runtime deps diff (patch generation) and util/code-language; peer deps fs, sandbox, sandbox-policy, attachment, tools, approval, working-directory.
+packages/fs/tool-fs/README.i18n.yaml	read	Per-heading bilingual hash pairing record for the package README (the largest in the group).
+packages/fs/tool-fs/README.md	read	Package reference: the four tools, config table, policy and sandbox behaviour, exact model-facing envelopes, token cost and KV-cache effect per result.
+packages/fs/tool-fs/README.zh.md	read	Chinese translation of the package README; frontmatter and overview read, line count matches the English file.
+packages/fs/tool-fs/src/diff.ts	read	computeHunkDiffs: one three-line-context FileDiff per applied hunk, computed at result time from before/after.
+packages/fs/tool-fs/src/edit.ts	read	The edit tool: intent waterfall inside the try, unique-match literal replacement, and a Claude-style confirmation sentence.
+packages/fs/tool-fs/src/error.ts	read	remediateFsError: the stable model-facing diagnostics for FS_NOT_OBSERVED and FS_STALE_VERSION, preserving code and cause.
+packages/fs/tool-fs/src/index.ts	read	Plugin entry: tool switches, read caps with positive-integer validation, the attachments-gated image tool and the shared sandbox controller.
+packages/fs/tool-fs/src/mutation-result.ts	read	Shared post-mutation step: strip the version, emit fs/observed, return the canonical process path with the outcome.
+packages/fs/tool-fs/src/read-image.ts	read	The read_image tool: media-type and magic-byte handling, the strict image-capability route gate, bounded bytes and durable attachment commit.
+packages/fs/tool-fs/src/read-render.ts	read	Pure read presentation: buildWindow with a per-line buffer cap and a byte budget, the envelope footers and the semantic meta narrowing.
+packages/fs/tool-fs/src/read-target.ts	read	Shared resolve-and-validate step for the read tools, recording confirmed absence before failing with FS_NOT_FOUND.
+packages/fs/tool-fs/src/read.ts	read	The read tool: one stat for type, size routing and version, stream-when-large, bounded window, observation, read card.
+packages/fs/tool-fs/src/sandbox.ts	read	FsSandboxController: escalation advertisement, per-call policy resolution, the one-approved-wider retry and denial-marker mapping.
+packages/fs/tool-fs/src/session-cwd.ts	read	sessionResolveOptions: resolves the session working directory as the filesystem cwd for one call.
+packages/fs/tool-fs/src/write.ts	read	The write tool: intent waterfall with no stat, atomic write, observation, and a result-time diff card derived from before/after.
+packages/fs/tool-fs/tests/diff.spec.ts	read	Diff suite: one hunk per applied change, oldText null for pure insertion, the no-newline marker dropped, and defensive meta narrowing.
+packages/fs/tool-fs/tests/error.spec.ts	read	Remediation suite: the re-read remedy appended to FS_STALE_VERSION and one normalised FS_NOT_OBSERVED diagnostic.
+packages/fs/tool-fs/tests/fs-tools.e2e.ts	read	With-key e2e suite: create, read then edit verified on disk, and per-session cwd resolution.
+packages/fs/tool-fs/tests/harness.ts	read	Shared harness builder mounting the agent loop, key provider, LocalFileSystem, working directory, observation policy and the fs tools.
+packages/fs/tool-fs/tests/integration.spec.ts	read	End-to-end suite over a real backend and the real policy: read-before-write, staleness, the stat budget, bare-provider behaviour and per-session cwd.
+packages/fs/tool-fs/tests/read-image.spec.ts	read	Image tool suite: media-type mapping, sniffing, the capability gate, admission failures, downscaling multipliers and the registration surface.
+packages/fs/tool-fs/tests/read-render.spec.ts	read	Windowing suite: numbering, offsets, caps, chunked input, the newline-free giant line bound, langFromPath and readMetaFromMeta semantics.
+packages/fs/tool-fs/tests/tools.spec.ts	read	Tool suite: registration, injection, HMR, read/write/edit executors, call-time and result-time presentation, plugin-config caps, escalation API.
+packages/fs/tool-fs/tsconfig.json	read	Project-reference tsconfig with references to tools, system-prompt, fs, fs-observation-policy, sandbox, sandbox-policy, approval, attachment, code-language and working-directory.
+packages/fs/tool-str-replace-editor/package.json	read	ESM manifest; runtime dep schemastery; peer deps fs, output-retention, sandbox, sandbox-policy and tools.
+packages/fs/tool-str-replace-editor/README.i18n.yaml	read	Per-heading bilingual hash pairing record for the package README.
+packages/fs/tool-str-replace-editor/README.md	read	Package reference: the four commands, config table, failure vocabulary, delegation to the policy and the sandbox, limitations.
+packages/fs/tool-str-replace-editor/README.zh.md	read	Chinese translation of the package README; frontmatter and overview read, line count matches the English file.
+packages/fs/tool-str-replace-editor/src/index.ts	read	The standalone str_replace_editor tool: view/create/str_replace/insert over ctx.fs, routing every mutation through the fs/* intent slots.
+packages/fs/tool-str-replace-editor/tests/tools.spec.ts	read	Editor suite: registration, the four commands, surrogate-safe clipping, tab preservation, policy delegation and sandbox policy passing.
+packages/fs/tool-str-replace-editor/tsconfig.json	read	Project-reference tsconfig with references to cordis, schemastery, output-retention, tools, fs, sandbox and sandbox-policy.
+packages/sandbox/README.i18n.yaml	read	Per-heading bilingual hash pairing record for the package-group README.
+packages/sandbox/README.md	read	Package-group map: the four sandbox packages, their ctx keys, and the same-world-only confinement stance.
+packages/sandbox/README.zh.md	read	Chinese translation of the package-group README; frontmatter and overview read, line count matches the English file.
+packages/sandbox/sandbox-local/locale/en.json	read	Two-line locale stub carrying the English plugin-catalog title.
+packages/sandbox/sandbox-local/locale/zh.json	read	Chinese locale stub with the plugin title and a one-line description.
+packages/sandbox/sandbox-local/package.json	read	ESM manifest; runtime deps dsh-sandbox-windows-acl, util-values and node-addon-system (the Landlock launcher).
+packages/sandbox/sandbox-local/README.i18n.yaml	read	Per-heading bilingual hash pairing record for the package README.
+packages/sandbox/sandbox-local/README.md	read	Package reference: runner selection by platform then probes, the three profile dialects, the Windows grant model, and the partial-enforcement limitations.
+packages/sandbox/sandbox-local/README.zh.md	read	Chinese translation of the package README; frontmatter and overview read, line count matches the English file.
+packages/sandbox/sandbox-local/src/index.ts	read	LocalSandboxProvider: platform runner chains, functional probes, per-call wrap, denial and runner-failure dialects, and the Windows ACL grant lifecycle.
+packages/sandbox/sandbox-local/src/profiles.ts	read	Per-platform profile builders: bwrap mounts, Landlock grants and Seatbelt SBPL, the latter sharing the writableRoots helper.
+packages/sandbox/sandbox-local/tests/acl-grants.spec.ts	read	Windows grant lifecycle suite: materialisation, reuse, upgrade and downgrade, crash residue, forks, refusals and teardown reporting.
+packages/sandbox/sandbox-local/tests/bwrap.e2e.ts	read	Real-kernel bwrap suite: read-only denial, readable tree with a writable /dev/null, private PID namespace, ephemeral /tmp.
+packages/sandbox/sandbox-local/tests/landlock.e2e.ts	read	Real-kernel Landlock suite: read-only denial, the host /tmp grant difference, and a denied write beneath the host /dev.
+packages/sandbox/sandbox-local/tests/local.spec.ts	read	Provider suite: the three profile dialects, the runnerCommand override, the platform chains, probe behaviour and the Windows runner invocation.
+packages/sandbox/sandbox-local/tests/packed-install.e2e.ts	read	Packed-install rehearsal: the launcher must be present and byte-identical, and confinement must hold or fail closed, never unconfined.
+packages/sandbox/sandbox-local/tests/packed-workspace-closure.spec.ts	read	Closure helper suite: install edges and required peers followed, development and optional peers excluded, missing dependency fails.
+packages/sandbox/sandbox-local/tests/packed-workspace-closure.ts	read	Helper computing the runtime closure a packed install must ship, reading the pnpm workspace inventory and following workspace ranges.
+packages/sandbox/sandbox-local/tests/seatbelt.e2e.ts	read	Real-kernel Seatbelt suite: read-only grants no temp area, workspace-write grants /tmp and the user temp dir.
+packages/sandbox/sandbox-local/tsconfig.json	read	Project-reference tsconfig with references to the native Landlock launcher package, sandbox and sandbox-windows-acl.
+packages/sandbox/sandbox-policy/locale/en.json	read	Two-line locale stub carrying the English plugin-catalog title.
+packages/sandbox/sandbox-policy/locale/zh.json	read	Chinese locale stub with the plugin title and a one-line description.
+packages/sandbox/sandbox-policy/package.json	read	ESM manifest; runtime deps schemastery and zod (the projection state schema); peer deps agent, sandbox, session, system-prompt, session-projection.
+packages/sandbox/sandbox-policy/README.i18n.yaml	read	Per-heading bilingual hash pairing record for the package README.
+packages/sandbox/sandbox-policy/README.md	read	Package reference: resolution precedence, the per-session log store, the three model-visible policy texts, and the byte-stability requirement.
+packages/sandbox/sandbox-policy/README.zh.md	read	Chinese translation of the package README; frontmatter and overview read, line count matches the English file.
+packages/sandbox/sandbox-policy/src/index.ts	read	SandboxPolicyService: the deployment default, per-session resolution, the sandboxMode projection and the capability-neutral policy context.
+packages/sandbox/sandbox-policy/src/session-mode.ts	read	The sandbox/mode session event, the SANDBOX_MODES vocabulary and setSandboxMode as the single write path.
+packages/sandbox/sandbox-policy/tests/policy.spec.ts	read	Policy suite: defaults, load-time validation, per-session resolution, the approved override, byte-stable context rendering and the session kit.
+packages/sandbox/sandbox-policy/tsconfig.json	read	Project-reference tsconfig with references to agent, sandbox, session, system-prompt and session-projection.
+packages/sandbox/sandbox-policy/tsdown.config.ts	read	Single-file tsdown bundle config (ESM, node, es2024, no dts, no clean) for the policy package.
+packages/sandbox/sandbox-windows-acl/assets/diagnose-windows-sandbox-acl/scripts/diagnose-windows-sandbox-acl.ps1	read	798-line PowerShell diagnosis-and-repair program: REPORT/RECAP protocol, bounded -AllowRoot, backup plus recovery script per change, reverse-order rollback.
+packages/sandbox/sandbox-windows-acl/assets/diagnose-windows-sandbox-acl/SKILL.md	read	Model-facing skill: one command one approval, plain-language approval request, the nextAction table, the never list and the bilingual stop message.
+packages/sandbox/sandbox-windows-acl/package.json	read	ESM manifest with a second ./runner export; runtime deps koffi, yaml, lazy-require and win32-process; files ships the assets directory.
+packages/sandbox/sandbox-windows-acl/README.i18n.yaml	read	Per-heading bilingual hash pairing record for the package README.
+packages/sandbox/sandbox-windows-acl/README.md	read	Package reference: the AclSandbox API, the two-pass access-check mechanism, the mode restricting lists, the runner contract and a long verified-boundaries list.
+packages/sandbox/sandbox-windows-acl/README.zh.md	read	Chinese translation of the package README; frontmatter and overview read, line count matches the English file.
+packages/sandbox/sandbox-windows-acl/src/acl-skill.ts	read	Registers the bundled ACL diagnosis skill, copying packaged assets to a private temp directory so external PowerShell can run them.
+packages/sandbox/sandbox-windows-acl/src/acl.ts	read	ACL grant/revoke primitives: the capability ACE, the ambient-delete deny and the Low label in one apply, with a per-path lock and an exact-ACE skip.
+packages/sandbox/sandbox-windows-acl/src/ffi.ts	read	The koffi binding table and pointer/SID helpers, including a zeroed OVERLAPPED because koffi crashes on NULL.
+packages/sandbox/sandbox-windows-acl/src/grant.ts	read	AclWriteGrant: the standing-versus-revocable grant materialization and its AggregateError cleanup contract.
+packages/sandbox/sandbox-windows-acl/src/index.ts	read	AclSandbox: the WRITE_RESTRICTED token, the grants, the default-DACL merge, the fail-closed spawn and dispose, and manageDacls ownership.
+packages/sandbox/sandbox-windows-acl/src/path-boundary.ts	read	The two canonical boundary checks keeping the private-temp capability disjoint from the standing workspace capability.
+packages/sandbox/sandbox-windows-acl/src/runner.ts	read	The argv-prefix confinement runner: argv contract, SID verification, TMP/TEMP rewrite, exit-code mirroring and the windows-acl-run failure signature.
+packages/sandbox/sandbox-windows-acl/src/spawn.ts	read	Thin adapters over the shared win32-process package for piped and inherited-stdio restricted-token spawns.
+packages/sandbox/sandbox-windows-acl/src/token.ts	read	Restricted-token construction: logon SID discovery, the mode-selected restricting list, the Low integrity level and the default-DACL merge.
+packages/sandbox/sandbox-windows-acl/src/win32-abi.ts	read	The Win32 constants and struct offsets the package hard-codes, each checked against the headers by abi-probe.cpp.
+packages/sandbox/sandbox-windows-acl/src/workspace-sid.ts	read	Deterministic per-workspace and per-private-temp capability SIDs derived by hashing the canonical path.
+packages/sandbox/sandbox-windows-acl/tests/acl-failure-paths.spec.ts	read	Exhaustive Win32 failure suite for the ACL module, asserting which allocations were freed on each path.
+packages/sandbox/sandbox-windows-acl/tests/acl-skill.spec.ts	read	Skill registration suite: the packaged body registers and the provider plus its resource copy are removed on disposal.
+packages/sandbox/sandbox-windows-acl/tests/acl.spec.ts	read	Real-ACL suite: deny inheritance to containers only, shared label retention, merge-not-replace, idempotent grant, per-path lock exclusivity.
+packages/sandbox/sandbox-windows-acl/tests/control.spec.ts	read	Control-pipe forwarding suite: binary bytes survive the Job and restricted-token runners while writes stay denied.
+packages/sandbox/sandbox-windows-acl/tests/diagnose-script.spec.ts	read	Real-script suite: package ACE removal, WRITE_DAC/WRITE_OWNER grants, collateral preservation, -AllowRoot refusal, reverse-order rollback, idempotence.
+packages/sandbox/sandbox-windows-acl/tests/ffi.spec.ts	read	Pointer and SID-comparison suite: getTempPath, isInvalidHandle, decodePtrAt and the bounded sameSidAt field comparison.
+packages/sandbox/sandbox-windows-acl/tests/fixtures/skill-composition/cordis.yml	read	Four-line Cordis composition fixture mounting dsh-sandbox-local and dsh-skill for the composition test.
+packages/sandbox/sandbox-windows-acl/tests/grant-failure-paths.spec.ts	read	AclWriteGrant failure suite: fail-closed create, the exact SID free order, and AggregateError cleanup aggregation.
+packages/sandbox/sandbox-windows-acl/tests/grant.spec.ts	read	Grant suite: fail-closed SID parsing, idempotent materialization, standing versus revocable paths on dispose, independent SIDs coexisting.
+packages/sandbox/sandbox-windows-acl/tests/index-failure-paths.spec.ts	read	AclSandbox suite: constructor grant-shape validation, init failure aggregation, spawn preconditions and dispose cleanup aggregation.
+packages/sandbox/sandbox-windows-acl/tests/path-boundary.spec.ts	read	Boundary suite: a temp root inside the workspace is refused, a parent above it is accepted, the private directory must be disjoint.
+packages/sandbox/sandbox-windows-acl/tests/probe.spec.ts	read	Probe suite: writes confined to granted directories, fail-closed on an unparsable write SID, and provisional temp state cleared after a failed init.
+packages/sandbox/sandbox-windows-acl/tests/provider-chain.spec.ts	read	Win32 chain suite: the runner argv prefix, temp root, mode flag, partial enforcement and the ACL denial dialect.
+packages/sandbox/sandbox-windows-acl/tests/runner.spec.ts	read	Real Windows runner suite: confinement, temp capability isolation, the mode-downgrade leak regression, delete and ambient-writable escape regressions, exit 127.
+packages/sandbox/sandbox-windows-acl/tests/skill-composition.spec.ts	read	Real-composition suite: the skill registers through sandbox-local, its script matches the packaged asset, and an operator runner suppresses it.
+packages/sandbox/sandbox-windows-acl/tests/token-failure-paths.spec.ts	read	Token failure suite: every token API's error path, the exact restricting lists, and the default-DACL merge failures.
+packages/sandbox/sandbox-windows-acl/tests/workspace-sid.spec.ts	read	Capability-identity suite: stable per-workspace SIDs, distinct identities per path, byte-sensitivity to canonicalisation.
+packages/sandbox/sandbox-windows-acl/tsconfig.json	read	Project-reference tsconfig with references to win32-process, subprocess, lazy-require and skill.
+packages/sandbox/sandbox-windows-acl/tsdown.config.ts	read	Two-entry tsdown build (index and runner) with the runner as the path-loaded seam entry.
+packages/sandbox/sandbox-windows-acl/verify/abi-probe.cpp	read	C++ static_assert program checking every Win32 constant and struct size the package hard-codes against the real headers.
+packages/sandbox/sandbox/package.json	read	ESM manifest; runtime dep util-values (assertNever); peer deps dsh-llm, dsh-session and cordis.
+packages/sandbox/sandbox/README.i18n.yaml	read	Per-heading bilingual hash pairing record for the package README.
+packages/sandbox/sandbox/README.md	read	Package reference: the mode table, denied calls and escalation, fail-closed behaviour, design philosophy, and the stderr-dialect limitation.
+packages/sandbox/sandbox/README.zh.md	read	Chinese translation of the package README; frontmatter and overview read, line count matches the English file.
+packages/sandbox/sandbox/src/diagnostics.ts	read	Runner-failure and denial classification: workdir-checked spawn attribution, exit-gated fatal signatures and informational-line exclusion.
+packages/sandbox/sandbox/src/escalation.ts	read	The escalation vocabulary and choreography: the strictly-wider ladder, argument pairing, the shared markers and approveEscalation.
+packages/sandbox/sandbox/src/index.ts	read	The SandboxProvider service definition, the mode and enforcement vocabulary, ConfinedArgv, and the fail-closed SandboxUnavailableError.
+packages/sandbox/sandbox/src/roots.ts	read	The single writable-root derivation shared by the Seatbelt profile and the in-process filesystem fence.
+packages/sandbox/sandbox/tests/diagnostics.spec.ts	read	Diagnostic suite: usable-cwd requirement, exact runner attribution, the Landlock exit-125 rule and informational-line exclusion.
+packages/sandbox/sandbox/tests/escalation.spec.ts	read	Escalation suite: the ladder, argument pairing, the three marker texts and every approveEscalation outcome.
+packages/sandbox/sandbox/tests/roots.spec.ts	read	Writable-root suite: canonicalPath resolution and the read-only versus workspace-write sets.
+packages/sandbox/sandbox/tests/vocabulary.spec.ts	read	Failure-vocabulary suite: the SandboxUnavailableError identity, its message and the runner detail.
+packages/sandbox/sandbox/tsconfig.json	read	Project-reference tsconfig with references to vendor packages, llm/llm and core/session.
+packages/storage/README.i18n.yaml	read	Per-heading bilingual hash pairing record for the package-group README.
+packages/storage/README.md	read	Package-group map: the four storage packages, their roles, and the host-side no-model-visibility stance.
+packages/storage/README.zh.md	read	Chinese translation of the package-group README; frontmatter and overview read, line count matches the English file.
+packages/storage/storage-domain/locale/en.json	read	Two-line locale stub carrying the English plugin-catalog title.
+packages/storage/storage-domain/locale/zh.json	read	Chinese locale stub with the plugin title and a one-line description.
+packages/storage/storage-domain/package.json	read	ESM manifest; runtime deps schemastery and zod; peer deps dsh-storage and cordis.
+packages/storage/storage-domain/README.i18n.yaml	read	Per-heading bilingual hash pairing record for the package README.
+packages/storage/storage-domain/README.md	read	Package reference: declaring and opening a domain, backend routing, error codes, the durable write chain and the no-migration limitation.
+packages/storage/storage-domain/README.zh.md	read	Chinese translation of the package README; frontmatter and overview read, line count matches the English file.
+packages/storage/storage-domain/src/domain.ts	read	The open-domain runtime: authoritative memory, one write chain per domain, durability before memory before the change event.
+packages/storage/storage-domain/src/error.ts	read	Domain error vocabulary with a structured table-and-key detail for invalid-record.
+packages/storage/storage-domain/src/events.ts	read	The domain/changed event vocabulary: a closed put/deleted union carrying the new snapshot only.
+packages/storage/storage-domain/src/index.ts	read	DomainFacility and the plugin entry: routing, facet checks, per-record schema validation and the backup-and-skip policy.
+packages/storage/storage-domain/src/spec.ts	read	Domain declaration vocabulary: defineDomain validation at module load and the descriptor projection.
+packages/storage/storage-domain/tests/domain.spec.ts	read	Domain suite: spec validation, the open sequence, the write chain, durability failure, the global singleton, close and event containment.
+packages/storage/storage-domain/tests/helpers/memory-backend.ts	read	In-memory StorageBackend double with a shared media pool, injectable version stamps and injectable write failures.
+packages/storage/storage-domain/tsconfig.json	read	Project-reference tsconfig with references to vendor packages, schemastery and the sibling storage project.
+packages/storage/storage-json/locale/en.json	read	Two-line locale stub carrying the English plugin-catalog title.
+packages/storage/storage-json/locale/zh.json	read	Chinese locale stub with the plugin title and a one-line description.
+packages/storage/storage-json/package.json	read	ESM manifest; runtime dep schemastery only; peer deps dsh-storage and cordis; exports the locale JSON.
+packages/storage/storage-json/README.i18n.yaml	read	Per-heading bilingual hash pairing record for the package README.
+packages/storage/storage-json/README.md	read	Package reference: the two layouts, the config table, observable behaviour, the legacy bootstrap rules, file formats and limitations.
+packages/storage/storage-json/README.zh.md	read	Chinese translation of the package README; frontmatter and overview read, line count matches the English file.
+packages/storage/storage-json/src/atomic.ts	read	Atomic whole-file replacement: exclusive temp file, fsync, rename and a POSIX parent-directory fsync.
+packages/storage/storage-json/src/format.ts	read	The on-disk JSON format: whole-unit and per-record documents with their version and shape validation.
+packages/storage/storage-json/src/index.ts	read	The JSON backend: a required root, the two layout openers, the synchronous open reservation and the close drain.
+packages/storage/storage-json/src/per-record-unit.ts	read	The per-record unit: the directory is the state, foreign documents read as absent, path-safe keys, backupRecord and the legacy bootstrap.
+packages/storage/storage-json/src/single-unit.ts	read	The single-layout unit: memory authoritative, whole-file atomic republish and rollback of the in-memory change on a failed publish.
+packages/storage/storage-json/tests/json-backend.spec.ts	read	JSON backend suite: whole-unit specifics, memory rollback, array-tables rejection, the per-record contract, legacy bootstrap and backupRecord.
+packages/storage/storage-json/tsconfig.json	read	Project-reference tsconfig with references to vendor packages, schemastery and the sibling storage project.
+packages/storage/storage-sqlite/package.json	read	ESM manifest; runtime dep schemastery only; peer deps dsh-storage and cordis.
+packages/storage/storage-sqlite/README.i18n.yaml	read	Per-heading bilingual hash pairing record for the package README.
+packages/storage/storage-sqlite/README.md	read	Package reference: when to choose it over JSON, the config table, the open sequence, the document-per-row concept and the limitations.
+packages/storage/storage-sqlite/README.zh.md	read	Chinese translation of the package README; frontmatter and overview read, line count matches the English file.
+packages/storage/storage-sqlite/src/index.ts	read	The SQLite backend: one database hosting every routed unit, name validation before DDL, version stamping and the closed/close lifecycle.
+packages/storage/storage-sqlite/src/schema.ts	read	Open sequence, the physical layout version in PRAGMA user_version, the unit metadata tables and the record-table naming.
+packages/storage/storage-sqlite/src/unit.ts	read	One opened SQLite unit: prepared per-table statements, single-statement atomicity and a null-prototype record map.
+packages/storage/storage-sqlite/tests/sqlite-backend.spec.ts	read	SQLite suite: STRICT table materialization, schema-version rejection, prototype-polluting keys, unstamped failure recovery and malformed values.
+packages/storage/storage-sqlite/tsconfig.json	read	Project-reference tsconfig with references to vendor packages, schemastery and the sibling storage project.
+packages/storage/storage/locale/en.json	read	Two-line locale stub carrying the English plugin-catalog title.
+packages/storage/storage/locale/zh.json	read	Chinese locale stub with the plugin title and a one-line description.
+packages/storage/storage/package.json	read	ESM manifest with no runtime dependencies at all; peer dep cordis only; exports the locale JSON.
+packages/storage/storage/README.i18n.yaml	read	Per-heading bilingual hash pairing record for the package README.
+packages/storage/storage/README.md	read	Package reference: the hub as a pure registration table, the backend contract summary, the four StorageError codes and the limitations.
+packages/storage/storage/README.zh.md	read	Chinese translation of the package README; frontmatter and overview read, line count matches the English file.
+packages/storage/storage/src/backend.ts	read	The normative backend contract: facets, the KV unit, the descriptor with layout and compatibleVersions, and UNIT_NAME_RE.
+packages/storage/storage/src/error.ts	read	The shared StorageError vocabulary: seven stable codes with a message as diagnostic prose only.
+packages/storage/storage/src/index.ts	read	The storage hub service: the backend registry, the data-form mount map and the lifecycle-only backend service keys.
+packages/storage/storage/src/registry.ts	read	The named backend table with duplicate rejection, a stale-disposer guard and an error that lists the registered names.
+packages/storage/storage/tests/contract.ts	read	The shared KV backend conformance suite both media backends must satisfy, including durability across a simulated reopen.
+packages/storage/storage/tests/registry.spec.ts	read	Registry and hub suite: register, resolve, dispose, duplicate rejection, service-key derivation and the stale-disposer guard.
+packages/storage/storage/tsconfig.json	read	Project-reference tsconfig referencing only the vendored cosmokit and cordis; the hub is deliberately dependency-free.
