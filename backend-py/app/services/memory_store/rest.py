@@ -331,12 +331,17 @@ def list_facts(
     if category:
         rows = conn.execute(
             f'SELECT * FROM facts WHERE category = ? AND {vis} '
-            'ORDER BY updated_at DESC LIMIT ? OFFSET ?',
+            # `id DESC` is a tie-break, not a nicety: updated_at has SECOND
+            # resolution, so every fact written in one bulk pass shares a stamp
+            # and SQLite's order among them is unspecified — paging that set
+            # duplicated rows on one page and dropped them from the next.
+            'ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?',
             (category, *visParams, lim, off),
         ).fetchall()
     else:
         rows = conn.execute(
-            f'SELECT * FROM facts WHERE {vis} ORDER BY updated_at DESC LIMIT ? OFFSET ?',
+            f'SELECT * FROM facts WHERE {vis} '
+            'ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?',
             (*visParams, lim, off),
         ).fetchall()
     return [cast(FactDict, _row_as_wire(r)) for r in rows]

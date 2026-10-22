@@ -123,9 +123,18 @@ async def handleToolCall(name: str, arguments: str) -> str:
     from app.services.tool_registry import dispatch
 
     try:
-        args = json.loads(arguments) if arguments else {}
+        # One parse door: the four stream accumulators route through
+        # json_salvage (strict → escape repair → _raw), and this bridge used to
+        # call bare json.loads — so the exact case the salvage door was built
+        # for, a Windows path written with one backslash, parsed on the wire and
+        # failed here. `_raw` means nothing parsed, and is reported as such.
+        from app.services.workbench.json_salvage import parse_tool_arguments
+
+        args = parse_tool_arguments(arguments) if arguments else {}
         if not isinstance(args, dict):
             return 'Invalid arguments JSON: expected an object.'
+        if set(args) == {'_raw'}:
+            return f'Invalid arguments JSON: could not parse an object from {arguments!r:.200}'
     except json.JSONDecodeError as e:
         return f'Invalid arguments JSON: {e}'
 

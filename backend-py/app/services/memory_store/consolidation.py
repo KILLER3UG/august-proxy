@@ -276,7 +276,7 @@ def _enforce_fact_budget() -> tuple[int, list[str]]:
     excess = len(rows) - budget
     # Oldest first among the weakest: a fact nobody has touched in months
     # is the one whose context is the least likely to be missed.
-    scored: list[tuple[float, int, str]] = []
+    scored: list[tuple[float, float, int, str]] = []
     for r in rows:
         try:
             confidence = float(r['confidence']) if r['confidence'] is not None else 0.5
@@ -301,10 +301,15 @@ def _enforce_fact_budget() -> tuple[int, list[str]]:
         # 30-day half-life, the same shape the retrieval decay uses.
         decay = 0.5 ** (ageDays / 30.0)
         score = confidence * decay * use
-        scored.append((score, int(r['id']), str(r['fact_key'] or '')))
-    scored.sort(key=lambda item: (item[0], item[2]))
+        scored.append((score, -ageDays, int(r['id']), str(r['fact_key'] or '')))
+    # (score, OLDEST FIRST, id) — what the docstring above promises. Sorting
+    # the tie-break by fact_key made an alphabetical cut: every never-used
+    # fact scores 0.0 (use=0 multiplies the whole product away), so the
+    # archive order was the key string and a fact called `a…` went before one
+    # untouched for a year. `id` breaks a same-second tie deterministically.
+    scored.sort(key=lambda item: (item[0], item[1], item[2]))
     archived = 0
-    for _score, rowId, key in scored[:excess]:
+    for _score, _age, rowId, key in scored[:excess]:
         try:
             cur = conn.execute(
                 "UPDATE facts SET status = 'archived', updated_at = datetime('now') WHERE id = ? "

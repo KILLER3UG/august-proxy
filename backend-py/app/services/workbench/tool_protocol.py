@@ -244,11 +244,27 @@ def synthetic_tool_result(
     correct recovery differs (re-issue the call vs. fix the arguments).
     """
     label = tool_name or 'tool'
-    text = (
-        f"{SYNTHETIC_TOOL_RESULT_PREFIX} '{label}' did not return a result. "
-        'This call was NOT executed and its outcome is unknown — re-issue it '
+    # "Re-issue it" is only safe advice for a call that reads. The harness
+    # cannot know whether a dispatched write landed before the round was
+    # cancelled, and a duplicated write_file / run_command / mcp__* is a worse
+    # outcome than an unknown one — so the mutating branch asks for a
+    # verification read instead of a second application.
+    mutating = False
+    try:
+        from app.services.harness_mode import is_mutating_tool
+
+        mutating = is_mutating_tool(tool_name or '', None)
+    except Exception:
+        mutating = False
+    recovery = (
+        'The call may or may not have applied — do NOT re-issue it. Check the '
+        'effect first (read the file, list the state, ask the user), then act on '
+        'what is actually there.'
+        if mutating
+        else 'This call was NOT executed and its outcome is unknown — re-issue it '
         'once with valid arguments, and do NOT assume any earlier attempt ran.'
     )
+    text = f"{SYNTHETIC_TOOL_RESULT_PREFIX} '{label}' did not return a result. {recovery}"
     if reason:
         text += f' ({reason})'
     return {

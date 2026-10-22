@@ -629,7 +629,18 @@ async def dispatch(name: str, args: dict[str, object]) -> str:
     """
     tool = _registry.get(name)
     if not tool:
-        return f'Error: Tool "{name}" not found.'
+        # A typo should cost one round, not a guess. Naming the closest
+        # registered tools turns "read_fle" into a self-correcting receipt, and
+        # pointing at tool_search keeps the recovery path inside the documented
+        # disclosure route for anything outside the current surface.
+        from difflib import get_close_matches
+
+        near = get_close_matches(name, sorted(_registry), n=3, cutoff=0.6)
+        hint = f' Closest: {", ".join(near)}.' if near else ''
+        return (
+            f'Error: Tool "{name}" not found.{hint}'
+            ' Call tool_search for the surface this turn can use.'
+        )
     if is_host_agent_tool(name):
         import os
 

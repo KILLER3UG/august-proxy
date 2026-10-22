@@ -1565,7 +1565,11 @@ def _alias_op_measures(measures: dict[str, float], deck_text: str) -> None:
 # expression keeps the column layout unambiguous.
 
 _TRACE_MAX = 8        # expressions sampled per run
-_TRACE_POINTS = 2000  # downsample budget per trace, in the sidecar file
+_TRACE_POINTS = 2000  # inline (transcript) budget per trace, after the panel copy is sized
+# The workspace sidecar is the artifact the chart is drawn from, so it keeps
+# far more points — and it keeps them as bucket extremes, not every k-th
+# sample, so a narrow overshoot or ripple survives the write.
+_SIDECAR_POINTS = 20_000
 # A tool result is capped at MAX_TOOL_RESULT_CHARS on its way into the
 # transcript, and the Circuit panel parses THAT copy: a JSON string cut
 # mid-array does not parse at all, so an over-sized trace set reads as "no
@@ -1772,6 +1776,34 @@ def _downsample(
 _EDGE_CAP = 400
 
 
+def _bucket_extremes(
+    xs: list[float], ys: list[float], budget: int
+) -> tuple[list[float], list[float]]:
+    """Keep each bucket's min AND max, rather than every k-th sample.
+
+    A stride deletes a narrow spike that happens to fall between two strides,
+    and this is the array the saved sidecar is built from — so the peak the
+    learner was meant to see in their own file would be gone, not just in the
+    preview. SimulIDE's plot does the same thing for the same reason: inside a
+    sub-pixel bucket it tracks maxY/minY and emits the extremes.
+    """
+    n = len(xs)
+    if n <= budget or budget < 4:
+        return list(xs), list(ys)
+    buckets = max(1, budget // 2)
+    size = -(-n // buckets)
+    keep: set[int] = {0, n - 1}
+    for b in range(buckets):
+        lo = b * size
+        if lo >= n:
+            break
+        block = range(lo, min(n, lo + size))
+        keep.add(min(block, key=lambda i: ys[i]))
+        keep.add(max(block, key=lambda i: ys[i]))
+    idxs = sorted(keep)
+    return [xs[i] for i in idxs], [ys[i] for i in idxs]
+
+
 def _signal_edges(xs: list[float], ys: list[float]) -> dict[str, object]:
     """Change-sampled view of a trace: only the moments the signal moved.
 
@@ -1871,7 +1903,18 @@ def _normalize_sweep(sweep: object) -> tuple[dict[str, Any] | None, list[str]]:
         lo = float(sweep.get('from'))  # type: ignore[arg-type]
         hi = float(sweep.get('to'))  # type: ignore[arg-type]
     except (TypeError, ValueError):
-        return None, ['sweep.from / sweep.to must be numbers (raw SI values)']
+        # One value vocabulary: a resistor card in the same deck writes `4.7k`
+        # and parses, and the sweep door used to answer "must be numbers (raw
+        # SI values)" to `from:'10n'`. Fall back to the SAME parser the cards
+        # use; unparseable text still refuses rather than becoming a silent 0.
+        rawFrom, rawTo = sweep.get('from'), sweep.get('to')
+        parsedLo = parse_spice_value(rawFrom) if isinstance(rawFrom, str) else None
+        parsedHi = parse_spice_value(rawTo) if isinstance(rawTo, str) else None
+        if parsedLo is None or parsedHi is None:
+            return None, [
+                'sweep.from / sweep.to must be numbers or SPICE values (10n, 4.7k, 1Meg)'
+            ]
+        lo, hi = parsedLo, parsedHi
     if lo == hi:
         return None, ['sweep.from and sweep.to must differ']
     try:
@@ -1988,6 +2031,7 @@ async def simulate_circuit(
     session: object | None = None,
     traces: object | None = None,
     sweep: object | None = None,
+    persist: bool = True,
 ) -> dict[str, object]:
     """Run an ngspice batch simulation and parse the printed measures.
 
@@ -2005,7 +2049,8 @@ async def simulate_circuit(
     They come back as ``traces: {expr: {x, y, xunit, unit, points}}``
     downsampled to fit the transcript cap, plus a ``tracesFile`` JSON in
     the workspace at full resolution that ``render_chart`` accepts
-    directly.
+    directly — the sidecar and the inline-deck copy are both written only
+    while ``persist`` is on (the caller wants an artifact, not a probe).
 
     ``sweep`` (optional) is ``{param, from, to, steps}`` — the deck is
     re-run once per parameter value (LTspice-.step semantics via an
@@ -2238,22 +2283,29 @@ async def simulate_circuit(
                 # transition list built from a stride-thinned sample would miss
                 # exactly the short pulses the representation exists to keep.
                 edges = _signal_edges(xs, ys)
-                xs, ys = _downsample(xs, ys)
+                # The FULL arrays are what gets stored here. The sidecar
+                # buckets them keeping extremes; the inline copy strides them to
+                # the transcript budget. Thinning once, from the source, is what
+                # keeps a second pass from eating a peak the first pass kept.
                 sampled.append((expr, xs, ys, total, _trace_y_unit(expr, is_mag), edges))
 
             if sampled:
-                traces_out: dict[str, dict[str, object]] = {
-                    expr: {
-                        'x': xs,
-                        'y': ys,
+                traces_out: dict[str, dict[str, object]] = {}
+                for expr, xs, ys, total, unit, edges in sampled:
+                    sx, sy = _bucket_extremes(xs, ys, _SIDECAR_POINTS)
+                    traces_out[expr] = {
+                        'x': sx,
+                        'y': sy,
                         'xunit': xunit,
                         'unit': unit,
+                        # `points` is the run's own size; `storedPoints` says how
+                        # many made it into the file — the two are different and
+                        # the file has to say which is which.
                         'points': total,
+                        'storedPoints': len(sx),
                         'edges': edges,
                     }
-                    for expr, xs, ys, total, unit, edges in sampled
-                }
-                if ws:
+                if ws and persist:
                     base = str(name)
                     base = base[: -len('.cir')] if base.endswith('.cir') else base
                     keep_traces = _bind(f'{base}_traces.json', ws, for_write=True)
@@ -2313,8 +2365,12 @@ async def simulate_circuit(
         if sweep_warnings:
             result['sweepWarnings'] = sweep_warnings
         # Persist the deck into the workspace when the input was inline, so
-        # the run has a durable artifact the user can edit/re-run.
-        if not source_is_file and ws:
+        # the run has a durable artifact the user can edit/re-run. `persist`
+        # is off for callers that read a folder of decks (the batch suite):
+        # an inline text run would otherwise drop a copy of every deck into
+        # the project ROOT, where a second pass finds it again and the suite
+        # counts its own output as input.
+        if not source_is_file and ws and persist:
             keep = _bind(f'{name}.cir' if not str(name).endswith('.cir') else str(name), ws, for_write=True)
             keep.write_text(deck_text + '\n', encoding='utf-8')
             result['savedTo'] = str(keep)
@@ -4300,11 +4356,14 @@ async def batch_test_decks(
 ) -> dict[str, object]:
     """Run every deck under a folder and assert its own `* expect` cards.
 
-    Read-only: nothing is written, and each deck is simulated from its text, so
-    a fixture folder is safe to point at a real project. Decks with no
-    expectation are counted as `no-expectations`, never as a pass — a fixture
-    that asserts nothing passing is how a suite goes green around a broken
-    feature.
+    Nothing is written: the runs are `persist=False`, so a fixture folder is
+    safe to point at a real project. (It was not: each inline text run dropped
+    a copy of its deck in the workspace ROOT, so a second pass counted its own
+    output as input, and two fixtures sharing a basename overwrote each other.)
+    Decks with no expectation are counted as `no-expectations`, never as a
+    pass — a fixture that asserts nothing passing is how a suite goes green
+    around a broken feature. Rows are identified by their path RELATIVE to the
+    folder, because a basename alone cannot tell `a/loop.cir` from `b/loop.cir`.
     """
     ws = workspace or _workspace(session)
     if not ws:
@@ -4325,25 +4384,31 @@ async def batch_test_decks(
     passed = failed = silent = 0
     for deck in capped:
         try:
+            rel = str(deck.relative_to(root)) if root.is_dir() else deck.name
+        except ValueError:
+            rel = deck.name
+        try:
             text = deck.read_text(encoding='utf-8', errors='replace')
         except OSError as exc:
-            rows.append({'path': str(deck), 'status': 'unreadable', 'error': str(exc)})
+            rows.append({'path': rel, 'status': 'unreadable', 'error': str(exc)})
             failed += 1
             continue
         expects = parse_expectations(text)
-        result = await simulate_circuit(netlist=text, name=deck.name, workspace=ws, session=session)
+        result = await simulate_circuit(
+            netlist=text, name=deck.name, workspace=ws, session=session, persist=False
+        )
         raw_measures = result.get('measures')
         measures: dict[str, object] = raw_measures if isinstance(raw_measures, dict) else {}
         if result.get('error') or result.get('errors'):
             rows.append({
-                'path': deck.name,
+                'path': rel,
                 'status': 'engine-error',
                 'errors': result.get('errors') or [str(result.get('error'))],
             })
             failed += 1
             continue
         if not expects:
-            rows.append({'path': deck.name, 'status': 'no-expectations', 'measures': measures})
+            rows.append({'path': rel, 'status': 'no-expectations', 'measures': measures})
             silent += 1
             continue
         problems: list[str] = []
@@ -4363,10 +4428,10 @@ async def batch_test_decks(
             if not ok:
                 problems.append(f'{expr} {exp.get("op")} {exp.get("value")}: got {found:g} ({why})')
         if problems:
-            rows.append({'path': deck.name, 'status': 'failed', 'problems': problems, 'measures': measures})
+            rows.append({'path': rel, 'status': 'failed', 'problems': problems, 'measures': measures})
             failed += 1
         else:
-            rows.append({'path': deck.name, 'status': 'passed', 'asserts': len(expects), 'measures': measures})
+            rows.append({'path': rel, 'status': 'passed', 'asserts': len(expects), 'measures': measures})
             passed += 1
     return {
         'ok': failed == 0 and passed > 0,

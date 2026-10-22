@@ -403,6 +403,62 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001
             check('GET /api/terminal/sessions (no token)', False, f'{type(exc).__name__}: {exc}')
 
+        # ── Section 7 · Prompt and surface invariants ─────────────────
+        # Three properties this repo states in prose and never computes: the
+        # system prompt is byte-stable (so the provider prefix cache holds),
+        # the two tool builders describe the SAME surface in the SAME order,
+        # and the code-mode guard is fully spliced. Each is a silent-drift class
+        # a linter cannot see — and a half-spliced guard is a credential door.
+        begin('prompt and surface invariants')
+        try:
+            import re as _re
+
+            from app.services.workbench import code_runner
+
+            rendered = code_runner.build_runner_source('result = 1', str(data_dir))
+            left = sorted(set(_re.findall(r'__[A-Z][A-Z0-9_]*__', rendered)))
+            check('code-mode guard leaves no unbound placeholder', not left, ', '.join(left))
+        except Exception as exc:  # noqa: BLE001
+            check('code-mode guard probe', False, f'{type(exc).__name__}: {exc}')
+
+        try:
+            from app.services.workbench.sessions import create_workbench_session
+            from app.services.workbench.workbench import (
+                buildSystemPrompt,
+                openaiToolDefinitions,
+                toolDefinitions,
+            )
+
+            probeSession = create_workbench_session(workspacePath=str(data_dir))
+
+            def _wireNames(tools: list) -> list[str]:
+                out: list[str] = []
+                for t in tools:
+                    fn = t.get('function') if isinstance(t.get('function'), dict) else t
+                    name = str((fn or {}).get('name') or '') if isinstance(fn, dict) else ''
+                    if name:
+                        out.append(name)
+                return out
+
+            a = _wireNames(toolDefinitions(probeSession))
+            b = _wireNames(openaiToolDefinitions(probeSession))
+            check(
+                'both tool builders agree on one ordered surface',
+                bool(a) and a == b,
+                f'anthropic={len(a)} openai={len(b)} '
+                f'set-diff={sorted(set(a) ^ set(b))[:4] or "none"} order={"differs" if a != b else "ok"}',
+            )
+
+            p1 = buildSystemPrompt(probeSession)
+            p2 = buildSystemPrompt(probeSession)
+            check(
+                'the system prompt is byte-stable across rebuilds',
+                bool(p1) and p1 == p2,
+                f'{len(p1)} vs {len(p2)} chars',
+            )
+        except Exception as exc:  # noqa: BLE001
+            check('prompt and surface probe', False, f'{type(exc).__name__}: {exc}')
+
     failures = [r for r in results if not r['ok']]
     report = {
         'ok': not failures,

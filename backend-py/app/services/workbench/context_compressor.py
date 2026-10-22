@@ -1078,6 +1078,13 @@ async def compressMessages(
         return localSummarize(chunk)
 
     summaryText = await _summarize(middle)
+    # A degenerate note must never replace history. The LLM summariser returns
+    # '' on ANY provider failure (it logs and swallows), so without this an
+    # outage erased the middle span, reported success, and left the model a
+    # blank note where 40 turns of decisions were. Refusing keeps the oversized
+    # context — the honest failure — and the next round tries again.
+    if not summaryText.strip():
+        return list(messages)
     # Split-and-merge: a single turn alone can exceed the summary budget —
     # summarize two halves and merge instead of losing the excess silently.
     if len(summaryText) > summaryMaxChars and len(middle) >= 2:

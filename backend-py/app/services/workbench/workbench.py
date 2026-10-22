@@ -122,7 +122,15 @@ class SessionBusyError(RuntimeError):
     """A turn is already live on this session and the caller passed wait=False."""
 
     def __init__(self, sessionId: str) -> None:
-        super().__init__(f'Session {sessionId} is already running a turn')
+        # Name the doors that would have worked. A Bot, room or automation
+        # caller that hits a 409 learns only that it lost, while both
+        # alternatives exist on the same router (`/chat/queue` and
+        # `/chat/steer`).
+        super().__init__(
+            f'Session {sessionId} is already running a turn. Queue the message '
+            '(`/chat/queue`) to drain at the next loop boundary, or send it as a '
+            'steer (`/chat/steer`) to correct the run in progress.'
+        )
         self.sessionId = sessionId
 
 
@@ -1762,12 +1770,28 @@ def enqueueUserMessage(
     # completion (each _enqueue_completion lands here as kind='subagent').
     MAX_QUEUE_ENTRIES = 50
     if len(session.queuedUserMessages) >= MAX_QUEUE_ENTRIES:
-        dropped = session.queuedUserMessages.pop(0)
+        # Drop-oldest used to be blind: it popped index 0 whatever it was, and
+        # the entries that actually reach the cap are machine notifications
+        # (every subagent and daemon completion lands here), so a long run made
+        # the queue evict the user's own earlier messages to make room for a
+        # notification. Evict the oldest MACHINE entry first; a human entry is
+        # only spent when the queue is nothing but human messages. Refusing the
+        # incoming entry instead would lose a completion the parent turn is
+        # waiting on, which is the worse failure.
+        _MACHINE_KINDS = ('subagent', 'daemon')
+        queue = session.queuedUserMessages
+        oldestMachineIdx = next(
+            (i for i, q in enumerate(queue) if str(q.get('kind') or '') in _MACHINE_KINDS),
+            None,
+        )
+        dropped = queue.pop(oldestMachineIdx if oldestMachineIdx is not None else 0)
         logger.warning(
-            'workbench queue cap (%d) reached for %s — dropping oldest entry %s',
+            'workbench queue cap (%d) reached for %s — dropping the %s entry %s%s',
             MAX_QUEUE_ENTRIES,
             sessionId,
+            dropped.get('kind'),
             dropped.get('id'),
+            '' if oldestMachineIdx is not None else ' (no machine entry left to spend)',
         )
     session.queuedUserMessages.append(entry)
     session.updatedAt = _now()
@@ -2903,7 +2927,10 @@ async def _sendWorkbenchMessageStreamImpl(
             releaseCompactionLock,
             reliefHeadCount,
         )
-        from app.services.workbench.loop.recovery import _compactionCall
+        from app.services.workbench.loop.recovery import (
+            _compactionCall,
+            _reductionIsWorthwhile,
+        )
 
         if isFeatureEnabled():
             contextWindow = _resolveModelContextWindow(resolvedModel, resolvedProvider)
@@ -2968,7 +2995,13 @@ async def _sendWorkbenchMessageStreamImpl(
                         summarizer=summarizer,
                     )
                     compressedTokens = estimateTokens(compressed)
-                    if compressedTokens < originalTokens:
+                    # One acceptance rule for all five relief paths. This used
+                    # to be `compressedTokens < originalTokens`, so a 1-token
+                    # shave archived the whole transcript, rewrote
+                    # session.messages, emitted a compaction frame and paid a
+                    # summariser call — while the two recovery paths already
+                    # refused anything that freed less than the floor.
+                    if _reductionIsWorthwhile(originalTokens, compressedTokens):
                         compressedCount = len(currentMessages) - len(compressed)
                         currentMessages = compressed
                         # Persist so later turns / reload don't re-send the bloated history.

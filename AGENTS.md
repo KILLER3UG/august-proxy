@@ -35,15 +35,19 @@ The static gates cannot see whether the app **starts** — a module that fails
 to import, a migration that does not apply, a lifespan hook that raises and a
 router that fails to register are all invisible to a linter and fatal at
 launch. `e2e:smoke` is the floor under that, and it is deliberately not a
-behaviour test: it imports the real app, runs its lifespan, and asks sixteen
+behaviour test: it imports the real app, runs its lifespan, and asks nineteen
 questions — six read-only doors, one config write, the closed MCP door, the
 local door twice (once without the per-install token, which must be
-refused, and once with it, which must get past the door), and six
+refused, and once with it, which must get past the door), six
 policy/secret checks (every file/config-writing tool is classified as
 mutating, every sub-agent deny-set name is a registered tool, the terminal
 environment carries no app credential, the token is
 not left in `os.environ`, and the chat and terminal token doors refuse an
-unauthenticated caller). It never touches the user's data
+unauthenticated caller), and three prompt/surface invariants (the code-mode
+guard template leaves no `__PLACEHOLDER__` in the rendered child source, the
+Anthropic and OpenAI tool builders return the same ordered name list, and
+`buildSystemPrompt` for one session is byte-identical across rebuilds — the
+prefix-cache claim, computed). It never touches the user's data
 directory — that holds their brain database and their keys — and it points
 `AUGUST_DATA_DIR` at a temp directory that is removed afterwards.
 
