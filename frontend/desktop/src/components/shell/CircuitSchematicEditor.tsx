@@ -174,7 +174,7 @@ function symbolSvg(c: SchematicComponent): string {
             `<line x1="${edge.toFixed(0)}" y1="${py.toFixed(0)}" x2="${(px + (inward ? 8 : -8)).toFixed(0)}" y2="${py.toFixed(0)}" stroke="${STROKE}" stroke-width="1.5"/>`,
           );
           body.push(
-            `<text x="${px.toFixed(0)}" y="${(py - 3).toFixed(0)}" text-anchor="middle" font-size="8" fill="${STROKE}">${net}</text>`,
+            `<text x="${px.toFixed(0)}" y="${(py - 3).toFixed(0)}" text-anchor="middle" font-size="8" fill="${STROKE}">${esc(net)}</text>`,
           );
         });
         return body.join('');
