@@ -449,7 +449,10 @@ def create_html_artifact(
             doc = f'<title>{safe_title}</title>\n{doc}'
 
     bound = Path(out)
-    bound.write_text(doc, encoding='utf-8')
+    # newline='': the default text mode rewrites \n to \r\n on Windows, and the
+    # `bytes` this returns is counted from `doc` — so without it the tool reports
+    # a size the file on disk does not have. (Same reason write_file pins it.)
+    bound.write_text(doc, encoding='utf-8', newline='')
     return {
         'path': out,
         'bytes': len(doc.encode('utf-8')),

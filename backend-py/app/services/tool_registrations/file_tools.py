@@ -613,7 +613,13 @@ async def _writeFile(path: str, content: str, **_extra: object) -> str:
         filePath.parent.mkdir(parents=True, exist_ok=True)
         import aiofiles
 
-        async with aiofiles.open(str(filePath), 'w', encoding='utf-8') as f:
+        # newline='' on purpose, matching edit_lines (which writes bytes for the
+        # same reason, see _editLines). Text mode on Windows translates every
+        # \n to \r\n, so `write_file` shipped a CRLF file while `edit_lines`
+        # leaving the same content kept LF — two writers, two byte shapes for one
+        # model-authored string, and read_file is deliberately binary so the
+        # difference is visible to the model on the next read.
+        async with aiofiles.open(str(filePath), 'w', encoding='utf-8', newline='') as f:
             await f.write(content)
         try:
             from app.services.workbench.context import currentSessionId as _csid_w
