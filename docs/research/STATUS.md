@@ -21,11 +21,60 @@ Location: `%LOCALAPPDATA%\Temp\harness-research\{pi,simulide,deepseek-harness}`
 
 | Phase | Scope | State |
 |---|---|---|
-| 0 | August baseline — read August's own areas, write `docs/research/august-baseline.md` | **in progress** |
+| 0 | August baseline — read August's own areas, write `docs/research/august-baseline.md` | **done** |
 | 1 | Coverage ledger — `manifest.tsv` per repo, every tracked file classified and sharded | **done** |
-| 2 | Parallel subagent deep-dive, one subagent per shard | pending |
-| 3 | Verification gate — lead re-diffs, spot-checks 10 %, writes `ARCHITECTURE.md` per repo | pending |
+| 2 | Parallel subagent deep-dive, one subagent per shard | **in progress** |
+| 3 | Verification gate — lead re-diffs, spot-checks 10 %, writes `ARCHITECTURE.md` per repo | **partial** (pi spot-check in progress) |
 | 4 | `docs/research/AUGUST-IMPROVEMENTS.md` with ranked top-5 | pending |
+
+### Phase 0 — the August baseline (done)
+
+`docs/research/august-baseline.md`. Built from three prior August audits already
+in the repo, then **corrected by three independent first-hand read-only
+surveys** of the live tree (chat/proxy loop + streaming + provider routing +
+settings shell; tool loop + registry + subagents + sandbox + system prompt;
+memory + recall + consolidation + skills + compaction). The surveys changed the
+baseline in several places that matter:
+
+- **"Five-layer memory" is a doc claim with zero code behind it.** It exists in
+  three June-2026 design specs; `cognitive_config.py:217` deletes
+  `cognitive_layers` and `cognitive_boot.py:3` says the layers were removed.
+  The real system is **one SQLite file with seven surfaces**.
+- **`AGENTS.md`/`docs/ARCHITECTURE.md`'s "the parent turn is the single memory
+  write door" is FALSE** — `save_fact(` has **8** call sites.
+- **153 registered tools** (AST count), not "~180".
+- **Progressive disclosure activates on a token budget** (10 % of the model
+  window), not a tool count — the bridge's "≥ 200 tools" comment is false.
+- **The system prompt is ~2.5–3.5 k tokens, not the 9 422 the old gap analysis
+  claims** (that document's own breakdown sums to 13 256). The **tool
+  definitions are 6 911 tok — 3× the prompt** and are the real cost.
+- **The Windows sandbox is soft, and `enforcement_report()` can claim
+  `strong=True` while every command runs soft.**
+- **The code-mode ↔ hardline parity gate is gone** (deleted with the suite on
+  2026-10-17). The port is real; the drift check is not.
+- **Four stale comments** describe a state the code no longer has
+  (`loop/guards.py:45-46,81-83`; `workbench.py:5848-5852`;
+  `settings-registry.ts:7`; `workbench.py:1050`).
+
+### Phase 2 — running note (concurrency)
+
+The runtime enforces a **global 8-active-child limit** across *all* workflows
+and *all* `subagent` calls. Two workflows running concurrently collide: when
+one advances to its next batch it cannot start its children because the other
+holds the pool, and the batch is lost. The first pi run lost 12 of its 17
+shards to exactly this. **Phase 2 therefore runs as ONE queue at concurrency 7**,
+with a per-batch try/catch, and the failed set is re-dispatched at the end.
+
+### Phase 3 — spot-check tooling (partial)
+
+`scripts/research/check-citations.mjs` parses every `path:line` citation in a
+shard report and reopens the file in the clone to confirm the line exists and
+is in range. First run over the six completed pi shard reports: **277
+citations checked, 0 bad**. A manual re-read then confirmed that four specific
+*claims* are true at their cited lines (length-truncated tool calls refused at
+`packages/agent/src/agent-loop.ts:274-279`; the executable-vs-declared tool
+diff at `:342`; terminate-unanimity at `:700-702`; a truncated proxy stream
+becoming an error at `packages/agent/src/proxy.ts:219-230`).
 
 ## Phase 1 — coverage ledger (done)
 
