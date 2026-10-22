@@ -880,7 +880,7 @@ def buildSystemPrompt(
         from app.services import skill_service as _skill_service
 
         # Thread the session's resolved scope — a Bot's private
-        # skills belong in the intake list too (the <relevant_skills> tail and
+        # skills belong in the intake list too (the relevant-skills tail and
         # load_skill already see them; the Tier-1 surfaces were half-wired).
         _tierScope = _scope_svc.resolve_scope(session)
         skillNames = sorted(
@@ -932,7 +932,7 @@ def buildSystemPrompt(
             from app.services import brain_config_service as _bc
 
             # Per-turn auto-injection is its OWN flag (default off): the
-            # relevance-matched <memory> tail rides the latest message only
+            # relevance-matched memory tail rides the latest message only
             # when set. The boot index below is NOT gated by it (ZCode-parity
             # 044: the memory index is always in context at session start,
             # like this environment's MEMORY.md); modelMemoryRead still gates
@@ -942,12 +942,12 @@ def buildSystemPrompt(
             memReadOn = False
         if memReadOn:
             memParts = [
-                '- Memory: relevant stored facts auto-inject each turn (a <memory> block '
-                'appended to the latest user message); pull deeper context on demand via '
+                '- Memory: relevant stored facts auto-inject each turn (a "Relevant memory:" '
+                'section appended to the latest user message); pull deeper context on demand via '
                 + ', '.join(memoryTools) + '. ' + storeHint
             ]
         else:
-            # memoryAutoInject off: no per-turn <memory> block — the model
+            # memoryAutoInject off: no per-turn memory tail — the model
             # pulls relevant facts on demand via the read tools (gated by
             # modelMemoryRead, independent of auto-injection). The boot index
             # still names what exists.
@@ -962,7 +962,7 @@ def buildSystemPrompt(
         # prompt, so a fresh read each turn (new timeline rows land after every
         # completed turn) would change those bytes and invalidate the
         # provider's entire prefix cache — the "chat feels slow" regression.
-        # Fresh memory still reaches the model two ways: the per-turn <memory>
+        # Fresh memory still reaches the model two ways: the per-turn memory
         # tail block (byte-stable system prompt, appended to the latest user
         # message) and brain_query on demand.
         frozen = getattr(session, '_frozen_mem_index', None)
@@ -987,7 +987,7 @@ def buildSystemPrompt(
         # Frozen per-session project-memory index (titles
         # only) — same freeze discipline as the global index above so hand
         # edits to the md files don't bust the cached prefix mid-session;
-        # fresh entries still reach the model via the per-turn <memory> tail.
+        # fresh entries still reach the model via the per-turn memory tail.
         _projIdx = getattr(session, '_frozen_project_index', None)
         if _projIdx is None:
             _projIdx = ''
@@ -1051,7 +1051,7 @@ def buildSystemPrompt(
     # the whole session lifetime — id/title/goal/plan/plan-status/
     # execution_state/scratchpad/last_tool_failure/todos were moved OUT of the
     # system prompt into the per-turn <session_state> tail block on the last
-    # user message (same injection point as <memory>/<relevant_skills>).
+    # user message (same injection point as the memory and skills tails).
     # Why: the provider prompt-cache breakpoint covers the WHOLE system block
     # (adapters/anthropic.py marks the last system block), so ANY byte diff —
     # a title change, a plan update, a todo tick — re-read 100% of a ~29k-char
@@ -1107,7 +1107,7 @@ def buildSystemPrompt(
             try:
                 # Part 18 P1.2/P2.1: the main-agent Tier-1 index is NAME-ONLY
                 # (compact_skills) — descriptions ride in the per-turn
-                # <relevant_skills> tail instead, so name-only catalog grows
+                # relevant-skills tail instead, so name-only catalog grows
                 # without re-reading the cached prefix and in-place
                 # description edits keep the system prompt byte-stable.
                 from app.services import session_scope as _ss_caps
@@ -3011,7 +3011,7 @@ async def _sendWorkbenchMessageStreamImpl(
             currentMessages = list(session.messages)
     except Exception:
         currentMessages = list(session.messages)
-    # M3 memory injection + Tier-3 <relevant_skills> (M6 item 6):
+    # M3 memory injection + Tier-3 relevant skills (M6 item 6):
     # BM25-retrieve the facts and skill descriptions relevant to the current
     # user message and append them to it — the tail of the turn context. Never
     # in the SYSTEM prompt (the provider prefix cache stays stable, Q14).
@@ -3019,7 +3019,7 @@ async def _sendWorkbenchMessageStreamImpl(
     # persisted into history by the step-boundary barrier flush (it rides an
     # older message, so it stays cache-stable), but each turn re-injects a
     # FRESH tail on the current last-user message — the persisted copy of a
-    # past turn's <session_state>/<memory> is stale context the model should
+    # past turn's <session_state>/memory tail is stale context the model should
     # not trust. Trimming it at persist is the follow-up; the comment here used
     # to claim "never persisted", which was wrong.
     #
@@ -3030,7 +3030,7 @@ async def _sendWorkbenchMessageStreamImpl(
     # names never bound, and reading them at emit time would raise into the
     # emit's own except and silently drop the whole meter.
     _contextSections = tailSectionSizes(None, None, None, None)
-    # Same pre-bind rule: the injected-skill names (the <relevant_skills>
+    # Same pre-bind rule: the injected-skill names (the relevant-skills
     # detail keys) feed the turn's credit-assignment row (migration 050) and
     # must stay bound even when the injection block fails early.
     _skillsInjectedNames: list[str] = []
@@ -3046,7 +3046,7 @@ async def _sendWorkbenchMessageStreamImpl(
         try:
             from app.services import brain_config_service as _bc
 
-            # Per-turn <memory> recall block is gated by memoryAutoInject
+            # Per-turn memory recall section is gated by memoryAutoInject
             # (default off) — recall happens only when the model calls the
             # read tool, not automatically every turn.
             _memReadOn = bool(_bc.getRuntimeConfig().get('memoryAutoInject', False))
@@ -5939,7 +5939,7 @@ async def _sendWorkbenchMessageStreamImpl(
         parseFailures=parseFailures,
         surfaceDowngraded=surfaceDowngraded,
         # Audit D1 (migration 050): credit assignment. skillsInjected comes
-        # from the <relevant_skills> detail keys; errorFamilies from the
+        # from the relevant-skills detail keys; errorFamilies from the
         # per-round steering scan union. skills_loaded and facts_injected
         # are drained inside turnTelemetry (it owns those authorities).
         skillsInjected=_skillsInjectedNames,

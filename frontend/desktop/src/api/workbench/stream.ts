@@ -164,9 +164,19 @@ async function readSseStream(
         receivedTerminalEvent = true;
       }
       const frameSeq = frameId !== null && Number.isFinite(Number(frameId)) ? Number(frameId) : undefined;
+      // A keepalive proves the CONNECTION is alive, not that the session is.
+      // The backend now reports how long the session has actually been silent,
+      // so a keepalive past that budget does not restart the idle timer — which
+      // is what made a stalled upstream look healthy for five minutes (the 30 s
+      // ping reset a 60 s timer forever). A keepalive with no evidence (older
+      // server, session with no events yet) behaves as before.
+      const idleSec = frameEvent === 'keepalive' ? Number(payload?.idleSec) : Number.NaN;
+      const carriesProgress =
+        frameEvent !== 'keepalive' || !Number.isFinite(idleSec) || idleSec < idleTimeoutMs / 1000;
+      if (carriesProgress) resetIdleTimer();
       dispatchWorkbenchEvent(frameEvent, payload, handlers, frameSeq);
       if (frameSeq !== undefined) handlers.onSeq?.(frameSeq, frameEvent);
-      onFrame?.();
+      if (carriesProgress) onFrame?.();
     } catch (e: unknown) {
       if (e instanceof DOMException && e.name === 'AbortError') throw e;
       // Ignore non-JSON data lines
@@ -188,7 +198,9 @@ async function readSseStream(
   while (true) {
     throwIfAborted(signal);
     const { done, value } = await reader.read();
-    resetIdleTimer();
+    // No reset here: a byte from the socket is not progress. The reset happens
+    // per DISPATCHED FRAME below, and a keepalive only resets it while the
+    // session's own silence is still inside the budget.
     throwIfAborted(signal);
     if (done) break;
     buffer += decoder.decode(value, { stream: true });

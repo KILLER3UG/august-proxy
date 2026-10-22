@@ -17,7 +17,7 @@ Mounts four routes under ``/api/brain``:
                                           + the turn verdict distribution and
                                           self-correction counters (046)
   GET  /api/brain/state-lookup          — §5.5 raw internal_state/memory_store row by key
-  GET  /api/brain/memory/preview         — the verbatim <memory> block + boot index a turn receives
+  GET  /api/brain/memory/preview         — the verbatim memory section + boot index a turn receives
   GET  /api/brain/backups               — offline brain-DB copies, each with its own health
   POST /api/brain/backups               — take a verified copy now
   POST /api/brain/backups/restore       — stage a verified restore (applies next launch)
@@ -376,7 +376,7 @@ async def getMemoryPreview(
 ):
     """The literal durable-memory text a turn receives, for Settings → Memory.
 
-    Not a listing of stored rows — the rendered ``<memory>`` block itself,
+    Not a listing of stored rows — the rendered memory section itself,
     produced by the same builders the workbench calls, so what the user reads
     here is what the model reads in chat. See
     :func:`app.services.memory_store.fact_retrieval.memory_context_preview`.

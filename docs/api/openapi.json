@@ -6845,7 +6845,7 @@
     },
     "/api/brain/memory/preview": {
       "get": {
-        "description": "The literal durable-memory text a turn receives, for Settings → Memory.\n\nNot a listing of stored rows — the rendered ``<memory>`` block itself,\nproduced by the same builders the workbench calls, so what the user reads\nhere is what the model reads in chat. See\n:func:`app.services.memory_store.fact_retrieval.memory_context_preview`.",
+        "description": "The literal durable-memory text a turn receives, for Settings → Memory.\n\nNot a listing of stored rows — the rendered memory section itself,\nproduced by the same builders the workbench calls, so what the user reads\nhere is what the model reads in chat. See\n:func:`app.services.memory_store.fact_retrieval.memory_context_preview`.",
         "operationId": "getMemoryPreview_api_brain_memory_preview_get",
         "parameters": [
           {

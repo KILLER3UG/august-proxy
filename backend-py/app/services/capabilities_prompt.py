@@ -394,7 +394,8 @@ def format_skill_index(catalogue: list[dict[str, object]] | None = None) -> str:
         'Skills are on-demand capability extensions (knowledge, not actions).',
         'To use: call load_skill(name), then follow the returned body. For many: load_skills.',
         'Descriptions for the skills most relevant to the current request appear in',
-        '<relevant_skills>. For anything else: call list_skills (optionally with a query).',
+        'the "Relevant skills:" section of the turn tail. For anything else: call',
+        'list_skills (optionally with a query).',
         'This catalogue includes:',
         '  (1) Bundled skills shipped with August',
         '  (2) Evolving skills created through chat (background review / approved genesis)',
@@ -452,7 +453,7 @@ def build_capabilities_block(
     """Full ``<capabilities>`` XML block for main or subagent prompts.
 
     ``compact_skills=True`` renders the name-only index (main-agent Tier 1 —
-    per-turn descriptions ride in <relevant_skills> instead); the default
+    per-turn descriptions ride in the Relevant skills tail instead); the default
     descriptive catalogue stays for subagent prompts, which have no Tier-3
     relevance pass.
     """
@@ -499,7 +500,7 @@ _RELEVANT_SKILLS_MIN_QUERY = 8
 
 
 def skill_relevance_enabled() -> bool:
-    """Gate for the Tier-3 ``<relevant_skills>`` pass: brain-config
+    """Gate for the Tier-3 relevant-skills pass: brain-config
     ``skillRelevanceMatch`` (default on), with ``AUGUST_SKILL_RELEVANCE=0``
     as the hard env override."""
     import os
@@ -542,7 +543,7 @@ def render_relevant_skills(
     agent_id: str = '',
     pinned: 'tuple[str, ...]' = (),
 ) -> tuple[str, dict[str, int]]:
-    """Render the per-turn ``<relevant_skills>`` block (M6 item 6).
+    """Render the per-turn Relevant skills section (M6 item 6).
 
     The Tier-1 ``<skills>`` index is name-only and cacheable; this block
     carries the descriptions of the top-3 skills relevant to the CURRENT
@@ -663,7 +664,7 @@ def _render_skill_lines(
     pinned_names: 'tuple[str, ...]',
     detail: dict[str, int],
 ) -> tuple[str, dict[str, int]]:
-    """Render the chosen skill entries into the ``<relevant_skills>`` block.
+    """Render the chosen skill entries into the Relevant skills section.
 
     Byte accounting happens HERE, in the same pass as the rendering, so the
     meter cannot disagree with what was sent. A pinned entry says so on its own
@@ -672,7 +673,7 @@ def _render_skill_lines(
     reading is what makes it call `load_skill` and follow the body instead of
     answering from the one-line description.
     """
-    lines: list[str] = ['<relevant_skills>']
+    lines: list[str] = ['Relevant skills:']
     budget = _RELEVANT_SKILLS_CHAR_CAP
     named: list[str] = []
     for s in entries:
@@ -695,7 +696,6 @@ def _render_skill_lines(
             f"Load {', '.join(named)} with load_skill(name) and follow it — the user asked for it."
         )
     lines.append('Load one with load_skill(name) if it fits the request.')
-    lines.append('</relevant_skills>')
     return '\n'.join(lines), detail
 
 
@@ -705,7 +705,7 @@ def build_relevant_skills_block(
     agent_id: str = '',
     pinned: 'tuple[str, ...]' = (),
 ) -> str:
-    """The ``<relevant_skills>`` text alone, for callers that don't meter it."""
+    """The Relevant skills text alone, for callers that don't meter it."""
     return render_relevant_skills(query, workspace, agent_id, pinned)[0]
 
 

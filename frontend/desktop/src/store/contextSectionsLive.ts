@@ -26,7 +26,7 @@ export interface ContextSections {
   skillsBytes: number;
   stateBytes: number;
   nudgeBytes: number;
-  /** Per-skill share of the `<relevant_skills>` block, by skill name. Answers
+  /** Per-skill share of the Relevant skills section, by skill name. Answers
    *  "which skill is costing me context", which the total alone cannot. */
   skillsByName: Record<string, number>;
 }

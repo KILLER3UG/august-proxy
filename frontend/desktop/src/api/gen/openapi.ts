@@ -1291,7 +1291,7 @@ export interface paths {
          * Getmemorypreview
          * @description The literal durable-memory text a turn receives, for Settings → Memory.
          *
-         *     Not a listing of stored rows — the rendered ``<memory>`` block itself,
+         *     Not a listing of stored rows — the rendered memory section itself,
          *     produced by the same builders the workbench calls, so what the user reads
          *     here is what the model reads in chat. See
          *     :func:`app.services.memory_store.fact_retrieval.memory_context_preview`.

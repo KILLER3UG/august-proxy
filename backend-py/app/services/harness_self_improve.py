@@ -691,7 +691,7 @@ def _apply_skill_write(row: dict[str, Any]) -> dict[str, Any]:
         # setEnabled writes exactly `disabled: true`, supersession retires a v1
         # with it, and _parseSkill keys enablement off it — so a patch that
         # restated nothing would silently put a retired skill back into
-        # <capabilities>, <relevant_skills> and the intake line. The render
+        # <capabilities>, the Relevant skills tail and the intake line. The render
         # below REPLACES the whole frontmatter block, so carry it explicitly.
         disabled = as_str(prior.get('disabled'), '').strip().lower() in ('true', '1', 'yes')
         try:

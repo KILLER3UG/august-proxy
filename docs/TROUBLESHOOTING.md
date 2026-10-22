@@ -330,7 +330,7 @@ by editing the skill file. Beware: `_apply_approved` rewrites frontmatter
 `trigger`, `supersedes`, `origin` and `learned_from` drops them. Losing
 `trigger` silently retires the skill from per-turn relevance matching — and
 an un-retired skill that is still missing `trigger` will not come back into
-`<relevant_skills>` even though its status is `active` again.
+the `Relevant skills:` tail even though its status is `active` again.
 
 Do not confuse either with `POST /api/skills/{name}/versions/{ts}/restore`,
 which does exist: it puts one retained `SKILL.md` snapshot back. That undoes a
@@ -386,7 +386,7 @@ What exists instead:
 - The model manages memory through **tools**: `remember` (write/update by key),
   `list_facts`, `forget`. These are core tools, so progressive disclosure can
   never hide them and a downgraded model can still correct what it remembers.
-- Automatic recall is the BM25 `<memory>` tail, gated by brain-config
+- Automatic recall is the BM25 `Relevant memory:` tail, gated by brain-config
   **`memoryAutoInject` (default OFF)**. Recall happens when the model calls
   `brain_query`.
 - `kind='profile'` facts are an **always-in lane** regardless of that gate

@@ -375,7 +375,7 @@ export function dispatchWorkbenchEvent(
       });
       break;
     case 'recalledMemories': {
-      // Part 17 A.4: rows the per-turn <memory> tail injected this turn.
+      // Part 17 A.4: rows the per-turn memory tail injected this turn.
       const rows = Array.isArray(p?.memories)
         ? (p.memories as Array<Record<string, unknown>>).map((m) => ({
             key: typeof m.key === 'string' ? m.key : undefined,

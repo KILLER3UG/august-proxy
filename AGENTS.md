@@ -485,16 +485,18 @@ i.e. the fail-OPEN direction (measured, at `agent_registry._effectivePermissions
 `DELETE /api/agents/{id}`, because only that path refuses the default Bot, cascades the
 Bot's private footprint, and names the actor in the audit.
 **Context relief has two routes, and the route is chosen from state, not by a
-model.** Compact-in-place keeps the first `DEFAULT_HEAD_COUNT` (4) messages
-verbatim *forever* and summarizes what follows, so from the second relief onward
+model.** Compact-in-place keeps a verbatim head *forever* — a floor of
+`DEFAULT_HEAD_COUNT` (4) messages, grown while the head fits
+`COMPACT_HEAD_RATIO` (10 %) of the model window and always leaving a middle unit
+to summarize — and summarizes what follows, so from the second relief onward
 the note's `Goal` is built from a follow-up turn — the original ask sits outside
 the summarized span — and earlier decisions survive only as the 600 chars of prose
 the previous note squeezed out of itself. `reliefStrategy` therefore returns
 `rotate` only when the brain key `contextReliefRotate` is armed **and** a
 `<<compressed_summary` note already exists: the first relief never rotates, even
 armed, because before a note exists the verbatim head IS the live task and
-folding it into a summary whose own footer says "decisions, constraints and next
-steps were not analyzed" trades a fact for a guess. Rotating keeps no head, so the
+folding it into a summary whose own footer says "decisions and constraints
+were not analyzed" trades a fact for a guess. Rotating keeps no head, so the
 opening moves into the summarized span (the note names the task again) and is
 claimed back verbatim FIRST inside the existing `REPLAY_USER_BUDGET_BYTES` —
 which is the stated trade: the opening spends budget the newest turns would
@@ -595,7 +597,7 @@ never wired into the loop and have been removed (Part 25 Phase 4). Sub-agents
 inherit the parent retry policy, compact mid-run, and support `yieldSchema` for
 structured results.
 
-**Durable memory** — the `<memory>` tail is BM25 over the brain `facts` table,
+**Durable memory** — the `Relevant memory:` tail is BM25 over the brain `facts` table,
 gated by brain-config `memoryAutoInject` (**default OFF**: recall happens when
 the model calls `brain_query`). Two things are true regardless of that gate:
 `kind='profile'` facts are an always-in lane (rendered first, ~600-char budget,

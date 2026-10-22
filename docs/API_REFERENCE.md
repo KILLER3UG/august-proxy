@@ -337,7 +337,7 @@ hold a delete:
   what writes `status: retired`. The file, its version history and its usage
   counters all stay on disk, an approved `skill_patch` sets the status back to
   `active`, and the skill leaves every prompt catalogue (`<capabilities>`,
-  `<relevant_skills>`) while staying reachable through `list_skills` /
+  the `Relevant skills:` tail) while staying reachable through `list_skills` /
   `load_skill` and `GET /api/skills` — an explicit load records a use, which
   is what keeps a retired-but-wanted skill from ever looking stale.
 - **Archive.** The same pass files an `archive` proposal for a skill that is
@@ -440,7 +440,7 @@ but ignored keys is a `400`, not a silent no-op.
 | Consolidation | `GET /consolidation/log` · `POST /consolidation/run` | M4 pass log + M5 lesson-promotion decisions; run one pass now |
 | Telemetry | `GET /turn-outcomes?days=` | Per-model/provider error rates + the turn verdict distribution. Diagnostics only — never injected into prompts |
 | | `GET /memory/metrics?days=` | Recall and latency metrics |
-| | `GET /memory/preview?query&workspace` | The **verbatim** text a turn receives: the `<memory>` block, the session-start memory index, and the project boot block. Rendered by the same builders the workbench calls, so Settings → Memory cannot disagree with chat. `autoInject` / `modelMemoryRead` come back too — the UI says which gate shaped the block |
+| | `GET /memory/preview?query&workspace` | The **verbatim** text a turn receives: the `Relevant memory:` section, the session-start memory index, and the project boot block. Rendered by the same builders the workbench calls, so Settings → Memory cannot disagree with chat. `autoInject` / `modelMemoryRead` come back too — the UI says which gate shaped the block |
 | Routing | `POST /routing/arena` · `GET /routing/arena` · `GET /routing/suggestions` | Record an Arena/Debate verdict, read the archive, rank models by win rate. There is no automatic per-turn rerouting |
 | Skills | `GET /skills/suggestions?days=&limit=` | Per-skill **measured effect** from the turn ledger: `{skill, turnsWith, okRateWith, turnsWithout, okRateWithout, lift}` — resolved rate on turns that carried the skill vs turns that did not, and the difference. The `routing/suggestions` pattern applied to skills: `turn_outcomes.skills_injected` is the event record and the aggregate is computed read-time with `json_each`, so there is no second store to keep in sync. Two honesty rules: a turn that predates the credit columns is **excluded from both denominators** (a `NULL` is unrecorded, not "no skills"), and a skill carried by every turn has `turnsWithout = 0`, so its `lift` is `null` rather than a flattering number. Diagnostics only — nothing demotes a skill on its own |
 | Raw state | `GET /state-lookup?key=` | One `internal_state` / `memory_store` row by key |

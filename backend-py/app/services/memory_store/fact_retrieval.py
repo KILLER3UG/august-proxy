@@ -3,9 +3,9 @@
 The old intake snippet listed ~250 tokens of fact *names*, keyword-blind.
 This module indexes the facts store (title + body) with the existing
 pure-Python BM25 and retrieves the top-k entries relevant to the current
-user message, rendered as a `<memory>` block that is appended to the user
-message at the tail of the turn context — never into the system prompt, so
-the provider prefix cache stays stable (cache-stability rule, §8 Q14).
+user message, rendered as a plain `Relevant memory:` section that is appended
+to the user message at the tail of the turn context — never into the system
+prompt, so the provider prefix cache stays stable (cache-stability rule, §8 Q14).
 
 No embeddings/vector store: BM25 over a few hundred facts is exact enough.
 Keyword recall is, however, the WRONG tool for one kind of fact: a profile
@@ -56,7 +56,7 @@ _PROFILE_CHAR_CAP = 600
 # model does not report it as "only relevant when asked".
 _PROFILE_LANE_HEADER = 'profile (always included, not keyword-matched):'
 # The memory-delta lane: facts written after the session opened, rendered
-# AFTER the <memory> block as a plain section (no invented tag). Its own small
+# AFTER the memory section as a plain "new in memory" section.
 # budget — it duplicates nothing the profile lane already carries, and a burst
 # of writes must not crowd the keyword lane. ~125 tokens.
 _DELTA_CHAR_CAP = 500
@@ -764,18 +764,23 @@ def build_profile_memory_block(
     scope: str = 'global',
     budget_chars: int = _PROFILE_CHAR_CAP,
 ) -> tuple[str, list[dict[str, object]]]:
-    """The profile lane as a ready-to-inject ``<memory>`` block.
+    """The profile lane as a ready-to-inject tail section.
 
     ``build_profile_block`` returns lane *content*, because
-    :func:`build_memory_block` composes it inside a block it tags itself. A
+    :func:`build_memory_block` composes it inside a section it heads itself. A
     caller that skips keyword auto-injection and injects the lane alone needs
-    the same tag, or the model reads durable memory as part of the user's
-    sentence. One place defines that tag; both off-gate callers use it.
+    the same plain header, or the model reads durable memory as part of the
+    user's sentence. One place defines that header; both off-gate callers use
+    it.
     """
+    # The tail is a plain section, not an XML envelope: no model is trained on
+    # `<memory>`, so the tag bought tokens and could invite the model to read
+    # the block as third-party metadata. The header says what the section is;
+    # the producer owns the wording (DSH's rule, which this follows).
     lane, rows = build_profile_block(scope=scope, budget_chars=budget_chars)
     if not lane:
         return '', rows
-    return f'<memory>\n{lane}\n</memory>', rows
+    return f'Relevant memory:\n{lane}', rows
 
 
 def build_memory_block(
@@ -788,7 +793,7 @@ def build_memory_block(
     *,
     record: bool = True,
 ) -> tuple[str, list[tuple[str, str]]]:
-    """Render the `<memory>` injection block for one turn.
+    """Render the memory injection section for one turn.
 
     Returns ``(block, injected)`` where ``injected`` is a list of
     ``(fact_key, title)`` pairs actually included — the turn-end usage
@@ -808,7 +813,7 @@ def build_memory_block(
     facts query — see :func:`retrieve_relevant_facts`.
 
     M-2 (Part 21): ``scope`` selects the facts corpus union for this turn —
-    a Bot Chat passes ``'bot:<agentId>'`` so its `<memory>` block carries
+    a Bot Chat passes ``'bot:<agentId>'`` so its memory section carries
     global ∪ own notes; regular sessions keep 'global'.
 
     Profile lane (2026-09-15): :func:`build_profile_block` is called first and
@@ -875,7 +880,7 @@ def build_memory_block(
             logging.debug('project memory tail build failed', exc_info=True)
     if not facts and not projectSection and not profileLane:
         return '', []
-    lines: list[str] = ['<memory>']
+    lines: list[str] = ['Relevant memory:']
     # One-line key index up front (Claude listing pattern): the model can
     # target remember/forget by exact key without a list_facts round-trip.
     keys = [
@@ -894,7 +899,7 @@ def build_memory_block(
     if omittedFacts:
         # Re-pack once, reserving the receipt's FULL cap (unlike the lane,
         # which only reserves its minimum): the block has room to spare, and
-        # paying up front keeps the whole `<memory>` block inside the
+        # paying up front keeps the whole memory section inside the
         # unchanged _BLOCK_CHAR_CAP.
         factLines, includedFacts, omittedFacts = _fit_lines(
             facts, max(0, budget - _OMITTED_RECEIPT_CHAR_CAP)
@@ -932,7 +937,6 @@ def build_memory_block(
         'These are stored facts relevant to this message; cite them, update one by passing its key '
         'to remember, or remove a stale one with forget.'
     )
-    lines.append('</memory>')
     if recalled is not None:
         # Lane rows first (they render first). Bounded to HALF the recall width,
         # not all of it: bounding profile rows at k while filling the same k+3

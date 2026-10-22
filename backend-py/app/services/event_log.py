@@ -51,8 +51,16 @@ MAX_LOG_BYTES = 8 * 1024 * 1024
 MAX_SESSIONS_RESIDENT = 64
 # Bounded persistence backlog. Beyond this, writes are DROPPED (counted +
 # warned) rather than blocking the caller: the in-memory ring and live
-# subscribers still got the event — only restart-replay loses it.
+# subscribers still got the event — only restart-replay loses it. (Live
+# subscribers have their OWN bound now, MAX_SUBSCRIBER_BACKLOG below.)
 _QUEUE_MAX = 10000
+# Per-subscriber backlog. A subscriber queue used to be UNBOUNDED, which made
+# the QueueFull branch below dead code: a client that stopped reading (hidden
+# tab, paused renderer) grew a private copy of the whole event stream for the
+# life of the turn — the one queue in this module with no ceiling, and the
+# reason a stalled consumer looked identical to a healthy one. Past this many
+# unread events the stream is failed by name, not silently absorbed.
+MAX_SUBSCRIBER_BACKLOG = 512
 
 _SAFE_NAME_RE = re.compile(r'[^A-Za-z0-9_.-]')
 
@@ -60,6 +68,30 @@ _SAFE_NAME_RE = re.compile(r'[^A-Za-z0-9_.-]')
 def _syncPersistEnabled() -> bool:
     v = os.environ.get('AUGUST_EVENT_LOG_SYNC', '').strip().lower()
     return v in ('1', 'true', 'yes', 'on')
+
+
+def _keepaliveFrame(entry: '_SessionLog') -> dict[str, object]:
+    """The idle ping, carrying the session's LAST CHANGE.
+
+    A keepalive used to be an empty frame, which is worse than nothing: it keeps
+    the connection open and lets a client's idle timer reset forever, so a
+    stalled upstream looks exactly like a slow one. `idleSec` is measured on the
+    monotonic clock when this process observed the event itself (a clock change
+    cannot fake it) and on the wall clock after a restart, when only the
+    persisted timestamp survives. A session that has never emitted an event
+    carries NO number rather than an invented zero.
+    """
+    payload: dict[str, object] = {}
+    if entry.lastEventAtMs:
+        newest = entry.events[-1]['seq'] if entry.events else 0
+        if entry.lastEventMono:
+            idleSec = time.monotonic() - entry.lastEventMono
+        else:
+            idleSec = (time.time() * 1000 - entry.lastEventAtMs) / 1000.0
+        payload['lastSeq'] = int(newest)
+        payload['lastEventAt'] = entry.lastEventAtMs
+        payload['idleSec'] = round(max(0.0, idleSec), 1)
+    return {'type': 'keepalive', 'seq': 0, 'payload': payload}
 
 
 def _log_path(sessionId: str) -> Path:
@@ -86,7 +118,10 @@ class EventLog:
         entry = self._getOrCreate(sessionId)
         seq = entry.nextSeq
         entry.nextSeq += 1
-        event = {'seq': seq, 'type': eventType, 'payload': payload or {}, 'at': int(time.time() * 1000)}
+        stamp = int(time.time() * 1000)
+        event = {'seq': seq, 'type': eventType, 'payload': payload or {}, 'at': stamp}
+        entry.lastEventAtMs = stamp
+        entry.lastEventMono = time.monotonic()
         entry.events.append(event)
         if len(entry.events) > MAX_IN_MEMORY:
             entry.events.popleft()
@@ -96,14 +131,40 @@ class EventLog:
                 self._trim(entry)
         else:
             self._enqueueWrite(entry, event)
-        dead: list[asyncio.Queue] = []
+        overflowed: list[asyncio.Queue] = []
         for q in entry.subscribers:
             try:
                 q.put_nowait(event)
+                continue
             except asyncio.QueueFull:
-                dead.append(q)
-        for q in dead:
-            entry.subscribers.remove(q)
+                overflowed.append(q)
+        for q in overflowed:
+            # Fail the slow stream BY NAME. Dropping the subscriber quietly was
+            # the old behaviour and it is the worst shape available: the client
+            # kept an open connection that simply stopped receiving, which reads
+            # exactly like a wedged backend. One unread event is sacrificed to
+            # make room for an `error` frame that says what happened and how to
+            # recover (reconnect with sinceSeq; the ring still holds it).
+            entry.subscribers.discard(q)
+            entry.overflowed.add(q)
+            try:
+                q.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+            try:
+                q.put_nowait({
+                    'seq': seq,
+                    'type': 'error',
+                    'payload': {
+                        'message': (
+                            f'stream overflow: this client fell more than {MAX_SUBSCRIBER_BACKLOG} '
+                            'events behind. Reconnect with sinceSeq to replay from the ring.'
+                        ),
+                    },
+                    'at': int(time.time() * 1000),
+                })
+            except asyncio.QueueFull:
+                pass
         return seq
 
     def _enqueueWrite(self, entry: '_SessionLog', event: dict) -> None:
@@ -178,7 +239,7 @@ class EventLog:
     async def subscribe(self, sessionId: str, sinceSeq: int = 0) -> AsyncIterator[dict[str, object]]:
         """Yield events for a session, starting from since_seq."""
         entry = self._getOrCreate(sessionId)
-        q: asyncio.Queue = asyncio.Queue()
+        q: asyncio.Queue = asyncio.Queue(maxsize=MAX_SUBSCRIBER_BACKLOG)
         entry.subscribers.add(q)
         try:
             replayed: set[int] = set()
@@ -193,13 +254,19 @@ class EventLog:
                 replayed.add(ev['seq'])
                 yield ev
             while True:
+                if q in entry.overflowed and q.empty():
+                    # The named overflow frame has been delivered; the stream
+                    # ends here rather than trickling keepalives forever.
+                    return
                 try:
                     ev = await asyncio.wait_for(q.get(), timeout=30.0)
-                    yield ev
                 except asyncio.TimeoutError:
-                    yield {'type': 'keepalive', 'seq': 0, 'payload': {}}
+                    yield _keepaliveFrame(entry)
+                    continue
+                yield ev
         finally:
             entry.subscribers.discard(q)
+            entry.overflowed.discard(q)
 
     def _getOrCreate(self, sessionId: str) -> '_SessionLog':
         entry = self._sessions.get(sessionId)
@@ -275,7 +342,18 @@ class _SessionLog:
         self.nextSeq: int = 1
         self.events: deque[dict] = deque(maxlen=MAX_IN_MEMORY)
         self.subscribers: set[asyncio.Queue] = set()
+        # Subscribers that were failed for backlog overflow. The generator
+        # checks this set so the client sees the `error` frame and THEN the
+        # stream ends, instead of sitting on a connection that stopped.
+        self.overflowed: set[asyncio.Queue] = set()
         self.sizeHint: int = 0
+        # Wall clock of the newest event, so a keepalive can report how long
+        # the session has actually been silent rather than how long the
+        # connection has been open. 0 = no event yet (rehydrated or fresh).
+        self.lastEventAtMs: int = 0
+        # Monotonic reading of the same moment, 0 when the stamp came from a
+        # rehydrated file (this process never saw the event).
+        self.lastEventMono: float = 0.0
         # LRU key for the residency cap. Set on every append/get.
         self.touchedAt: float = time.monotonic()
         self._rehydrate()
@@ -301,6 +379,12 @@ class _SessionLog:
                 if isinstance(ev, dict) and isinstance(ev.get('seq'), int):
                     self.events.append(ev)
                     self.nextSeq = max(self.nextSeq, ev['seq'] + 1)
+                    # A restarted stream still knows when the session last did
+                    # anything, so its keepalive reports real silence rather
+                    # than the age of the connection.
+                    stamp = ev.get('at')
+                    if isinstance(stamp, int) and stamp > self.lastEventAtMs:
+                        self.lastEventAtMs = stamp
         except OSError:
             logger.debug('event log rehydrate failed for %s', self.path)
 

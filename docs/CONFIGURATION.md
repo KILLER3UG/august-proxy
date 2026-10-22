@@ -271,7 +271,7 @@ What is real:
   stored under another key, naming that key. `list_facts` pages with `offset`
   and reports `total`/`hasMore`; `include_retired: true` also lists the rows
   consolidation parked, which recall skips.
-- **Automatic recall** is the BM25 `<memory>` tail, gated by brain-config
+- **Automatic recall** is the BM25 `Relevant memory:` tail, gated by brain-config
   `memoryAutoInject` (**default `false`**). Independently of that gate,
   `kind='profile'` facts ride an always-in lane (~600-char budget) — that is what
   makes August remember who you are without a keyword coincidence. A fact dropped
@@ -301,7 +301,7 @@ approvable kinds (`retire`, `archive`) and both are human-only for autonomy —
   in the frontmatter; the file, its version history and its usage counters all
   stay on disk, and an approved `skill_patch` sets the status back to `active`.
   A retired skill is no longer *offered* — it drops out of `<capabilities>`,
-  `<relevant_skills>` and the subagent preload — but it stays reachable
+  the `Relevant skills:` tail and the subagent preload — but it stays reachable
   through `GET /api/skills`, `list_skills` and `load_skill`, and loading it
   records a use, which is what keeps a retired-but-wanted skill from looking
   stale.
@@ -332,7 +332,7 @@ critic were **removed** (2026-08-24) — answers are never withheld.
 ### Skill relevance knobs
 
 - `skillRelevanceMatch` (**default `true`**) gates the per-turn
-  `<relevant_skills>` BM25 pass; `AUGUST_SKILL_RELEVANCE=0` forces it off.
+  `Relevant skills:` BM25 pass; `AUGUST_SKILL_RELEVANCE=0` forces it off.
 - `skillKeywordExpansion` (**default `false`**) asks a cheap review model for
   5-10 search keywords when a skill is **written** (a `POST /api/skills` create,
   a `PATCH` that changes the body, or an approved harness skill proposal), stores

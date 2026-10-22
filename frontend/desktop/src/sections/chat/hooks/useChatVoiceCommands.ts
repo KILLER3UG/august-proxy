@@ -367,7 +367,7 @@ export function useChatVoiceCommands(opts: UseChatVoiceCommandsOptions) {
         case 'anatomy': {
           // /anatomy — the command IS the turn. Post it verbatim so the
           // backend sees the leading `/anatomy` and pins the anatomy skill
-          // into this turn's <relevant_skills>; no session state is touched.
+          // into this turn's relevant-skills tail; no session state is touched.
           const sid = workbenchSessionId || sessionId || '';
           if (!sid) {
             toast.error('No active session');

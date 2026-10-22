@@ -105,6 +105,29 @@ def _slugify(title: str) -> str:
     return s[:48] or 'entry'
 
 
+#: A project-memory file name is DATA that becomes a PATH. `upsert_entry`'s
+#: `file` is joined onto the memory root, and one of its callers (the rollback
+#: restore) feeds it from a persisted snapshot rather than from a slug it
+#: generated. So the name is validated at that one door: no separator, no
+#: traversal, no absolute path, `.md` only, and no segment that would be inert
+#: on disk but become a prototype key in a JavaScript map.
+_ENTRY_FILE_MAX = 80
+_ENTRY_FILE_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*\.md$')
+_RESERVED_SEGMENTS = frozenset({'__proto__', 'constructor', 'prototype'})
+
+
+def _safeEntryFile(file: str) -> str:
+    name = (file or '').strip()
+    if not name or len(name) > _ENTRY_FILE_MAX or not _ENTRY_FILE_RE.match(name):
+        raise ValueError(
+            f'unsafe project-memory file name {file!r}: must be a single .md basename '
+            '(letters, digits, dot, dash, underscore), no path separator'
+        )
+    if name.lower()[:-3] in _RESERVED_SEGMENTS:
+        raise ValueError(f'reserved segment in project-memory file name: {file!r}')
+    return name
+
+
 def parse_memory_md(text: str) -> ProjectFile:
     """Parse one md file into preamble + ordered entries.
 
@@ -311,12 +334,12 @@ def upsert_entry(
             content += f'{upd}\n'
         if body.strip():
             content += f'{body.strip()}\n'
-        (root / file).write_text(content, 'utf-8')
+        (root / _safeEntryFile(file)).write_text(content, 'utf-8')
         _rebuild_index(workspace)
         return ProjectEntry(title=title, body=body.strip(), updated=now, file=file,
                             description=fmDesc, kind=fmKind)
 
-    target = root / file
+    target = root / _safeEntryFile(file)
     pf = parse_memory_md(target.read_text('utf-8')) if target.exists() else ProjectFile()
     hit = False
     for e in pf.entries:

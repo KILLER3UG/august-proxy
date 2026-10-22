@@ -264,7 +264,7 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # over the facts store) is not offered. Default on so the model can pull
     # memory ON DEMAND. Per-turn auto-injection is a SEPARATE flag below.
     ('modelMemoryRead', 'model_memory_read', True, 'bool'),
-    # Auto-inject gate: when on, a <memory> block of facts relevant to the
+    # Auto-inject gate: when on, the "Relevant memory:" section of facts relevant to the
     # latest turn is appended every turn (plus the names-only index in the
     # system prompt). Default OFF — memory is recalled only when the model
     # calls the read tool, per the user's design. modelMemoryRead must stay on

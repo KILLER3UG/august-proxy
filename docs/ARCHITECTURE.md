@@ -325,7 +325,7 @@ modules**, not one file:
 | `memory_store/rest.py` | Facts, proposals, lifecycle, topics, usage, timeline, stats |
 | `memory_store/brain.py` | `brain_query` multi-store FTS/SQL domain (and the store PATCH whitelist) |
 | `memory_store/kv.py` | Key-value memory blob + FTS search |
-| `memory_store/fact_retrieval.py` | BM25 recall, the injected `<memory>` tail, the per-session boot index, `memory_context_preview` |
+| `memory_store/fact_retrieval.py` | BM25 recall, the injected `Relevant memory:` tail, the per-session boot index, `memory_context_preview` |
 | `memory_store/consolidation.py` | One scheduled consolidation job: expiry, episodic/usage sweeps, duplicate merge, contradiction supersede, memory + skill retire/archive proposals, skill-learning pass |
 | `memory_store/wire.py` | snake_case rows → camelCase wire |
 | [`workbench/prompt_build.py`](../backend-py/app/services/workbench/prompt_build.py) (+ `prompt_segments_cache.py`, `prompt_variants.py`) | Assembles the system prompt from memory + agent + tools |

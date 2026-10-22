@@ -1132,7 +1132,7 @@ export function AssistantBlockTimeline({
       }
 
       if (block.type === 'recalledMemories' && block.memories && block.memories.length > 0) {
-        // Part 17 A.4 (gap C-13): what the per-turn <memory> tail actually
+        // Part 17 A.4 (gap C-13): what the per-turn memory tail actually
         // recalled this turn — one subtle chip; the rows expand on click.
         // Global + project rows both ride here, scope-tagged.
         const rows = block.memories;

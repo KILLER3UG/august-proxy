@@ -971,7 +971,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       scheduleUpdate();
     },
     onRecalledMemories: ({ memories }) => {
-      // Part 17 A.4: what the per-turn <memory> tail injected — one
+      // Part 17 A.4: what the per-turn memory tail injected — one
       // collapsed recall chip per turn (the reducer skips empty rows).
       if (!memories || memories.length === 0) return;
       streamBlocks = appendBlockEvent(streamBlocks, {

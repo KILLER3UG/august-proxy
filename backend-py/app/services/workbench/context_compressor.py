@@ -16,6 +16,11 @@ from app.providers.clients.base import estimateTokens
 
 DEFAULT_HEAD_COUNT = 4
 DEFAULT_TAIL_COUNT = 6
+# The head is the opening ask, kept verbatim. Four messages is 1 % of an 8k
+# window and a third of a 128k one, so above the floor it is budgeted by the
+# window instead of by count. The floor stays DEFAULT_HEAD_COUNT messages: a
+# short transcript, or a caller with no window, is unchanged.
+COMPACT_HEAD_RATIO = 0.10
 DEFAULT_SUMMARY_MARKER = '<<compressed_summary'
 DEFAULT_MAX_SUMMARY_CHARS = 2000
 FEATURE_FLAG = 'AUGUST_SUMMARIZING_COMPACTOR'
@@ -98,11 +103,12 @@ def reliefStrategy(messages: list[dict[str, object]], *, armed: bool) -> str:
 
 
 def reliefHeadCount(relief: str) -> int:
-    """How many opening messages a route keeps verbatim.
+    """The head FLOOR a route is entitled to.
 
-    One map, declared next to the strategy that chooses the route, because the
-    compaction frame reports this number to the user and a frame that reports a
-    head count the compressor did not use is the same lie in a different place.
+    Above this floor the head is token-budgeted by the window
+    (``COMPACT_HEAD_RATIO``), so the number a frame should report is the one
+    ``reliefStats['head']`` carries. This value is the fallback for a caller
+    that has no split to report — and a route that keeps no head at all.
     """
     return 0 if relief == RELIEF_ROTATE else DEFAULT_HEAD_COUNT
 
@@ -851,7 +857,9 @@ async def compressMessages(
     Args:
         messages: Full conversation messages.
         threshold: Token threshold to compress under.
-        head_count: Number of messages to preserve at the start.
+        head_count: Messages preserved at the start as a FLOOR. With a
+            ``contextWindow`` the head may grow beyond it, up to
+            ``COMPACT_HEAD_RATIO × contextWindow`` tokens.
         tail_count: Number of messages to preserve at the end (count mode).
         summarizer: Optional callable — sync or async — that returns a summary
             string; awaited transparently. ``localSummarize`` is the default.
@@ -887,27 +895,35 @@ async def compressMessages(
     otherSystem = systemMsgs
     # Rotating keeps no head: the opening moves INTO the summarized span, which is
     # the whole point (the note then describes the task instead of a follow-up).
-    headBudget = 0 if rotate else head_count
-    if len(nonSystem) <= headBudget + tail_count:
+    headFloor = 0 if rotate else head_count
+    # Above the floor, the head spends at most COMPACT_HEAD_RATIO of the window
+    # (0 when the window is unknown, which keeps the count-only behaviour).
+    headTokenBudget = 0 if rotate else int((contextWindow or 0) * COMPACT_HEAD_RATIO)
+    if len(nonSystem) <= headFloor + tail_count:
         return list(messages)
 
-    # Tool-pair-safe split: group into atomic units, then take head units,
-    # tail units (token- or count-budgeted), and summarize the middle.
+    # Tool-pair-safe split: group into atomic units, then take tail units
+    # (token- or count-budgeted) and head units, and summarize what is left.
     units = _splitUnits(nonSystem)
-    headUnits: list[list[dict[str, object]]] = []
-    headMsgCount = 0
-    idx = 0
-    while idx < len(units) and headMsgCount < headBudget:
-        headUnits.append(units[idx])
-        headMsgCount += len(units[idx])
-        idx += 1
+    # How many leading units the floor needs — the reserve the tail must leave.
+    floorUnits = 0
+    floorMsgs = 0
+    while floorUnits < len(units) and floorMsgs < headFloor:
+        floorMsgs += len(units[floorUnits])
+        floorUnits += 1
+    # TAIL FIRST. Taking the head first let a window-relative head eat the
+    # transcript, the greedy tail then found nothing, and compaction returned
+    # the input UNCHANGED — the relief would stop being relief precisely on the
+    # largest windows. The tail may never take the floor's units or the one unit
+    # the middle needs to exist.
+    minJdx = floorUnits + 1
     tailUnits: list[list[dict[str, object]]] = []
     tailMsgCount = 0
     jdx = len(units)
     if contextWindow:
         tailBudget = int(contextWindow * retainRatio)
         acc = 0
-        while jdx > idx:
+        while jdx > minJdx:
             unit = units[jdx - 1]
             unitTokens = estimateTokens(unit)
             if tailUnits and acc + unitTokens > tailBudget:
@@ -917,10 +933,25 @@ async def compressMessages(
             acc += unitTokens
             tailMsgCount += len(unit)
     else:
-        while jdx > idx and tailMsgCount < tail_count:
+        while jdx > minJdx and tailMsgCount < tail_count:
             jdx -= 1
             tailUnits.insert(0, units[jdx])
             tailMsgCount += len(units[jdx])
+    # HEAD SECOND: the floor always ships; above it a unit joins only while the
+    # head still fits its window-relative token budget AND a middle unit remains.
+    headUnits: list[list[dict[str, object]]] = []
+    headMsgCount = 0
+    headSpent = 0
+    idx = 0
+    while idx < jdx - 1:
+        unit = units[idx]
+        unitTokens = estimateTokens(unit)
+        if headMsgCount >= headFloor and headSpent + unitTokens > headTokenBudget:
+            break
+        headUnits.append(unit)
+        headSpent += unitTokens
+        headMsgCount += len(unit)
+        idx += 1
     if jdx <= idx:
         # Head and tail consumed everything — nothing left to summarize.
         return list(messages)
