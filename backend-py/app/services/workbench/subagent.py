@@ -77,14 +77,14 @@ _SPAWN_TOOLS = frozenset({'spawn_subagents'})
 _STREAM_RULE_MAX_RETRIES = 3
 
 
-def _spawnRule(allowedNames: AbstractSet[str]) -> str:
+def _spawnRule(allowed_names: AbstractSet[str]) -> str:
     """The spawn sentence for a worker's system prompt, matching its surface.
 
     Spawn tools are offered exactly when `may_spawn_children` allows another
     level, so the sentence is derived from the same list that filters those
     tools: a blanket prohibition contradicted an armed deeper delegation.
     """
-    if allowedNames & _SPAWN_TOOLS:
+    if allowed_names & _SPAWN_TOOLS:
         return ' You may spawn a further sub-agent only if the goal splits into independent work.'
     return ' Do not spawn further sub-agents.'
 
