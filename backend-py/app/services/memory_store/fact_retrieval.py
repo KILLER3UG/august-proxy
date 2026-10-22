@@ -55,6 +55,13 @@ _PROFILE_CHAR_CAP = 600
 # Lane header: says out loud that this section is NOT keyword-matched, so the
 # model does not report it as "only relevant when asked".
 _PROFILE_LANE_HEADER = 'profile (always included, not keyword-matched):'
+# The memory-delta lane: facts written after the session opened, rendered
+# AFTER the <memory> block as a plain section (no invented tag). Its own small
+# budget — it duplicates nothing the profile lane already carries, and a burst
+# of writes must not crowd the keyword lane. ~125 tokens.
+_DELTA_CHAR_CAP = 500
+_DELTA_MAX_FACTS = 8
+_DELTA_HEADER = 'new in memory since this chat opened'
 # A receipt naming omitted facts is itself bounded — naming the dropped facts
 # must not eat the budget it exists to report on.
 _OMITTED_RECEIPT_CHAR_CAP = 220
@@ -942,6 +949,101 @@ def build_memory_block(
                 break
             recalled.append(_recalled_row(f))
     return '\n'.join(lines), injected
+
+
+def build_memory_delta_block(
+    *,
+    session_started_at: str = '',
+    scope: str = 'global',
+    budget_chars: int = _DELTA_CHAR_CAP,
+    exclude_keys: frozenset[str] | set[str] | None = None,
+) -> str:
+    """Facts written after this session opened, as a plain tail section.
+
+    A projection over ``facts.updated_at``, not a second store and not a
+    cursor: the rows are read live on every turn, so a retired fact cannot be
+    resurrected and an UPDATE to an old key is delivered like a new write. The
+    section rides the tail (patched onto the last user message and stripped
+    before persistence), so the cached prefix is untouched.
+
+    ``session_started_at`` is the session's ISO creation stamp. Empty or
+    unparseable is a REFUSAL, not "since the beginning of time": a bad stamp
+    must not dump the whole store into the tail.
+    """
+    since = _sqlite_utc(session_started_at)
+    budget = max(0, int(budget_chars))
+    headerCost = len(_DELTA_HEADER) + 1
+    if not since or budget <= headerCost:
+        return ''
+    try:
+        conn = _conn()
+        if scope and scope != 'global':
+            scopeClause = "AND (scope IS NULL OR scope = 'global' OR scope = ?)"
+            scopeParams: tuple[object, ...] = (scope,)
+        else:
+            scopeClause = "AND (scope IS NULL OR scope = 'global')"
+            scopeParams = ()
+        rows = conn.execute(
+            "SELECT fact_key, fact_value, title, kind, category, description, "
+            "COALESCE(scope, 'global') AS scope, COALESCE(updated_at, '') AS updated_at FROM facts "
+            "WHERE (expires_at IS NULL OR expires_at = '' OR julianday(expires_at) > julianday('now')) "
+            "AND (status IS NULL OR status = 'active') "
+            "AND julianday(updated_at) > julianday(?) "
+            f"{scopeClause} "
+            "ORDER BY updated_at DESC, id DESC LIMIT ?",
+            (since, *scopeParams, _DELTA_MAX_FACTS),
+        ).fetchall()
+    except Exception as exc:
+        # A transient read failure must not look like "nothing was written";
+        # next turn retries, and the warning names the degradation.
+        logging.warning('memory delta read failed; no new-facts section this turn: %s', exc)
+        return ''
+    lines: list[str] = []
+    cost = headerCost
+    skipped = exclude_keys or frozenset()
+    for r in rows:
+        row: dict[str, object] = {
+            'key': str(r['fact_key'] or ''),
+            'title': str(r['title'] or '').strip(),
+            'body': _fact_body_text(r['fact_value']),
+            'kind': str(r['kind'] or 'fact'),
+            'category': str(r['category'] or 'general'),
+            'scope': str(r['scope'] or 'global'),
+        }
+        if row['key'] in skipped:
+            continue
+        line = _fact_line(row)
+        # The same legacy rule as _fit_lines: the newest write always ships,
+        # even when it alone exceeds the budget.
+        if lines and cost + len(line) + 1 > budget:
+            break
+        cost += len(line) + 1
+        lines.append(line)
+    if not lines:
+        return ''
+    return '\n'.join([f'{_DELTA_HEADER}:', *lines])
+
+
+def _sqlite_utc(raw: str) -> str:
+    """Normalise an ISO-8601 stamp to SQLite's ``YYYY-MM-DD HH:MM:SS`` UTC.
+
+    Session stamps are ``datetime.now(timezone.utc).isoformat()...Z``; facts
+    store ``datetime('now')``. Both are UTC but their spellings differ, so a
+    lexical comparison would silently compare the wrong things.
+    """
+    from datetime import datetime, timezone
+
+    text = (raw or '').strip()
+    if not text:
+        return ''
+    try:
+        normalized = text[:-1] + '+00:00' if text.endswith('Z') else text
+        stamp = datetime.fromisoformat(normalized)
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=timezone.utc)
+        return stamp.astimezone(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+    except (ValueError, TypeError):
+        return ''
 
 
 def memory_context_preview(

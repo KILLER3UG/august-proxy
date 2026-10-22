@@ -24,6 +24,7 @@ from app.services.memory_store.brain import (
 )
 from app.services.memory_store.fact_retrieval import (
     build_memory_block,
+    build_memory_delta_block,
     build_profile_block,
 )
 from app.services.memory_store.kv import (
@@ -109,6 +110,7 @@ __all__ = [
     'touch_fact_usage',
     'PROFILE_FACT_KIND',
     'build_memory_block',
+    'build_memory_delta_block',
     'build_profile_block',
     'save_proposal',
     'get_proposal',

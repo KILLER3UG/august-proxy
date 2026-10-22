@@ -1,7 +1,9 @@
 # August improvements — evidence-based proposals from three harnesses
 
-**Date:** 2026-10-22. **Research only** — nothing in this document has been
-implemented, and no August source was modified to produce it.
+**Date:** 2026-10-22, updated 2026-10-23. **Research first, then shipped** —
+each proposal was written against the baseline before any August source
+changed; the ones that have since shipped carry a **Shipped** note naming what
+changed and what remains open.
 
 **Sources.** Three repos, shallow-cloned read-only into
 `%LOCALAPPDATA%\Temp\harness-research\`, never built and never executed:
@@ -346,6 +348,15 @@ produce a heartbeat sequence that says *"no new output"* rather than
 transcript. A tool that produces output every 5 s must not. Both are
 observable in the bench harness with the scripted provider.
 
+**Shipped (2026-10-23), in part.** The heartbeats now carry `elapsedSec`, and
+the command path also `idleSec`; the live status line appends "no output for
+Ns" (or "Ns elapsed" where no output flow exists) once the evidence passes
+20 s. The pure composition helper was probed against six assembled
+sentences, including the precedence rule (idle beats elapsed). Still open:
+the byte-bounded inbox with a named overflow, and the keepalive carrying the
+last-change timestamp — neither is needed for the user to see the truth in
+8 s, which the status line now does.
+
 ---
 
 # 4. A memory delta in the tail, so a fact written this turn is visible this turn
@@ -423,6 +434,17 @@ rides, and the delta is derived, so there is no second source of truth.
 fact's key and value appear in the **second request's tail**, that the
 **system prompt is byte-identical** across the two turns, and that the
 provider's `cacheReadTokens` still covers the prefix.
+
+**Shipped (2026-10-23).** `build_memory_delta_block` appends a plain
+`new in memory since this chat opened:` section to the tail for facts whose
+`updated_at` is newer than the session's creation stamp. It is a live
+projection over the facts table — no cursor, no second store — so an UPDATE to
+an old key is delivered like a new write, a retired fact cannot reappear, and
+a key the recall lane already rendered is skipped. A bad session stamp
+returns nothing rather than dumping the store. Probe: a pre-session fact stays
+out, a fresh write appears, an update appears, a retired row does not, and an
+excluded key drops. Not yet measured: a real-model turn reading the fact
+without calling `list_facts`.
 
 ---
 
@@ -516,6 +538,14 @@ budget, (b) no tool call is separated from its result across the cut, and
 (c) a transcript containing `update_state` transitions yields a summary whose
 `Next` is **not** `(uncaptured)`. The bench harness can drive all three with
 no API credit.
+
+**Shipped (2026-10-23), in part.** `## Next` names the loop's own
+`phase/step` resume point instead of `(uncaptured)`, and the footer now says
+decisions and constraints — not next steps — are the fields the deterministic
+compactor does not analyze. Still open: a token-budgeted head (the fixed 4
+messages remain), and a "Key decisions" line the compactor can honestly
+extract — `update_state` carries position, not the rationale a decision
+needs.
 
 ---
 
@@ -631,8 +661,10 @@ capabilities block's blanket "do NOT spawn further subagents" line was
 dropped, because it rendered into worker prompts too and would have
 contradicted the new conditional sentence. The advertisement-level narrowing
 (change 3) was already true: a child at the depth cap is never offered the
-tool. Still open: an explicit gate asserting every deny-set name is a
-registered tool.
+tool. The gate that remained open now exists: `e2e:smoke` checks every name in
+`_SUBAGENT_NEVER_TOOLS | _SPAWN_TOOLS` against the POPULATED registry, reports
+how many tools it checked, and fails on a name no registry can match (152
+tools at the recorded run).
 
 **The proposed change**
 

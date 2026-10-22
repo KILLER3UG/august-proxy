@@ -679,10 +679,11 @@ def schemaSummarize(
         # absence*, so a constraint stated 40 messages back would be dropped
         # with confidence. Name the limitation instead of asserting a negative.
         '',
-        '_Produced by the deterministic compactor: decisions, constraints and '
-        'next steps were not analyzed. A field reading (uncaptured) or (none) '
-        'means "not extracted here", not "never stated" — re-read recent '
-        'messages before concluding such an item does not exist._',
+        '_Produced by the deterministic compactor: decisions and constraints '
+        'were not analyzed; Next is the loop\'s own resume point, not a plan. '
+        'A field reading (uncaptured) or (none) means "not extracted here", '
+        'not "never stated" — re-read recent messages before concluding such '
+        'an item does not exist._',
         '',
         '<read-files>',
         *priorRead[:100],

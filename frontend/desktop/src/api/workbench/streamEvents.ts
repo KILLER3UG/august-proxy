@@ -111,6 +111,11 @@ export function dispatchWorkbenchEvent(
         path: typeof p?.path === 'string' ? p.path : undefined,
         message: typeof p?.message === 'string' ? p.message : undefined,
         preview: typeof p?.preview === 'string' ? p.preview : undefined,
+        // Evidence, not decoration: the command heartbeat reports how long the
+        // tool has run and how long since its last output byte, so a wedged
+        // tool stops looking identical to a slow one.
+        elapsedSec: typeof p?.elapsedSec === 'number' ? p.elapsedSec : undefined,
+        idleSec: typeof p?.idleSec === 'number' ? p.idleSec : undefined,
       });
       break;
     }

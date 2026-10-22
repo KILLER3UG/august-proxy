@@ -291,6 +291,11 @@ export interface WorkbenchEventHandlers {
     path?: string;
     message?: string;
     preview?: string;
+    /** Seconds the tool has been running (present on heartbeats). */
+    elapsedSec?: number;
+    /** Seconds since the last byte of tool output (command path only: the
+     *  generic heartbeat cannot see an output flow and must not invent one). */
+    idleSec?: number;
   }) => void;
   onSession?: (data: WorkbenchSession) => void;
   /** `submit_todos` / `update_todos` landed — full replacement list + title. */

@@ -325,6 +325,28 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001
             check('tool policy probe', False, f'{type(exc).__name__}: {exc}')
 
+        # A deny set is a security table, and a name in it that no registry
+        # registers can never fire. Check it against the POPULATED registry —
+        # the app has already registered every group by the time this runs — so
+        # a renamed spawn tool fails here instead of living as a dead row.
+        # An empty registry is a failed probe, not a clean table.
+        try:
+            from app.services.tool_registry import listTools
+            from app.services.workbench.subagent import _SPAWN_TOOLS, _SUBAGENT_NEVER_TOOLS
+
+            registered = {
+                str((t.get('function') or {}).get('name') or '')
+                for t in listTools(include_host_agent=True)
+            }
+            unknown = sorted((_SUBAGENT_NEVER_TOOLS | _SPAWN_TOOLS) - registered)
+            check(
+                'every sub-agent deny name is a registered tool',
+                bool(registered) and not unknown,
+                ', '.join(unknown) if unknown else f'{len(registered)} registered tools checked',
+            )
+        except Exception as exc:  # noqa: BLE001
+            check('sub-agent deny-set probe', False, f'{type(exc).__name__}: {exc}')
+
         try:
             from app.lib.async_subprocess import terminal_env
 

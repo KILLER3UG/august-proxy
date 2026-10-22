@@ -32,7 +32,7 @@ import type { ChatTurnRecord } from './chat-runtime';
 import type { WorkbenchEventHandlers, WorkbenchSession, WorkbenchTurnUsage } from '@/types/workbench';
 import type { GitDiffResult } from '@/api/git';
 import type { ToolProgressEvent, ToolProgressMap } from '@/lib/tool-progress';
-import { applyToolProgress } from '@/lib/tool-progress';
+import { applyToolProgress, formatProgressStatus } from '@/lib/tool-progress';
 import { classifyTool } from '@/lib/tool-classify';
 import { commandErrorOneLiner } from '@/lib/command-error-line';
 import { friendlyError } from '@/lib/error-copy';
@@ -737,12 +737,23 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         phase: event.phase,
         paths: event.paths,
         path: event.path,
+        elapsedSec: event.elapsedSec,
+        idleSec: event.idleSec,
       };
       setToolProgress(prev => applyToolProgress(prev, e));
 
       const previewChunk = typeof event.preview === 'string' ? event.preview : '';
       const msg = typeof event.message === 'string' ? event.message.trim() : '';
       if (!event.id || (!previewChunk && !msg)) return;
+
+      // A heartbeat that only says "still working" is indistinguishable from a
+      // wedged tool for the first five minutes. Past the stall threshold the
+      // status line names the evidence: an idle gap when the command path can
+      // measure one, otherwise elapsed time — the generic heartbeat sees no
+      // output flow, so it must not invent an idle number.
+      const idle = typeof event.idleSec === 'number' ? event.idleSec : undefined;
+      const elapsed = typeof event.elapsedSec === 'number' ? event.elapsedSec : undefined;
+      const statusText = formatProgressStatus(msg, elapsed, idle);
 
       const isCommandTool = (name: string) =>
         name.startsWith('run_command') ||
@@ -776,13 +787,13 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         toolResults = toolResults.map((t) => {
           if (t.id !== event.id || t.status !== 'running') return t;
           if (isCommandTool(t.name) && t.preview) return t;
-          return { ...t, summary: msg };
+          return { ...t, summary: statusText };
         });
         streamBlocks = appendBlockEvent(streamBlocks, {
           type: 'tool_progress',
           id: event.id,
           status: 'running',
-          summary: msg,
+          summary: statusText,
         });
         scheduleUpdate();
       }

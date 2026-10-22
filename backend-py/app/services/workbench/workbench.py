@@ -3039,6 +3039,7 @@ async def _sendWorkbenchMessageStreamImpl(
         from app.services.capabilities_prompt import pinned_skill_token, render_relevant_skills
         from app.services.memory_store.fact_retrieval import (
             build_memory_block,
+            build_memory_delta_block,
             build_profile_memory_block,
         )
 
@@ -3167,6 +3168,26 @@ async def _sendWorkbenchMessageStreamImpl(
                 except Exception:
                     logger.debug('profile lane failed', exc_info=True)
                     _memoryBlock, _injectedFacts = '', []
+            # A fact written after this session opened is visible on the NEXT
+            # request without the model having to call list_facts (the boot
+            # index is frozen per session, and memoryAutoInject is off by
+            # default). It rides the tail — stripped before persistence — so
+            # the cached system prefix is untouched, and it is a live
+            # projection over facts.updated_at, not a cursor or second store.
+            # Keys the recall lane already rendered are skipped, so one write
+            # is never shown twice.
+            try:
+                _deltaBlock = build_memory_delta_block(
+                    session_started_at=as_str(getattr(session, 'createdAt', ''), ''),
+                    scope=_turnScope,
+                    exclude_keys={str(k) for k, _ in (_injectedFacts or [])},
+                )
+                if _deltaBlock:
+                    _memoryBlock = (
+                        f'{_memoryBlock}\n\n{_deltaBlock}' if _memoryBlock else _deltaBlock
+                    )
+            except Exception:
+                logger.debug('memory delta block failed', exc_info=True)
             try:
                 _memWritesOn = bool(_bc.getRuntimeConfig().get('modelMemoryWrites', True))
             except Exception:

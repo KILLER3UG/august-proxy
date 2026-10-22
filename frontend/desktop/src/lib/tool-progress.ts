@@ -1,6 +1,5 @@
 /* ── tool-progress ─ pure accumulator for `tool_progress` SSE events ─ */
-/* Pairs with the backend's `safeEmitProgress` helper in workbench.js.    */
-/*                                                                       */
+/* Pairs with the backend's `safeEmitProgress` helper in workbench.js.    *//*                                                                       */
 /* For each tool call id, maintains an ordered list of `{ path, status } */
 /* entries, where status is 'reading' (in-flight) or 'read' (done). The   */
 /* reducer is a pure function so it can be unit-tested in isolation.        */
@@ -11,6 +10,8 @@
 /*   • 'done':            remove the entry (tool finished, sub-list clears) */
 /*   • 'error':           same as 'done'                                  */
 /*   • 'running':         no-op (used for run_command, not read-related)  */
+
+import { fmtElapsed } from './utils';
 
 export type ProgressPhase = 'reading' | 'read' | 'running' | 'done' | 'error';
 
@@ -26,9 +27,38 @@ export interface ToolProgressEvent {
   phase: ProgressPhase;
   paths?: string[];
   path?: string;
+  /** Heartbeat evidence: seconds running / seconds since the last output. */
+  elapsedSec?: number;
+  idleSec?: number;
 }
 
 export type ToolProgressMap = Map<string, ReadonlyArray<ProgressEntry>>;
+
+/** Heartbeat age at which the status line starts naming the evidence. Two 8 s
+ *  beats plus margin: one beat is "still working", three is a signal. */
+export const STALL_HINT_SEC = 20;
+
+/**
+ * Compose the live status line from a heartbeat's message and its evidence.
+ *
+ * An idle gap is stronger evidence than elapsed time, so it wins when present:
+ * the command path can measure time since the last output byte, while the
+ * generic heartbeat sees no output flow and must not invent one. Below the
+ * threshold the message is returned untouched.
+ */
+export function formatProgressStatus(
+  message: string,
+  elapsedSec?: number,
+  idleSec?: number
+): string {
+  const evidence =
+    idleSec !== undefined && idleSec >= STALL_HINT_SEC
+      ? `no output for ${fmtElapsed(idleSec * 1000)}`
+      : elapsedSec !== undefined && elapsedSec >= STALL_HINT_SEC
+        ? `${fmtElapsed(elapsedSec * 1000)} elapsed`
+        : '';
+  return evidence ? `${message} — ${evidence}` : message;
+}
 
 /**
  * Apply a single `tool_progress` event to the current accumulator and
