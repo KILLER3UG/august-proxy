@@ -41,7 +41,7 @@
 
 | Document | Contents |
 |----------|----------|
-| [`research/`](research/) | 2026-09-24/25 read-only audits of August itself (backend harness, frontend UI, lifecycle, sub-agent output). The freshest analysis in the tree — and it already supersedes `settings-audit.md` |
+| [`research/`](research/) | Two research programs. **2026-09-24/25** — read-only audits of August itself (backend harness, frontend UI, lifecycle, sub-agent output); the freshest *August* analysis in the tree, and it supersedes `settings-audit.md`. **2026-10-22** — the three-repo harness study: `STATUS.md` (coverage ledger: 19,643 tracked files across pi, SimulIDE and DeepSeek harness, 115 shards, 3,154 citations checked), `august-baseline.md` (what August actually does, verified first-hand, so no proposal re-suggests shipped work), and `AUGUST-IMPROVEMENTS.md` (nine ranked proposals with ADOPT/ADAPT/SKIP verdicts). Read the baseline before acting on any proposal — parts of the baseline were true when written and have moved since. |
 
 ### Refactor program (closed — archaeology)
 

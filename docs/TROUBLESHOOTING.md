@@ -75,7 +75,7 @@ and cognitive snapshots.
 
 A provider only appears as usable if it has an API key configured (config entry,
 `providers.json` entry, or env). Add a key in `data/config.json` or `.env`, or
-complete **Settings → Models & Providers**.
+complete **Settings → Model settings**.
 
 ### "API key not configured for &lt;provider&gt;"
 
@@ -105,7 +105,9 @@ missing install step.
 
 ### Upstream rate limiting (429 / 503)
 
-Provider clients retry with exponential backoff (capped, honors `Retry-After`).
+Provider clients retry with exponential backoff (capped). A server-requested
+wait longer than the 30 s ceiling fails the request at once with the delay named,
+instead of being clamped and slept ten times inside one round.
 If it persists, spread traffic or reduce parallelism.
 
 ### Quotas stay on "local" and no cap appears
@@ -243,7 +245,7 @@ pass through. Non-workspace terminals are unrestricted.
 ### MCP server edit
 
 MCP servers can be added, started/stopped, edited (`PATCH /api/mcp/servers/{id}`),
-and removed from **Settings → Integrations**. Editing stops a running server so
+and removed from **Settings → Plugins**. Editing stops a running server so
 the new command/args/env apply on the next start.
 
 ---
@@ -391,8 +393,8 @@ What exists instead:
   (rendered first, ~600-char budget). That is what makes August remember who you
   are without a keyword coincidence.
 - Reviewing what is stored is **Settings → Memory**, one flat chronological list
-  across kinds. There is no "Memory files" card — the 0.18 restyle removed the
-  backup / integrity / restore surface.
+  across kinds. The "Memory files" card the 0.18 restyle removed was re-added as
+  **Backups & restore**: it runs the backups, integrity check and staged restore.
 
 ---
 

@@ -113,7 +113,8 @@ prose skill keeps its structure.
 3. `bodySubstance` measures the draft *before* normalization: placeholders do
    not count as content, so a one-line rule cannot pass as a skill.
 4. A draft that clears the bar files a `skill_create` / `skill_patch`
-   proposal. A human approves it in the review inbox — **learning stays
+   proposal. A human approves it in the **Review queue inside Settings → Skills**
+   (retirements live in Settings → Memory) — **learning stays
    human-gated**; nothing here activates autonomously.
 5. Approval writes the normalized SKILL.md (with provenance: `version`,
    `origin`, `learned_from`, `supersedes`, `status`).

@@ -269,7 +269,10 @@ unchanged. **An absent key means ARMED at those shipped constants; `0` means off
 and stays writable so an armed ceiling can always be disarmed — the old
 "absent = OFF" rule is what made the bound invisible on an install that never
 opened Settings, and the Settings panel used to render `0 = off` for a backstop
-that was counting rounds. World delta can still be re-armed honestly (a model
+that was counting rounds. **That panel is gone (2026-10-22):** the Turn limits
+door was removed with four others, so these keys are set in the config file
+only. Do not tell a user to open a Settings section for them. World delta can
+still be re-armed honestly (a model
 touching a genuinely new path every round *is* working), so the second bound is
 counted on `modelRounds` — requests that actually left the process — not
 `toolRound`, which the self-heal legs decrement with `toolRound -= 1` and which a

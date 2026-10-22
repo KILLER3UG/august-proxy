@@ -351,10 +351,10 @@ single memory write door.
 
 Desktop **Settings → Memory** (`memory-knowledge`, with `memory-facts` as a hidden
 child) renders one flat chronological list across kinds with filter chips — not
-tabs, not cards or meters. There is **no** "Memory files" card: the 0.18 restyle
-removed the backup / integrity / restore / raw-state surface, so a restore is
-staged only through `POST /api/brain/backups/restore`
-(`api/api-client/brain-backup.ts` is the surviving client if it is ever rebuilt).
+tabs, not cards or meters. The **Backups & restore** card (`BrainBackupsCard`,
+mounted at the foot of the Memory pane) is the human door to the same surface:
+backups, integrity, staged restore and raw-state lookup. A restore is still
+staged through `POST /api/brain/backups/restore` and applied at the next launch.
 
 > There is no separate Brain Orchestrator settings tab — controls live in the
 > session sidebar. `brain_orchestrator.py` is **gone**; its config moved to
@@ -521,14 +521,17 @@ Major desktop surfaces: chat/workbench (composer island, `SubagentTimeline.tsx`
 worker lanes, `AssistantBlockTimeline.tsx`, `CircuitArtifactCard.tsx`, and a
 right drawer composed of sections — `RightDrawer.tsx` + `…ArtifactsSection`,
 `…BrowserSection`, `…CircuitSection`, `…DiffSection`, `…Subagents`), Live, and
-Settings.
+Settings. **`/artifacts`** ([`sections/artifacts/ArtifactsPage.tsx`](../frontend/desktop/src/sections/artifacts/ArtifactsPage.tsx))
+is the cross-chat gallery: it derives every artifact from each recent chat's
+messages with the same `collectArtifacts` the drawer uses, groups by chat, and
+opening a card jumps to the chat that made it.
 
-Settings is **3 header groups, not 8 hubs**: `basics` (label "Basics"),
-`capabilities` ("Agent capabilities"), `data` ("Data and statistics") —
+Settings is **4 header groups, not 8 hubs**: `basics` (label "Setup"),
+`capabilities` ("Agent"), `data` ("Data") and `app` ("App") —
 `SETTINGS_CATEGORIES` in
 [`settings-registry.ts`](../frontend/desktop/src/settings/settings-registry.ts).
 The rail is an inline tree (header → section → optional grandchild), not pill
-tabs. Today that is **43 sections — 17 `basic` and 26 `hidden`, with no `advanced` tier
+tabs. Today that is **39 sections — 13 `basic` and 26 `hidden`, with no `advanced` tier
 at all**; `tier: 'hidden'` ids are interior views that deep-link into their parent via
 `railCanonicalId`. There is no "Show advanced" toggle and no advanced preference to
 toggle: both `useSettingsAdvancedPreference.ts` and the `RAIL_CHILDREN` map this section

@@ -103,7 +103,7 @@ The process **refuses to start on Python &lt; 3.12** (`main.py` fail-fast check)
 ## First-run Configuration
 
 On first start, the proxy reads (or creates) files in `data/`. You can edit them
-directly or use the **desktop app** (**Settings → Models & Providers**).
+directly or use the **desktop app** (**Settings → Model settings**).
 
 ### 1. Add API keys
 
@@ -147,7 +147,7 @@ There is **no built-in template catalog** — `GET /api/providers/templates` is 
 back-compat shim that always returns `[]`. Every provider is user-configured:
 name, base URL, wire format and key, with no defaults invented for you.
 
-Add providers from **Settings → Models & Providers** or by editing
+Add providers from **Settings → Model settings** or by editing
 `data/providers.json`:
 
 ```json
@@ -229,7 +229,7 @@ curl http://127.0.0.1:8085/v1/chat/completions \
 ```
 
 Then open the **desktop app** (`npm run dev:desktop` or an installed build) for
-Settings → Models & Providers and workbench chat. Do not treat a browser tab on
+Settings → Model settings and workbench chat. Do not treat a browser tab on
 `:8085` as the product test surface — see [`AGENTS.md`](../AGENTS.md).
 
 ---
@@ -300,7 +300,7 @@ npm run dev:desktop
 The Tauri shell starts, probes `http://127.0.0.1:8085/api/health`,
 and spawns the backend from the `.venv` interpreter (falling back to
 `py -3`, then system `python3`). Live proxy / memory / security events
-stream over `ws://127.0.0.1:8085/api/logs/stream` (Settings → Activity
+stream over `ws://127.0.0.1:8085/api/logs/stream` (Settings → Activity Log
 Log; the old Backend Monitor page is hidden and deep-links here).
 
 ### Packaging note

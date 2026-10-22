@@ -679,6 +679,13 @@ August distilled the whole thought to a single line; the card now
 lists the distilled sentences, and "Show full reasoning" still reaches
 the raw prose.
 
+> **Corrected 2026-10-22.** That last clause no longer holds: the
+> per-thought "Show full reasoning" control was removed with the
+> per-thought "Thought for Ns" header. The card IS the sentence list, and
+> the raw chain-of-thought stays reachable only through the
+> collapse-thinking opt-out (`august.collapseThinking = '0'`), which
+> restores the clamped-prose rendering.
+
 **THE ACTIVITY CARD HELD A BOX INSIDE A BOX.** The run of tool calls
 brought its own rounded border and background - the same "N bordered
 cards" shape the Settings round had just removed, in the one place a

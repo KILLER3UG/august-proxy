@@ -47,7 +47,7 @@ flowchart LR
     direction TB
     HTML["index.html → main.tsx<br/>theme · preferences<br/>realtime bridge"] --> DISC["invoke('proxy_status')"]
     DISC --> FETCH["window.fetch patch<br/>/api + /v1 → live origin"]
-    FETCH --> ROUTES["routes.ts<br/>/ · /c/:id · /automations · /runs<br/>/board · /live · /history · /learning<br/>/settings · /_design"]
+    FETCH --> ROUTES["routes.ts<br/>/ · /c/:id · /automations · /runs<br/>/board · /artifacts · /live · /history · /learning<br/>/settings · /_design"]
     ROUTES --> LAYOUT["ChatLayout<br/>sidebar + transcript"]
   end
 

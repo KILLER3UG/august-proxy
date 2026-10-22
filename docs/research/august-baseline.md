@@ -5,12 +5,26 @@ against this page. If August already does the thing, the proposal is dropped; if
 August *looks* like it does the thing but does not, that is recorded here as
 **COSMETIC** so the proposal can say what is actually missing.
 
-**Date:** 2026-10-22 · **Commit:** `bc531b2e` (research-only work; no August
-source was modified) · **Method:** first-hand reading of the live tree, cross-
+**Date:** 2026-10-22 · **Commit:** `bc531b2e` (research-only work — but see the
+correction below) · **Method:** first-hand reading of the live tree, cross-
 checked against three prior August audits already in the repo
 (`docs/research/2026-10-21-deep-dive-and-cleanup.md`,
 `docs/research/2026-10-21-simulide-and-pi-harness.md`,
 `docs/plans/2026-10-05-harness-pattern-gap-analysis.md`).
+
+> **Corrections, same day (2026-10-22, later).** This baseline is a snapshot and
+> several of its counts moved within hours of being written. The loop bounds are
+> now ARMED by default (150 rounds; runaway 25/40), six Settings doors were
+> removed (with `turn-limits` and `tools-connections` among them), a cross-chat
+> `/artifacts` page exists, tool arguments go through one salvage door, and the
+> thinking card lost its per-thought header. A first-hand re-check also corrected
+> these counts: **41** routers (not 37), **152** `register(` sites (not 153), and
+> **14** names in `_BARE_TOOL_ALLOW` (not 16 — the extra two were quoted in the
+> comment). Treat any number here as a claim about that afternoon, and re-derive
+> it from the tree before planning against it. The research commits also deleted
+> two source files by accident (`TurnLimitsSection.tsx`,
+> `AISetupWizardSection.tsx`) despite this page saying no source was modified;
+> the settings round removed their now-dangling imports.
 
 > **The three prior audits are 17 days old and the tree has moved.** Numbers
 > quoted there are stale in ways that matter. This page is the current truth.

@@ -93,7 +93,7 @@ accepts, and what effort it should use by default. Replaces two hard-coded
 substring heuristics with data, so supporting a new gateway family is a config
 edit rather than a code change.
 
-**Settings → Model Families** (Agent Capabilities, Advanced) edits this section
+**Settings → Model Families** (Agent) edits this section
 for you: it shows the built-in table, and *Override* copies a built-in row — with
 its tokens — into your list so narrowing it can't accidentally drop the models
 the built-in matched. Saving there writes this file section through
@@ -199,7 +199,7 @@ explicitly. The legacy single `provider` / `model` pair is **removed on save**
 ### `auxiliary.cognitive`
 
 Cognitive architecture tree (boot, features, fleet, orchestrator). Edited via
-Settings → Memory / Reliability / model fleet and `GET/PUT /api/config/cognitive`,
+Settings → Memory and the model settings, and `GET/PUT /api/config/cognitive`,
 `GET/PUT /api/config/model-fleet`, and `/api/brain/config*`.
 `fleet` maps each role to a model id and `fleetProviders` maps the same roles to
 the gateway that model was chosen on; `GET/PUT /api/config/model-fleet` reads and
@@ -219,7 +219,8 @@ mode. Those three override the selected model because the condition was chosen
 explicitly; `chat_default` and `cortex` only fill a turn that arrived with no
 model at all. The routing decision is logged at info level with the role name.
 `maxWorkbenchToolLoops` here overrides the workbench tool-round cap (default `150`;
-`0 = uncapped`). Settings → Turn limits shows the effective number, not a blank.
+`0 = uncapped`). It has no Settings panel any more — the Turn limits door was
+removed and every bound it held is set here (or in `config.json`) directly.
 
 **Turn budget ladder** — three soft per-turn ceilings, each **off by default**
 (`0` = disabled, so an untouched install never walks the ladder):
@@ -476,7 +477,7 @@ that seems to "come from the profile" is actually coming from `modelAliases`,
 
 ## `data/providers.json`
 
-User-added providers, edited from **Settings → Models & Providers** or
+User-added providers, edited from **Settings → Model settings** or
 `app.services.config_service`.
 
 ```json
@@ -570,7 +571,7 @@ when the provider itself stated a limit, and it comes from exactly two places:
 
 The fetch is best-effort and bounded (8 s, failures logged at debug). Any
 failure — unreachable host, non-JSON body, a path that does not resolve — falls
-back to the local estimate. Configure it in **Settings → Models & Providers** →
+back to the local estimate. Configure it in **Settings → Model settings** →
 provider → *Quota endpoint*.
 
 **What the two numbers mean.** `used` is always August's own token spend in
@@ -586,7 +587,7 @@ carry its own `apiFormat` — e.g. `"id": "claude-sonnet-4", "apiFormat":
 model. This is how OpenCode Zen works: one provider (`openaiChat`) serves
 DeepSeek / GLM / Kimi / MiniMax / Grok on `chat/completions`, while Claude
 models tagged `anthropicMessages` route to `v1/messages` and GPT models tagged
-`openaiResponses` route to `responses`. Set it in **Settings → Models & Providers** (pencil-edit a model row → Wire
+`openaiResponses` route to `responses`. Set it in **Settings → Model settings** (pencil-edit a model row → Wire
 format dropdown; the UI suggests `v1/messages` for `claude-`-prefixed ids).
 The override applies to workbench chat, the **Test** button, Live/BTW, and
 the `/v1/chat/completions` · `/v1/messages` · `/v1/responses` proxy adapters
@@ -594,7 +595,7 @@ the `/v1/chat/completions` · `/v1/messages` · `/v1/responses` proxy adapters
 wire protocol automatically).
 
 **Per-model price (`priceInPerM` / `priceOutPerM`):** USD per **1,000,000**
-tokens, set in **Settings → Models & Providers** → pencil-edit a model row →
+tokens, set in **Settings → Model settings** → pencil-edit a model row →
 *Price in / out ($/1M)*. Resolution order is env override
 (`AUGUST_PRICE_IN_PER_M` / `AUGUST_PRICE_OUT_PER_M`) → the model's own price →
 its **Free** flag → August's built-in family table → a last-resort default.
@@ -609,7 +610,7 @@ Desktop **0.12.21+** also stops forwarding `session_id: null` on OpenAI
 bodies (Console 400).
 
 There is **no built-in template catalog**. You configure every provider
-yourself (name, base URL, API format, API key) via Settings → Models & Providers or
+yourself (name, base URL, API format, API key) via Settings → Model settings or
 `POST /api/providers`. `GET /api/providers/templates` remains for back-compat
 and always returns `[]`.
 
@@ -618,7 +619,7 @@ and always returns `[]`.
 ## `data/mcp-servers.json`
 
 Defines MCP servers (stdio / SSE / streamable HTTP). Managed via
-`/api/mcp/*` and Settings → Integrations. Global env for MCP subprocesses
+`/api/mcp/*` and Settings → Plugins. Global env for MCP subprocesses
 is available at `/api/mcp-env` (includes Google OAuth keys mirrored at boot).
 
 ---

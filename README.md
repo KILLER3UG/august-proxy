@@ -34,7 +34,7 @@ lives in [`frontend/mobile/`](frontend/mobile).
   with format translation. Provider **baseUrl** is used as pasted; August only
   appends the format leaf. Models may override **wire format** (`apiFormat`)
   when one gateway lists mixed families (e.g. OpenCode Zen).
-- **User-configured providers** — Settings → Models & Providers, or
+- **User-configured providers** — Settings → Model settings, or
   `data/providers.json`. Aliases map a chat-picker name to provider + model.
 - **Managed tools** — files, shell/PTY, web search/fetch, Playwright browser,
   desktop automation, memory, MCP, skills, sub-agents, sandbox-gated
@@ -43,7 +43,8 @@ lives in [`frontend/mobile/`](frontend/mobile).
   graph store** — `fact_retrieval.py`, `tools/retrieval.py` and
   `text_similarity.py` each say so; do not add one without deleting those.
   Settings **Memory** is one flat chronological list across kinds with filter
-  chips (no tabs, no meters, and no "Memory files" card since the 0.18 restyle).
+  chips (no tabs, no meters). The "Memory files" card the 0.18 restyle removed is
+  back, as **Backups & restore** — see Settings → Memory.
   The model manages memory through the `remember` / `list_facts` / `forget` core
   tools. Automatic recall is gated by `memoryAutoInject` (**default off**), but
   `kind='profile'` facts always ride in — that is what makes August remember who
@@ -232,7 +233,7 @@ Touch carefully; regressions break all chat or safety:
 
 ### Version + GitHub release
 
-On desktop ship, **eight** sources must match (`npm run check:version`):
+On desktop ship, **nine** sources must match (`npm run check:version`):
 
 - `package.json`
 - `frontend/desktop/package.json`
@@ -253,7 +254,9 @@ without the `v`. Two things to know before you push it:
   The pytest suite, the vitest suite, the payload-integrity test and
   `check:coverage` were deleted on 2026-10-17 along with the whole test tree (see
   "Verifying a change" above).
-- `Type check` runs on the tag's commit but **does not gate publication**, so
+- `Type check` runs on every branch push and pull request — **not on a tag
+  push**, because the workflow filters on branches — and does not gate
+  publication, so
   confirm it is green before pushing the tag.
 
 Known product gap: one provider `apiFormat` cannot serve mixed families on

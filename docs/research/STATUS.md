@@ -59,6 +59,16 @@ cites, reopens the file in the clone, and confirms the line exists and is in
 range — and separately confirms that every file in the shard's ledger is
 mentioned in its report. **3 154 citations, 0 bad.**
 
+> **What that number does and does not mean.** The verifier checks that the
+> cited LINE NUMBER exists — never that the line says what the shard claims — so
+> a right-line/wrong-fact citation passes. It also silently skips a citation
+> whose basename is ambiguous or absent from the manifest: roughly 3 700
+> occurrences (≈475 pi, ≈259 SimulIDE, ≈2 998 DeepSeek harness), over half of
+> that repo's citations. It scans `shards/*.md` and their `.rows.tsv` only, not
+> `STATUS.md`, `IDEAS.md` or `AUGUST-IMPROVEMENTS.md`, so it verifies no August
+> claim at all; it needs the `%TEMP%` clones and is not wired into `package.json`
+> or CI. "0 bad" means "0 citations pointed past the end of a file".
+
 Beyond the automated check, four claims were re-read **by hand** at their
 cited lines and confirmed true:
 

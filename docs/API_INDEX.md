@@ -127,7 +127,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `GET` | `/api/brain/consolidation/log` | M4 consolidation log: one lifecycle row per pass plus the M5 lesson-promotion decisions. This is the analysis… |
 | `POST` | `/api/brain/consolidation/run` | Trigger one consolidation pass now (Settings → Memory → "Run now"). |
 | `GET` | `/api/brain/decisions` | 053: the decision ledger — what the harness decided and how it settled. |
-| `POST` | `/api/brain/decisions/resolve` | Run one journal resolution pass now (Settings → Learning → "Run now"). |
+| `POST` | `/api/brain/decisions/resolve` | Run one journal resolution pass now (the Learning page → "Run now"). |
 | `GET` | `/api/brain/integrity` | ``PRAGMA integrity_check`` on the live DB plus what could be recovered. |
 | `GET` | `/api/brain/memory/metrics` | Phase D item 4: recall + latency instrument. |
 | `GET` | `/api/brain/memory/preview` | The literal durable-memory text a turn receives, for Settings → Memory. |
