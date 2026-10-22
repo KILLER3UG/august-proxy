@@ -39,7 +39,8 @@
     "release:minor": "node scripts/release-desktop.mjs minor --tauri",
     "release:patch": "node scripts/release-desktop.mjs patch --tauri",
     "start": "node scripts/start-backend.mjs",
-    "version": "node scripts/sync-tauri-version.mjs && git add package-lock.json frontend/desktop/package.json frontend/desktop/src-tauri/tauri.conf.json frontend/desktop/src-tauri/Cargo.toml frontend/desktop/src-tauri/Cargo.lock"
+    "version": "node scripts/sync-tauri-version.mjs && git add package-lock.json frontend/desktop/package.json frontend/desktop/src-tauri/tauri.conf.json frontend/desktop/src-tauri/Cargo.toml frontend/desktop/src-tauri/Cargo.lock",
+    "research:citations": "node scripts/research/check-citations.mjs pi && node scripts/research/check-citations.mjs simulide && node scripts/research/check-citations.mjs deepseek-harness"
   },
   "dependencies": {
     "zod": "^3.25.76"

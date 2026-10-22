@@ -96,7 +96,7 @@ hand-written table per variant.
 
 Nonlinearity is **companion fixed-point, not Newton**: `eDiode::voltChanged`
 re-linearises to `dI/dV` + a Norton source, converges at ΔV < 0.01 V and ramps
-`gmin` geometrically (`src/components/active/e-diode.cpp:58-96`).
+`gmin` geometrically (`src/simulator/elements/active/e-diode.cpp:58-96`).
 
 **A zero diagonal does `continue`, and `luSolve` returns `isOk=false` with volt
 0 (`circmatrix.cpp:168-171`, `:220-223`) — and the caller DISCARDS it with the

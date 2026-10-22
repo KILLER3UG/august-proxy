@@ -1,13 +1,21 @@
 // Research-only helper: verify docs/research/<repo>/manifest.tsv against `git ls-files`.
 // Read-only against the clones; writes nothing outside stdout.
+//
+// This is the LEDGER GATE, merged from the retired merge-rows.mjs when the
+// per-shard `<shard>.rows.tsv` files were merged into manifest.tsv and deleted:
+// besides reconciliation it refuses an unresolved status, a skip with no reason
+// and a read with no note, and exits non-zero on any of them.
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 
+const CLONE_BASE =
+  process.env.AUGUST_RESEARCH_CLONES || 'C:/Users/rober/AppData/Local/Temp/harness-research';
 const CLONES = {
-  pi: 'C:/Users/rober/AppData/Local/Temp/harness-research/pi',
-  simulide: 'C:/Users/rober/AppData/Local/Temp/harness-research/simulide',
-  'deepseek-harness': 'C:/Users/rober/AppData/Local/Temp/harness-research/deepseek-harness',
+  pi: `${CLONE_BASE}/pi`,
+  simulide: `${CLONE_BASE}/simulide`,
+  'deepseek-harness': `${CLONE_BASE}/deepseek-harness`,
 };
+let failures = 0;
 
 for (const [repo, dir] of Object.entries(CLONES)) {
   const tracked = execFileSync('git', ['-C', dir, 'ls-files'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
@@ -45,6 +53,10 @@ for (const [repo, dir] of Object.entries(CLONES)) {
 
   const statusCounts = {};
   for (const r of rows) statusCounts[r.status] = (statusCounts[r.status] || 0) + 1;
+  const unresolved = rows.filter((r) => r.status !== 'read' && r.status !== 'skipped');
+  const skippedNoReason = rows.filter((r) => r.status === 'skipped' && !r.note.trim());
+  const readNoNote = rows.filter((r) => r.status === 'read' && !r.note.trim());
+  failures += missing.length + extra.length + dupes.length + unresolved.length + skippedNoReason.length + readNoNote.length;
 
   console.log(`\n===== ${repo} =====`);
   console.log(`git ls-files: ${tracked.length}   manifest rows: ${rows.length}`);
@@ -52,9 +64,17 @@ for (const [repo, dir] of Object.entries(CLONES)) {
   console.log(`in manifest but not tracked: ${extra.length}` + (extra.length ? ` -> ${extra.slice(0, 8).join(', ')}` : ''));
   console.log(`duplicate paths: ${dupes.length}` + (dupes.length ? ` -> ${dupes.slice(0, 8).join(', ')}` : ''));
   console.log(`status: ${JSON.stringify(statusCounts)}`);
+  console.log(`UNRESOLVED (gate fail): ${unresolved.length}` + (unresolved.length ? ` -> ${unresolved.slice(0, 8).map((r) => r.path).join(', ')}` : ''));
+  console.log(`skipped without a reason: ${skippedNoReason.length}` + (skippedNoReason.length ? ` -> ${skippedNoReason.slice(0, 8).map((r) => r.path).join(', ')}` : ''));
+  console.log(`read without a note: ${readNoNote.length}` + (readNoNote.length ? ` -> ${readNoNote.slice(0, 8).map((r) => r.path).join(', ')}` : ''));
   console.log(`shards: ${shardList.length}`);
   for (const s of shardList) {
     const flag = s.files > 600 ? '  <== SPLIT' : '';
     console.log(`  ${s.name.padEnd(34)} ${String(s.files).padStart(5)} files  ${String(s.kb).padStart(7)} KB${flag}`);
   }
+}
+
+if (failures) {
+  console.error(`\n[verify-manifest] FAIL — ${failures} problem(s) across the three manifests`);
+  process.exitCode = 1;
 }

@@ -42,11 +42,37 @@ Every one of the 19 643 tracked files is in the manifest, in exactly one
 shard, and carries a status of `read` or `skipped` **with a one-line
 justification**. Zero rows lack a note. Zero shards lack a report.
 
+## Re-running the citation verifier
+
+The verifier reads the CLONES, which live in a throwaway directory and will
+vanish. It now refuses to run without them (exit 2, naming the path) instead of
+reporting hundreds of "bad citations" caused by a missing directory, and the
+clone root can be pointed anywhere:
+
+```bash
+git clone --filter=blob:none https://github.com/earendil-works/pi            <base>/pi
+git clone --filter=blob:none https://github.com/Arcachofo/SimulIDE-dev       <base>/simulide
+git clone --filter=blob:none https://github.com/deepseek-ai/deepseek-harness <base>/deepseek-harness
+git -C <base>/pi checkout 58c0b02
+git -C <base>/simulide checkout a7d9fc9
+git -C <base>/deepseek-harness checkout 687f282e
+
+AUGUST_RESEARCH_CLONES=<base> npm run research:citations
+```
+
+Two limits are printed by the run itself: it checks that a cited line NUMBER
+exists, never that the line says what the shard claims, and every citation whose
+basename is ambiguous or absent from the manifest is counted as
+`uncheckable` (~3,732 across the three repos). It is not wired into CI — CI has
+no clones — so "0 bad" is a statement about line numbers, not about truth.
+
 ## What the gate actually did
 
-`scripts/research/merge-rows.mjs` reconciles each manifest against
-`git ls-files` and fails on any file that is neither `read` nor
-`skipped`-with-a-reason. It reported:
+`scripts/research/verify-manifest.mjs` — the gate, merged from the retired
+`merge-rows.mjs` when the per-shard ledger files were folded into the manifest
+— reconciles each manifest against `git ls-files` and fails (exit 1) on a
+missing or extra path, a duplicate, any file that is neither `read` nor
+`skipped`-with-a-reason, or a read row without a note. The recorded run:
 
 ```
 pi               tracked=1987  rows=1987   UNRESOLVED: 0   skipped w/o reason: 0   read w/o note: 0
@@ -64,10 +90,11 @@ mentioned in its report. **3 154 citations, 0 bad.**
 > a right-line/wrong-fact citation passes. It also silently skips a citation
 > whose basename is ambiguous or absent from the manifest: roughly 3 700
 > occurrences (≈475 pi, ≈259 SimulIDE, ≈2 998 DeepSeek harness), over half of
-> that repo's citations. It scans `shards/*.md` and their `.rows.tsv` only, not
-> `STATUS.md`, `IDEAS.md` or `AUGUST-IMPROVEMENTS.md`, so it verifies no August
-> claim at all; it needs the `%TEMP%` clones and is not wired into `package.json`
-> or CI. "0 bad" means "0 citations pointed past the end of a file".
+> that repo's citations. It scans `shards/*.md` and the manifest's owner-shard
+> ledger only, not `STATUS.md`, `IDEAS.md` or `AUGUST-IMPROVEMENTS.md`, so it
+> verifies no August claim at all; it needs the `%TEMP%` clones and is not wired
+> into `package.json` or CI. "0 bad" means "0 citations pointed past the end of
+> a file".
 
 Beyond the automated check, four claims were re-read **by hand** at their
 cited lines and confirmed true:
@@ -170,21 +197,26 @@ several places that matter:
 | `docs/research/IDEAS.md` | Every "ideas worth stealing" from every shard, consolidated |
 | `docs/research/STATUS.md` | This file |
 | `docs/research/<repo>/ARCHITECTURE.md` | How each system fits together, plus its coverage summary |
-| `docs/research/<repo>/manifest.tsv` | The coverage ledger: one row per tracked file |
+| `docs/research/<repo>/manifest.tsv` | The coverage ledger: one row per tracked file — status, note and owner shard |
 | `docs/research/<repo>/shards/<shard>.md` | 115 shard reports |
-| `docs/research/<repo>/shards/<shard>.rows.tsv` | 115 per-file ledgers |
+
+The per-shard `<shard>.rows.tsv` files (115 files, 4.3 MB) were folded into
+`manifest.tsv` and deleted; the two copies had drifted (`pi/durable#2`'s ledger
+carried 29 rows the manifest assigns to `durable#1`). A shard report that names
+one of those files — five do, in their coverage notes — describes a former
+artifact: the same rows are in the manifest under that shard's `owner-shard`
+column.
 
 ## Tooling
 
 - `scripts/research/build-ledger.mjs` — rebuilds the manifest and the shard
   partition from `git ls-files` + `stat` only. Never executes repository code.
-- `scripts/research/verify-manifest.mjs` — reconciles a manifest against
-  `git ls-files` and reports shard balance.
-- `scripts/research/merge-rows.mjs` — merges the per-shard ledgers back into
-  the manifest and **fails the gate** on any unresolved file, any skipped row
-  without a reason, or any read row without a note.
+- `scripts/research/verify-manifest.mjs` — **the ledger gate.** Reconciles each
+  manifest against `git ls-files`, reports shard balance, and exits non-zero on
+  a missing/extra/duplicate path, an unresolved status, a skip without a reason
+  or a read row without a note.
 - `scripts/research/check-citations.mjs` — reopens every `path:line` a report
-  cites and confirms the line exists; separately confirms every ledger file is
-  mentioned in its report.
+  cites and confirms the line exists; separately confirms every file in the
+  manifest's owner-shard ledger is mentioned in that shard's report.
 - `scripts/research/synthesize-ideas.mjs` — extracts the consolidated
   "ideas worth stealing".

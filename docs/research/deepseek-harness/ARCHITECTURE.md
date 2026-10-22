@@ -84,7 +84,7 @@ Eight packages, and every composition depends on them.
 
 | Rule | Where | Formulation |
 |---|---|---|
-| A truncated message poisons its tool calls | `packages/core/agent-loop` | a call with an unknown outcome gets a **conservative** synthetic result, not a guess |
+| ~~A truncated message poisons its tool calls~~ | — | **Not a DSH rule.** That mechanism is pi's (`failToolCallsFromTruncatedMessage`, `packages/agent/src/agent-loop.ts:278,488`); DSH's loop makes `max-tokens` sticky and ends the turn (`packages/core/agent-loop/src/agent.ts:338-343,547`) but does not fail the message's calls. The row was copied across from pi. |
 | A tool failure is a result, never an exception | `packages/core/tools/src/index.ts:1917` `toolErrorResult` | the content is exactly `Error: <message>`; the structured name/code live **beside** it, never in the model-visible text. Unknown tools, throwing tools, hostile thrown values, wrapper failures, post-policy failures and timeouts all resolve to an `isError` result. |
 | Parallel tools commit in **model** order | `packages/core/tools` | a bounded parallel pool that commits results in *model* order and **reclassifies pending calls before they start** |
 | Concurrency is classified fail-closed | `packages/core/tools` | only an exact `true` from the tool's own classifier means "parallel-safe" |
@@ -246,8 +246,10 @@ The single most distinctive thing in the repo, and it is **prose, not code**.
   "verified fail-before" line, and several carry a table of accepted residual
   costs.
 
-**The archived corpus is 87 architecture notes, 87 bug-fix notes, 86 feature
-notes and 86 process notes** — roughly 350 shipped decisions, each with its
+**The archived corpus is 185 architecture notes, 182 bug-fix notes, 306
+feature notes and 120 process notes** (English `.md` under
+`.agents/notes/archived/<category>/`, counted with `git ls-files`; the earlier
+87/87/86/86 figure was wrong) — roughly 790 shipped decisions, each with its
 alternatives. It is the best single artefact in any of the three repos: a
 harness that explains itself in the past tense, with the rejected options
 still on file.

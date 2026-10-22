@@ -56,7 +56,6 @@ for (const repo of only) {
       clone: CLONES[repo],
       manifest: `${ROOT}/${repo}/manifest.tsv`,
       report: `${ROOT}/${repo}/shards/${shard}.md`,
-      rows: `${ROOT}/${repo}/shards/${shard}.rows.tsv`,
       files: s.files,
       readKB: readKB.get(shard) || 0,
       lenses: LENSES[repo],

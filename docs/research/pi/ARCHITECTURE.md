@@ -315,7 +315,7 @@ This is exactly the failure the ledger is designed to catch, and it was
 caught: the gate reported `UNRESOLVED: 185` and named the files. The manifest
 was restored from git, **all six ledger files were then set read-only** so a
 worker cannot rewrite them again, and the two shards were re-dispatched
-against the restored partition. They now stand at 89 and 159 ledger rows with
+against the restored partition. They now stand at 89 and 130 ledger rows with
 **0 unresolved**.
 
 **Every skipped file has a stated reason** and none was skipped silently. The
