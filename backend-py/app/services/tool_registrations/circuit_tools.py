@@ -1382,9 +1382,9 @@ def register() -> None:
         'passed/failed/engine-error/no-expectations with the failing '
         'comparisons and the measures that were seen. A deck with no expect '
         'card is COUNTED, never passed: a fixture that asserts nothing is how a '
-        'suite goes green around a broken circuit. It changes no deck, but it '
-        'runs each deck through circuit_simulate, so the usual simulated '
-        'artifacts (savedTo / tracesFile) are written like any simulation. Use it after '
+        'suite goes green around a broken circuit. It writes NOTHING — no deck, '
+        'no savedTo, no tracesFile — so a fixture folder is safe to point at a '
+        'real project; results come back inline only. Use it after '
         'touching a shared subcircuit, a part value or the rendering/parse path, '
         'and before claiming a design still works.',
         _batchTest,

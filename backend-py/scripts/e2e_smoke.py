@@ -413,11 +413,25 @@ def main() -> int:
         try:
             import re as _re
 
+            from app.services.sandbox import hardline
             from app.services.workbench import code_runner
 
             rendered = code_runner.build_runner_source('result = 1', str(data_dir))
             left = sorted(set(_re.findall(r'__[A-Z][A-Z0-9_]*__', rendered)))
             check('code-mode guard leaves no unbound placeholder', not left, ', '.join(left))
+            # The negative assertion above passes on a template that spliced
+            # NOTHING, so ask the other half: the live hardline patterns must
+            # actually be inside the child's source.
+            markers = {
+                'write pattern': repr(hardline._PROTECTED_WRITE_PATTERN.pattern),
+                'read pattern': repr(hardline._CREDENTIAL_READ_PATTERN.pattern),
+            }
+            missing = {k: v[:40] for k, v in markers.items() if v not in rendered}
+            check(
+                'code-mode guard carries the live hardline patterns',
+                not missing,
+                ', '.join(missing),
+            )
         except Exception as exc:  # noqa: BLE001
             check('code-mode guard probe', False, f'{type(exc).__name__}: {exc}')
 

@@ -18,7 +18,7 @@
  * separated by hairlines, so a run reads as one thing with a list inside it
  * rather than as a stack of separate rows that happen to be adjacent. */
 
-import { Children, type ReactNode } from 'react';
+import { Children, useId, type ReactNode } from 'react';
 import { AlertCircle, ChevronDown } from 'lucide-react';
 import { cn, fmtElapsed } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -48,6 +48,14 @@ export function ActivityGroup({
   groupKey: string;
   children: ReactNode;
 }) {
+  // The collapsed group is the state a screen reader navigates, so the trigger
+  // has to resolve to a region that exists in BOTH states — the pairing
+  // DisclosureRow owns. Measured in the running app this row advertised
+  // `aria-expanded` with nothing behind it. The region wrapper is always
+  // mounted (empty while closed); the rows still mount lazily.
+  const uid = useId();
+  const triggerId = `${uid}-group-trigger`;
+  const regionId = `${uid}-group-region`;
   const elapsed =
     typeof elapsedMs === 'number' && elapsedMs >= 1000 ? fmtElapsed(elapsedMs) : null;
   const rows = Children.toArray(children);
@@ -69,7 +77,9 @@ export function ActivityGroup({
           size="sm"
           className="w-full shrink justify-start gap-2 whitespace-normal rounded-none px-2.5 py-1.5 text-left text-[0.8125rem] font-medium text-foreground/85 hover:bg-white/[0.03] hover:text-foreground"
           onClick={() => onToggle(!expanded)}
+          id={triggerId}
           aria-expanded={expanded}
+          aria-controls={regionId}
           data-testid="activity-group-head"
         >
           {running ? (
@@ -119,18 +129,20 @@ export function ActivityGroup({
           />
         </Button>
 
-        {expanded && rows.length > 0 ? (
-          <div className="border-t border-border/60 px-2.5 py-1" data-testid="activity-group-body">
-            {/* The header's own left padding is px-2.5; the body used px-2,
-                which put the rows 2px off the header's text - a hairline
-                misalignment in the one place the eye checks alignment. */}
-            {rows.map((row, i) => (
-              <div key={i} className={cn(i > 0 && 'border-t border-border/50')}>
-                {row}
-              </div>
-            ))}
-          </div>
-        ) : null}
+        <div id={regionId} role="region" aria-labelledby={triggerId}>
+          {expanded && rows.length > 0 ? (
+            <div className="border-t border-border/60 px-2.5 py-1" data-testid="activity-group-body">
+              {/* The header's own left padding is px-2.5; the body used px-2,
+                  which put the rows 2px off the header's text - a hairline
+                  misalignment in the one place the eye checks alignment. */}
+              {rows.map((row, i) => (
+                <div key={i} className={cn(i > 0 && 'border-t border-border/50')}>
+                  {row}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   );

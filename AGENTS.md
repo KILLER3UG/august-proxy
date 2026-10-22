@@ -255,8 +255,11 @@ retrying `maxRetries=10` times turned one stubborn 429 into five minutes of
 sleeping inside a single round — every loop counter frozen, no event to show, and
 a spinner that is really a wait list. Measured both ways with the scripted
 provider: refused turns fail in 0.5 s naming the 3600 s the gateway asked for;
-with the predicate disabled the turn was still asleep at 45 s. Numbers in this file that duplicate code
-constants are guarded by `npm run check:docs`.
+with the predicate disabled the turn was still asleep at 45 s. Numbers in this file that duplicate a code CONSTANT are guarded by
+`npm run check:docs` (14 claims as of writing, including the relief head's floor
+and window fraction and the runaway backstop's 25/40). A number that names no
+constant — the `e2e:smoke` door census above — is NOT guarded by anything, so
+edit it only while changing the smoke itself.
 
 **Two bounds are armed by default: a no-progress stop and an absolute ceiling.**
 Until 2026-10-22 nothing bounded a turn at all — `MAX_MANAGED_TOOL_ROUNDS` 0, the
@@ -491,8 +494,8 @@ Bot's private footprint, and names the actor in the audit.
 **Context relief has two routes, and the route is chosen from state, not by a
 model.** Compact-in-place keeps a verbatim head *forever* — a floor of
 `DEFAULT_HEAD_COUNT` (4) messages, grown while the head fits
-`COMPACT_HEAD_RATIO` (10 %) of the model window and always leaving a middle unit
-to summarize — and summarizes what follows, so from the second relief onward
+`COMPACT_HEAD_RATIO` (0.10, a tenth of the model window) and always leaving a
+middle unit to summarize — and summarizes what follows, so from the second relief onward
 the note's `Goal` is built from a follow-up turn — the original ask sits outside
 the summarized span — and earlier decisions survive only as the 600 chars of prose
 the previous note squeezed out of itself. `reliefStrategy` therefore returns
@@ -603,11 +606,22 @@ structured results.
 
 **Durable memory** — the `Relevant memory:` tail is BM25 over the brain `facts` table,
 gated by brain-config `memoryAutoInject` (**default OFF**: recall happens when
-the model calls `brain_query`). Two things are true regardless of that gate:
+the model calls `brain_query`). Three things are true regardless of that gate:
 `kind='profile'` facts are an always-in lane (rendered first, ~600-char budget,
 injected even with auto-inject off — this is what makes August remember *who
-you are* without a keyword coincidence), and a fact dropped for budget is
-**named** in a `recall partial:` line rather than vanishing. DB scopes are
+you are* without a keyword coincidence), a fact dropped for budget is
+**named** in a `recall partial:` line rather than vanishing, and
+`build_memory_delta_block` appends a plain `new in memory since this chat
+opened:` section listing facts whose `updated_at` is newer than the session's
+own creation stamp — so a fact written by `remember` is visible on the NEXT
+request without the model having to call `list_facts` first. The delta is a
+**projection over the facts table, not a cursor and not a second store**: an
+UPDATE to an existing key is delivered like a new write, a retired row cannot
+resurface, keys the recall lane already showed are skipped, and an unparseable
+session stamp returns NOTHING rather than dumping the whole store into the
+tail. It rides the tail (stripped before persistence), so the cached prefix is
+untouched; `memory_context_preview` deliberately omits it, because a preview
+has no session. DB scopes are
 `global` and `bot:<agentId>` only; `project:<path>` is refused at the write door
 on purpose, because workspace memory is the separate `.aug/memory` markdown
 layer that the tail already carries. `skill_delete` proposals, `patchSkill` and

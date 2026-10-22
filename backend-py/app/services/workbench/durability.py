@@ -32,18 +32,30 @@ BARRIER_MODEL_DISPATCH = 'model-dispatch'
 BARRIER_TOOL_SIDE_EFFECT = 'tool-side-effect'
 BARRIER_STEP_BOUNDARY = 'step-boundary'
 
-# The per-turn tail blocks (<memory>, <relevant_skills>,
-# <session_state>, <memory_nudge>) are patched onto the last user message for
-# THIS request only — they must not ride in persisted history (bloat, stale
-# state the model may later trust, phantom mining episodes: the miner's
-# injection filter is prefix-only and <memory_nudge> contains correction
-# vocabulary). Marked at patch time; stripped before every persist.
+# The per-turn tail sections (the `Relevant memory:` section, the `Relevant
+# skills:` section, `<session_state>`, `<memory_nudge>`, `<workspace_map>`) are
+# patched onto the last user message for THIS request only — they must not ride
+# in persisted history (bloat, stale state the model may later trust, phantom
+# mining episodes: the miner's injection filter is prefix-only and
+# <memory_nudge> contains correction vocabulary). Marked at patch time; stripped
+# before every persist.
 _TAIL_PATCH_FLAG = '_tailPatched'
 # The pre-tail content length, recorded by the patcher as the authoritative
 # boundary. The marker scan below is only a fallback for messages patched by an
 # older path that did not record it.
 _TAIL_FROM_KEY = '_tailFrom'
 _TAIL_MARKERS = (
+    # The memory and skills sections are plain headed now, not enveloped, so the
+    # fallback boundary names the headers. WITHOUT these two the fallback was
+    # dead for the largest part of the tail: a message that lost `_tailFrom`
+    # persisted its memory recall and its skill list into history permanently,
+    # because the tag strings below stopped appearing in anything we inject.
+    '\n\nRelevant memory:',
+    '\n\nRelevant skills:',
+    '\n\nnew in memory since this chat opened:',
+    # The tags stay because this path exists for OLD messages — one persisted by
+    # a build that still wrapped the sections — and a legacy transcript must not
+    # start keeping its tail because the current injector changed spelling.
     '\n\n<memory',
     '\n\n<relevant_skills',
     '\n\n<session_state',
@@ -56,14 +68,15 @@ _TAIL_MARKERS = (
     '\n\n<workspace_map',
 )
 
-# The fences August INJECTS, and the ones a model can echo back.
+# The fences August USED TO inject, and the ones a model can echo back.
 #
-# The tail blocks above are removed from USER messages by the recorded
-# boundary. Nothing removed them from ASSISTANT output: a model that quoted
-# its own memory block back persisted August's plumbing into the transcript,
-# and the echo was re-sent on every later turn — the memory block appearing
-# twice per turn, and (because the tail is BM25-indexed and the miner reads
-# the transcript) August's own plumbing feeding its own recall.
+# The memory and skills sections are plain headed now, so there is no closing
+# tag to key an echo match on and this scrubber no longer sees them; the
+# envelope-based removal below still applies to transcripts persisted by an
+# older build and to the blocks that keep their tags. The plain sections are
+# protected by the recorded boundary above instead — this regex is only the
+# assistant-side echo path, and it is deliberately NOT extended to match bare
+# prose headers, which would eat a user asking a question about their memory.
 #
 # Matched as a WHOLE fenced block, case-sensitively, and only in assistant
 # messages: a user asking "what does <memory> mean?" must keep their own
@@ -75,6 +88,14 @@ _ECHO_FENCE_RE = re.compile(
     r'.*?</\1>',
     re.DOTALL,
 )
+# The plain-headed sections, paired with the LAST line of each. A header alone
+# is not an echo — someone asking "what does my Relevant memory: section say?"
+# must keep their words — so BOTH ends have to appear before anything is
+# removed, the same conservatism the fenced form above already carries.
+_ECHO_SECTIONS: tuple[tuple[str, str], ...] = (
+    ('Relevant memory:', 'or remove a stale one with forget.'),
+    ('Relevant skills:', 'Load one with load_skill(name) if it fits the request.'),
+)
 # Three or more blank lines where a fence used to be.
 _BLANK_RUN_RE = re.compile(r'\n{3,}')
 
@@ -85,9 +106,19 @@ def scrub_injected_fences(text: str) -> str:
     Returns the text unchanged when it carries no fence, so the caller can
     tell "nothing to do" from "something was removed" by comparing the two.
     """
-    if not text or '<' not in text:
+    if not text:
         return text
-    cleaned = _ECHO_FENCE_RE.sub('', text)
+    cleaned = _ECHO_FENCE_RE.sub('', text) if '<' in text else text
+    for header, footer in _ECHO_SECTIONS:
+        start = cleaned.find(header)
+        if start < 0:
+            continue
+        end = cleaned.find(footer, start)
+        if end < 0:
+            # The header without its footer is a human talking about the
+            # section, not the section.
+            continue
+        cleaned = cleaned[:start] + cleaned[end + len(footer):]
     if cleaned == text:
         return text
     # A fence that sat between two paragraphs left the gap behind it.

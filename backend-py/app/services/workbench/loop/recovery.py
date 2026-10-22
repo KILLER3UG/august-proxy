@@ -640,7 +640,7 @@ async def _budgetTriggeredCompaction(
         # `trigger='budget'` is what makes the three paths distinguishable in
         # the stream; without it this frame is anonymous.
         if emit:
-            from app.services.workbench.context_compressor import reliefHeadCount
+
 
             emit(
                 {
@@ -655,11 +655,11 @@ async def _budgetTriggeredCompaction(
                     # The split the compressor actually used. `headCount`/`tailCount`
                     # were the defaults (4/6), so the card reported "kept the first 4
                     # and last 6" about a compaction that had kept 120 verbatim.
-                    'headCount': stats.get('head', reliefHeadCount(relief)),
+                    'headCount': stats.get('head'),
                     'pinnedCount': stats.get('pinned', 0),
                     'replayedCount': stats.get('replayed', 0),
                     'relief': relief,
-                    'tailCount': stats.get('tail', 6),
+                    'tailCount': stats.get('tail'),
                     'contextWindow': contextWindow,
                     'underThreshold': False,
                 }

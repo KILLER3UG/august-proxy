@@ -1053,14 +1053,19 @@ def _sqlite_utc(raw: str) -> str:
 def memory_context_preview(
     query: str = '', workspace: str = '', scope: str = 'global'
 ) -> dict[str, object]:
-    """Render the durable-memory text a turn actually receives, for Settings.
+    """Render the durable-memory text a turn receives for one query.
 
     The Memory settings page lists stored ROWS; this returns the rendered
-    BLOCK — the same bytes :mod:`app.services.workbench.workbench` injects,
+    SECTION — the same bytes :mod:`app.services.workbench.workbench` injects,
     produced by the same builders under the same gates (``memoryAutoInject``
-    picks the relevance block vs the profile lane alone). Re-formatting rows
+    picks the relevance section vs the profile lane alone). Re-formatting rows
     into a prettier view here would make Settings a second authority on what
     the model sees, which is the one thing a preview must not be.
+
+    Deliberately absent: the per-session `new in memory since this chat opened`
+    lane. It is a projection over writes made since a session opened, and a
+    preview has no session — the same reason the boot index below is described
+    as what a NEW session starts with.
 
     ``bootIndex`` and ``projectBlock`` are the session-start pair. Both are
     frozen per session in a live chat, so this is what a NEW session would

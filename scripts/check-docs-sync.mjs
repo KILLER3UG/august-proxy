@@ -163,6 +163,36 @@ const assertions = [
   // "this answer may be incomplete" — so a kind that is renamed, or one
   // that is documented and never emitted, is a doc and the app disagreeing
   // about what a user was told.
+  // The relief head. AGENTS.md states both the floor and the window fraction an
+  // agent reasons with, and both live only in this file until now: a doc that
+  // says "4" while the code says 8 is a doc telling an agent to go look.
+  {
+    label: 'compaction head floor',
+    doc: { file: DOC, re: /`DEFAULT_HEAD_COUNT` \((\d+)\) messages/ },
+    code: {
+      file: 'backend-py/app/services/workbench/context_compressor.py',
+      re: /^DEFAULT_HEAD_COUNT = (\d+)$/m,
+    },
+  },
+  {
+    label: 'compaction head window fraction',
+    doc: { file: DOC, re: /`COMPACT_HEAD_RATIO` \((0\.\d+)/ },
+    code: {
+      file: 'backend-py/app/services/workbench/context_compressor.py',
+      re: /^COMPACT_HEAD_RATIO = (\d\.\d+)$/m,
+    },
+  },
+  // The runaway backstop's shipped defaults. These are the numbers an agent is
+  // told are ARMED when the brain key is absent, so a drift here is a doc
+  // claiming a bound the running app does not enforce.
+  {
+    label: 'runaway backstop defaults',
+    doc: { file: DOC, re: /nudge (\d+), stop (\d+)/ },
+    code: {
+      file: 'backend-py/app/services/workbench/loop/guards.py',
+      re: /^RUNAWAY_NUDGE_ROUNDS = (\d+)\r?\nRUNAWAY_STOP_ROUNDS = (\d+)/m,
+    },
+  },
   {
     label: 'recovery kinds the doc names',
     mode: 'each',

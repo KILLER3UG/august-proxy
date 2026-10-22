@@ -542,8 +542,11 @@ no API credit.
 **Shipped (2026-10-23), in part.** `## Next` names the loop's own
 `phase/step` resume point instead of `(uncaptured)`, and the footer now says
 decisions and constraints — not next steps — are the fields the deterministic
-compactor does not analyze. Still open: a token-budgeted head (the fixed 4
-messages remain), and a "Key decisions" line the compactor can honestly
+compactor does not analyze. The head is token-budgeted too: `COMPACT_HEAD_RATIO`
+(10 % of the model window) above a floor of `DEFAULT_HEAD_COUNT` messages, with
+the TAIL taken first so a middle unit always survives — a head-first walk let a
+large window eat the transcript, leave the tail loop nothing, and return the
+input UNCHANGED. Still open: a "Key decisions" line the compactor can honestly
 extract — `update_state` carries position, not the rationale a decision
 needs.
 

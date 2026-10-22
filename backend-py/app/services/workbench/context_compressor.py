@@ -80,8 +80,8 @@ def reliefStrategy(messages: list[dict[str, object]], *, armed: bool) -> str:
 
     The first relief never rotates, even when armed. Before a note exists the
     verbatim head IS the live task statement, and re-anchoring on a summary whose
-    own footer says "decisions, constraints and next steps were not analyzed"
-    would trade a fact for a guess.
+    own footer says "decisions and constraints were not analyzed" would trade a
+    fact for a guess.
 
     Two limits, stated because the route is easier to oversell than to read:
     * it resets the *head* staleness, not note-on-note loss. Each note still

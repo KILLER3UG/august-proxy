@@ -139,27 +139,34 @@ class EventLog:
             except asyncio.QueueFull:
                 overflowed.append(q)
         for q in overflowed:
-            # Fail the slow stream BY NAME. Dropping the subscriber quietly was
-            # the old behaviour and it is the worst shape available: the client
-            # kept an open connection that simply stopped receiving, which reads
-            # exactly like a wedged backend. One unread event is sacrificed to
-            # make room for an `error` frame that says what happened and how to
-            # recover (reconnect with sinceSeq; the ring still holds it).
+            # Fail the slow stream BY NAME, and with the cursor the recovery
+            # needs. `error` was the obvious type and it is the wrong one: the
+            # client treats it as terminal, paints "Turn failed" and never
+            # reconnects — so the frame instructed a replay nothing performed
+            # while the agent kept working server-side. `info` is non-terminal,
+            # so closing the stream drives the existing reconnect + sinceSeq
+            # replay. And the seq MUST be the first event the client is missing:
+            # stamping the current seq made the client persist a cursor past the
+            # event it had just dropped, so the hole was permanent.
             entry.subscribers.discard(q)
             entry.overflowed.add(q)
+            lostSeq = seq
             try:
-                q.get_nowait()
+                dropped = q.get_nowait()
+                lostSeq = int(dropped.get('seq') or seq)  # type: ignore[call-overload]
             except asyncio.QueueEmpty:
                 pass
             try:
                 q.put_nowait({
-                    'seq': seq,
-                    'type': 'error',
+                    'seq': max(0, lostSeq - 1),
+                    'type': 'info',
                     'payload': {
                         'message': (
                             f'stream overflow: this client fell more than {MAX_SUBSCRIBER_BACKLOG} '
-                            'events behind. Reconnect with sinceSeq to replay from the ring.'
+                            f'events behind; the stream is closing so it can re-open from seq '
+                            f'{max(0, lostSeq - 1)} and replay the ring.'
                         ),
+                        'code': 'stream_overflow',
                     },
                     'at': int(time.time() * 1000),
                 })

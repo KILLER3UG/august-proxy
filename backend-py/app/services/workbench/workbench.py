@@ -2925,7 +2925,6 @@ async def _sendWorkbenchMessageStreamImpl(
             noteCompactionPhase,
             pruneToolOutputs,
             releaseCompactionLock,
-            reliefHeadCount,
         )
         from app.services.workbench.loop.recovery import (
             _compactionCall,
@@ -2995,6 +2994,13 @@ async def _sendWorkbenchMessageStreamImpl(
                         summarizer=summarizer,
                     )
                     compressedTokens = estimateTokens(compressed)
+                    # Throttle whether or not the relief is taken. `_shouldAutoCompact`
+                    # returns True unconditionally once headroom drops under 8k, and a
+                    # session that cannot free the floor would otherwise re-archive its
+                    # whole transcript (an O(everything already archived) rescan) and
+                    # re-pay the summariser on EVERY turn, in silence — no frame, no
+                    # recovery event, nothing in turn_outcomes.
+                    session._last_compaction_turn = currentTurn
                     # One acceptance rule for all five relief paths. This used
                     # to be `compressedTokens < originalTokens`, so a 1-token
                     # shave archived the whole transcript, rewrote
@@ -3007,7 +3013,6 @@ async def _sendWorkbenchMessageStreamImpl(
                         # Persist so later turns / reload don't re-send the bloated history.
                         session.messages = list(compressed)
                         session.messageCount = len(session.messages)
-                        session._last_compaction_turn = currentTurn
                         try:
                             saveSessions()
                         except Exception:
@@ -3019,11 +3024,15 @@ async def _sendWorkbenchMessageStreamImpl(
                                     'originalTokens': originalTokens,
                                     'compressedTokens': compressedTokens,
                                     'compressedCount': compressedCount,
-                                    'headCount': _stats.get('head', reliefHeadCount(_relief)),
+                                    # None when the compressor returned early (a prune-only
+                                    # reduction summarizes NOTHING, so there is no split to
+                                    # report): the card drops its count clause rather than
+                                    # print the 4/6 defaults as if they were the result.
+                                    'headCount': _stats.get('head'),
                                     'pinnedCount': _stats.get('pinned', 0),
                                     'replayedCount': _stats.get('replayed', 0),
                                     'relief': _relief,
-                                    'tailCount': _stats.get('tail', 6),
+                                    'tailCount': _stats.get('tail'),
                                     'threshold': threshold,
                                     'contextWindow': contextWindow,
                                     'underThreshold': False,

@@ -298,6 +298,10 @@ export interface WorkbenchEventHandlers {
     idleSec?: number;
   }) => void;
   onSession?: (data: WorkbenchSession) => void;
+  /** The backend's 30 s keepalive, carrying how long the SESSION has actually
+   *  been silent (`idleSec`) and the newest event's seq. Proves the connection
+   *  is alive; the silence figure is what separates "slow" from "wedged". */
+  onStreamIdle?: (data: { idleSec?: number; lastSeq?: number }) => void;
   /** `submit_todos` / `update_todos` landed — full replacement list + title. */
   onTodosUpdated?: (data: { todos: WorkbenchTodo[]; title?: string }) => void;
   /** A model round streamed text AND called tools — that text was

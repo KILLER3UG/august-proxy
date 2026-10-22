@@ -7,7 +7,7 @@
  * Used only after final output exists so the chat is not a stack of sections.
  */
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { AlertCircle, ChevronDown, MoreHorizontal } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -152,6 +152,16 @@ export function ActivitySummary({
   className,
 }: ActivitySummaryProps) {
   const [open, setOpen] = useState(defaultOpen);
+  // The trigger owns a region that EXISTS in both states. This row is a
+  // hand-rolled disclosure (its header anatomy is bespoke), so the pairing
+  // DisclosureRow provides has to be done here: measured in the running app,
+  // `aria-expanded` resolved to nothing at all, which is the collapsed case a
+  // screen reader actually navigates. The wrapper stays mounted and empty while
+  // closed — mounting the animated body eagerly would play its entrance inside a
+  // hidden box, which is the defect DisclosureRow documents.
+  const uid = useId();
+  const triggerId = `${uid}-activity-trigger`;
+  const regionId = `${uid}-activity-region`;
   const [bodyClip, setBodyClip] = useState(true);
   useEffect(() => {
     if (open) setBodyClip(true);
@@ -227,8 +237,10 @@ export function ActivitySummary({
       <button
         type="button"
         className="activity-summary-header"
+        id={triggerId}
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
+        aria-controls={regionId}
       >
         {isCompletion ? (
           <>
@@ -386,7 +398,8 @@ export function ActivitySummary({
         )}
       </button>
 
-      <AnimatePresence initial={false}>
+      <div id={regionId} role="region" aria-labelledby={triggerId}>
+        <AnimatePresence initial={false}>
         {open && (
           <motion.div
             key="activity-body"
@@ -411,7 +424,8 @@ export function ActivitySummary({
             </div>
           </motion.div>
         )}
-      </AnimatePresence>
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

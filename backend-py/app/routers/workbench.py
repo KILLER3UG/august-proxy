@@ -572,7 +572,12 @@ async def streamChat(
     async def generate():
         async for event in event_log.event_log.subscribe(sessionId, sinceSeq):
             if event['type'] == 'keepalive':
-                yield ': keepalive\n\n'
+                # A NAMED frame, not a comment. As `: keepalive` it carried no
+                # data at all, so the evidence the log computed (lastSeq,
+                # idleSec) died here and the client could not tell a quiet
+                # session from a dead upstream. It is not a turn event: no
+                # `id:` line, so it never advances the replay cursor.
+                yield f'event: keepalive\ndata: {json.dumps(event["payload"])}\n\n'
                 continue
             yield f'event: {event["type"]}\ndata: {json.dumps(event["payload"])}\nid: {event["seq"]}\n\n'
             if event['type'] in ('done', 'error', 'aborted'):

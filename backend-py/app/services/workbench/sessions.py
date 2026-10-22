@@ -1554,7 +1554,7 @@ def _emit_manual_compaction_frame(
     """
     try:
         from app.services import event_log
-        from app.services.workbench.context_compressor import reliefHeadCount
+
 
         frame: dict[str, object] = {
             'type': 'compaction',
@@ -1564,11 +1564,12 @@ def _emit_manual_compaction_frame(
             # Messages REMOVED, not messages remaining — the card renders this
             # as "summarized N messages".
             'compressedCount': max(0, int(compressed_count)),
-            # The split the compressor actually used, with the same fallback
-            # the response body uses — the route and the frame must not report
-            # different head counts for the same compaction.
-            'headCount': int(stats.get('head', reliefHeadCount(relief)) or 0),
-            'tailCount': int(stats.get('tail', 6) or 0),
+            # The split the compressor actually used, or nothing: a reduction
+            # that never reached the compressor (a prune-only relief) has no
+            # split, and a default here would be reported as a result. The
+            # frame and the response body read the same stats dict.
+            'headCount': stats.get('head'),
+            'tailCount': stats.get('tail'),
             'pinnedCount': int(stats.get('pinned', 0) or 0),
             'replayedCount': int(stats.get('replayed', 0) or 0),
             'underThreshold': False,
@@ -1586,7 +1587,7 @@ async def compact_workbench_session_now(session_id: str) -> dict[str, object] | 
     if not session:
         return None
     from app.providers.clients.base import estimateTokens
-    from app.services.workbench.context_compressor import reliefHeadCount
+
 
     original = list(session.messages)
     original_tokens = estimateTokens(original)
@@ -1639,8 +1640,8 @@ async def compact_workbench_session_now(session_id: str) -> dict[str, object] | 
             'originalTokens': original_tokens,
             'compressedTokens': compressed_tokens,
             'compressedCount': 0,
-            'headCount': stats.get('head', reliefHeadCount(relief)),
-            'tailCount': stats.get('tail', 6),
+            'headCount': stats.get('head'),
+            'tailCount': stats.get('tail'),
             'message': 'Context is already compact enough.',
         }
     session.messages = compressed
@@ -1684,11 +1685,11 @@ async def compact_workbench_session_now(session_id: str) -> dict[str, object] | 
         'originalTokens': original_tokens,
         'compressedTokens': compressed_tokens,
         'compressedCount': compressed_count,
-        'headCount': stats.get('head', reliefHeadCount(relief)),
+        'headCount': stats.get('head'),
         'pinnedCount': stats.get('pinned', 0),
         'replayedCount': stats.get('replayed', 0),
         'relief': relief,
-        'tailCount': stats.get('tail', 6),
+        'tailCount': stats.get('tail'),
         'message': (
             f'Freed chat memory — summarized {compressed_count} middle messages '
             f'(~{original_tokens} → ~{compressed_tokens} tokens).'

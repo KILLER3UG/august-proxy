@@ -164,19 +164,25 @@ async function readSseStream(
         receivedTerminalEvent = true;
       }
       const frameSeq = frameId !== null && Number.isFinite(Number(frameId)) ? Number(frameId) : undefined;
-      // A keepalive proves the CONNECTION is alive, not that the session is.
-      // The backend now reports how long the session has actually been silent,
-      // so a keepalive past that budget does not restart the idle timer — which
-      // is what made a stalled upstream look healthy for five minutes (the 30 s
-      // ping reset a 60 s timer forever). A keepalive with no evidence (older
-      // server, session with no events yet) behaves as before.
-      const idleSec = frameEvent === 'keepalive' ? Number(payload?.idleSec) : Number.NaN;
-      const carriesProgress =
-        frameEvent !== 'keepalive' || !Number.isFinite(idleSec) || idleSec < idleTimeoutMs / 1000;
-      if (carriesProgress) resetIdleTimer();
+      // A keepalive is LIVENESS, not progress. It must still reset the idle
+      // timer, because on a quiet session it is the ONLY traffic the backend
+      // sends — the previous change here stopped resetting on it and turned
+      // every idle chat into a permanent reconnect cycle (the durable
+      // subscriber has no frames of its own, so nothing else ever re-armed the
+      // timer). It is kept out of `onFrame`/`onSeq`: it is not a session event
+      // and carries no cursor.
+      if (frameEvent === 'keepalive') {
+        resetIdleTimer();
+        handlers.onStreamIdle?.({
+          idleSec: typeof payload?.idleSec === 'number' ? payload.idleSec : undefined,
+          lastSeq: typeof payload?.lastSeq === 'number' ? payload.lastSeq : undefined,
+        });
+        return;
+      }
+      resetIdleTimer();
       dispatchWorkbenchEvent(frameEvent, payload, handlers, frameSeq);
       if (frameSeq !== undefined) handlers.onSeq?.(frameSeq, frameEvent);
-      if (carriesProgress) onFrame?.();
+      onFrame?.();
     } catch (e: unknown) {
       if (e instanceof DOMException && e.name === 'AbortError') throw e;
       // Ignore non-JSON data lines
@@ -198,9 +204,15 @@ async function readSseStream(
   while (true) {
     throwIfAborted(signal);
     const { done, value } = await reader.read();
-    // No reset here: a byte from the socket is not progress. The reset happens
-    // per DISPATCHED FRAME below, and a keepalive only resets it while the
-    // session's own silence is still inside the budget.
+    // Any byte from the server proves the CONNECTION is up, so the idle timer is
+    // re-armed here as well as per dispatched frame. Dropping this (an earlier
+    // revision of this change did) made a keepalive-only session time out and
+    // reconnect forever — and it broke against a backend that sends the
+    // keepalive as an SSE COMMENT, which dispatches no frame at all. What the
+    // per-frame path adds is the distinction: liveness resets here, *progress*
+    // is a real event, and `onStreamIdle` carries how long the session itself
+    // has been silent.
+    resetIdleTimer();
     throwIfAborted(signal);
     if (done) break;
     buffer += decoder.decode(value, { stream: true });

@@ -374,11 +374,15 @@ async def getMemoryPreview(
     query: str = Query('', max_length=2000, description='Message to recall against'),
     workspace: str = Query('', max_length=500, description='Project workspace to include'),
 ):
-    """The literal durable-memory text a turn receives, for Settings → Memory.
+    """The literal durable-memory text a turn would receive for one query.
 
-    Not a listing of stored rows — the rendered memory section itself,
-    produced by the same builders the workbench calls, so what the user reads
-    here is what the model reads in chat. See
+    Not a listing of stored rows — the rendered memory section itself, produced
+    by the same builders the workbench calls. Two honest limits: the per-session
+    `new in memory since this chat opened` lane is NOT here, because a preview
+    has no session and therefore no writes since opening; and no Settings panel
+    calls this door today (the route exists for the API and for a future
+    preview surface), so "what the user reads here is what the model reads"
+    holds only for whoever reads it through the API.
     :func:`app.services.memory_store.fact_retrieval.memory_context_preview`.
     """
     from app.services.memory_store.fact_retrieval import memory_context_preview

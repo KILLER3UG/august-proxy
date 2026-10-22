@@ -130,7 +130,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `POST` | `/api/brain/decisions/resolve` | Run one journal resolution pass now (the Learning page → "Run now"). |
 | `GET` | `/api/brain/integrity` | ``PRAGMA integrity_check`` on the live DB plus what could be recovered. |
 | `GET` | `/api/brain/memory/metrics` | Phase D item 4: recall + latency instrument. |
-| `GET` | `/api/brain/memory/preview` | The literal durable-memory text a turn receives, for Settings → Memory. |
+| `GET` | `/api/brain/memory/preview` | The literal durable-memory text a turn would receive for one query. |
 | `GET` | `/api/brain/routing/arena` | Recent arena verdicts (the durable archive the UI groups per session). |
 | `POST` | `/api/brain/routing/arena` | Record one arena/debate verdict: a winner row (ok=1) + one loser row (ok=0) per competing model, all tagged s… |
 | `GET` | `/api/brain/routing/suggestions` | Per-model win-rate suggestions from arena evidence (surpass #1 loop): models ranked by win rate over ≥1 recor… |

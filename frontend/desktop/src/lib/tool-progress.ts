@@ -27,9 +27,6 @@ export interface ToolProgressEvent {
   phase: ProgressPhase;
   paths?: string[];
   path?: string;
-  /** Heartbeat evidence: seconds running / seconds since the last output. */
-  elapsedSec?: number;
-  idleSec?: number;
 }
 
 export type ToolProgressMap = Map<string, ReadonlyArray<ProgressEntry>>;
@@ -37,6 +34,12 @@ export type ToolProgressMap = Map<string, ReadonlyArray<ProgressEntry>>;
 /** Heartbeat age at which the status line starts naming the evidence. Two 8 s
  *  beats plus margin: one beat is "still working", three is a signal. */
 export const STALL_HINT_SEC = 20;
+
+/** The stream-level version of the same honesty: the keepalive says how long
+ *  since ANY session event, which is the one thing a spinner cannot show. */
+export function formatStreamIdle(idleSec: number): string {
+  return `no activity from this session for ${fmtElapsed(idleSec * 1000)}`;
+}
 
 /**
  * Compose the live status line from a heartbeat's message and its evidence.

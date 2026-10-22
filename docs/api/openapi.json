@@ -6845,7 +6845,7 @@
     },
     "/api/brain/memory/preview": {
       "get": {
-        "description": "The literal durable-memory text a turn receives, for Settings → Memory.\n\nNot a listing of stored rows — the rendered memory section itself,\nproduced by the same builders the workbench calls, so what the user reads\nhere is what the model reads in chat. See\n:func:`app.services.memory_store.fact_retrieval.memory_context_preview`.",
+        "description": "The literal durable-memory text a turn would receive for one query.\n\nNot a listing of stored rows — the rendered memory section itself, produced\nby the same builders the workbench calls. Two honest limits: the per-session\n`new in memory since this chat opened` lane is NOT here, because a preview\nhas no session and therefore no writes since opening; and no Settings panel\ncalls this door today (the route exists for the API and for a future\npreview surface), so \"what the user reads here is what the model reads\"\nholds only for whoever reads it through the API.\n:func:`app.services.memory_store.fact_retrieval.memory_context_preview`.",
         "operationId": "getMemoryPreview_api_brain_memory_preview_get",
         "parameters": [
           {

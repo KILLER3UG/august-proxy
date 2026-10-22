@@ -32,7 +32,7 @@ import type { ChatTurnRecord } from './chat-runtime';
 import type { WorkbenchEventHandlers, WorkbenchSession, WorkbenchTurnUsage } from '@/types/workbench';
 import type { GitDiffResult } from '@/api/git';
 import type { ToolProgressEvent, ToolProgressMap } from '@/lib/tool-progress';
-import { applyToolProgress, formatProgressStatus } from '@/lib/tool-progress';
+import { applyToolProgress, formatProgressStatus, formatStreamIdle, STALL_HINT_SEC } from '@/lib/tool-progress';
 import { classifyTool } from '@/lib/tool-classify';
 import { commandErrorOneLiner } from '@/lib/command-error-line';
 import { friendlyError } from '@/lib/error-copy';
@@ -737,8 +737,6 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         phase: event.phase,
         paths: event.paths,
         path: event.path,
-        elapsedSec: event.elapsedSec,
-        idleSec: event.idleSec,
       };
       setToolProgress(prev => applyToolProgress(prev, e));
 
@@ -797,6 +795,21 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         });
         scheduleUpdate();
       }
+    },
+    onStreamIdle: ({ idleSec }) => {
+      // The keepalive is the only traffic on a session that is waiting on a
+      // provider, so this is the one place that can say "nothing has happened
+      // for Ns" when no tool is producing heartbeats of its own. It annotates
+      // running rows only — with no row there is nothing running to explain,
+      // and inventing a status line for an idle chat is noise.
+      if (typeof idleSec !== 'number' || idleSec < STALL_HINT_SEC) return;
+      let touched = false;
+      toolResults = toolResults.map((t) => {
+        if (t.status !== 'running' || t.preview) return t;
+        touched = true;
+        return { ...t, summary: formatStreamIdle(idleSec) };
+      });
+      if (touched) scheduleUpdate();
     },
     onBtw: (result) => {
       setWorkbenchBtw(result);

@@ -66,8 +66,13 @@ SYNTHETIC_TOOL_RESULT_PREFIX = '[Tool result missing]'
 # 'failure' = the tool ran and lost. 'denial' = a guard refused it, or the call
 # never executed. Both are still recorded with is_error True, because the call
 # did not succeed and mining must keep seeing that: tone is presentation only.
-RECEIPT_TONE: dict[str, str] = {
-    'Error': 'failure',  # the loop's documented tool return contract ("Error: …")
+#: Doors whose effect is decided by an ARGUMENT the harness may not have in hand
+#: when it writes a receipt. They are treated as mutating wherever the arguments
+#: are not visible (`synthetic_tool_result`), because a nested `name`/`operation`
+#: can be a write.
+_OPAQUE_AGGREGATE_TOOLS: frozenset[str] = frozenset({'tool_call', 'bulk'})
+
+RECEIPT_TONE: dict[str, str] = {    'Error': 'failure',  # the loop's documented tool return contract ("Error: …")
     '[Validation Error]': 'failure',  # validator.validationErrorText
     '[Blocked]': 'denial',  # sandbox / permission / sub-agent guards
     # The repeat guardrail's own spelling (`tool_guardrails.py`) — a colon, not
@@ -79,6 +84,11 @@ RECEIPT_TONE: dict[str, str] = {
     # "loops infinitely" report, and it was unbounded because the harness could
     # not recognise its own refusal.
     'Blocked:': 'denial',
+    # The `tool_call` bridge's own refusal (tool_bridges.py). Same class as
+    # `Blocked:` above: an emitter that invents its own wording has to be
+    # registered, or the ledger records a refusal as a success and credits the
+    # round with world delta.
+    'Invalid arguments JSON:': 'denial',
     SYNTHETIC_TOOL_RESULT_PREFIX: 'denial',  # a call that never executed
 }
 
@@ -253,7 +263,14 @@ def synthetic_tool_result(
     try:
         from app.services.harness_mode import is_mutating_tool
 
-        mutating = is_mutating_tool(tool_name or '', None)
+        name = (tool_name or '').strip()
+        # The two aggregate/alias doors are mutating BY CONSTRUCTION here: this
+        # helper has no arguments, and `is_mutating('tool_call')` / `is_mutating
+        # ('bulk')` are both False because their effect lives in a nested
+        # `name` / `operation` field. A cancelled `tool_call(name='write_file')`
+        # would otherwise still be told to re-issue it — the alias-and-aggregate
+        # hole AGENTS.md records for gate participation, one door over again.
+        mutating = name in _OPAQUE_AGGREGATE_TOOLS or is_mutating_tool(name, None)
     except Exception:
         mutating = False
     recovery = (
