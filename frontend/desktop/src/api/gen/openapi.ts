@@ -1215,7 +1215,7 @@ export interface paths {
         put?: never;
         /**
          * Postdecisionsresolve
-         * @description Run one journal resolution pass now (Settings → Learning → "Run now").
+         * @description Run one journal resolution pass now (the Learning page → "Run now").
          */
         post: operations["postDecisionsResolve_api_brain_decisions_resolve_post"];
         delete?: never;

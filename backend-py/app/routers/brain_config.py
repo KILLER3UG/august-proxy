@@ -263,7 +263,7 @@ async def getDecisions(
 
 @router.post('/decisions/resolve')
 async def postDecisionsResolve():
-    """Run one journal resolution pass now (Settings → Learning → "Run now")."""
+    """Run one journal resolution pass now (the Learning page → "Run now")."""
     import asyncio
 
     from app.services.decision_ledger import resolve_open
