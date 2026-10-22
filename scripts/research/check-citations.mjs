@@ -85,9 +85,27 @@ for (const rf of reports) {
   const headers = [...body.matchAll(/^### (.+)$/gm)].map((x) => x[1].trim());
   const headerSet = new Set(headers);
 
+  // 4. COMPLETENESS: every path the ledger claims must appear in the report body.
+  //    A file with a ledger row but no mention in the report is a silent skip.
+  let notMentioned = 0;
+  const notMentionedSample = [];
+  if (existsSync(rowsPath)) {
+    for (const l of readFileSync(rowsPath, 'utf8').split('\n')) {
+      if (!l.trim()) continue;
+      const p = l.split('\t')[0].trim();
+      if (!p) continue;
+      const base = p.split('/').pop();
+      if (!body.includes(p) && !body.includes(base)) {
+        notMentioned++;
+        if (notMentionedSample.length < 4) notMentionedSample.push(p);
+      }
+    }
+  }
+
   grandChecked += checked; grandBad += bad.length; grandShards++;
   const flag = bad.length ? 'FAIL' : 'ok  ';
-  console.log(`${flag} ${shard.padEnd(32)} cites=${String(checked).padStart(4)} bad=${String(bad.length).padStart(3)}  perFileSections=${String(perFile).padStart(4)}  ledger=${String(ledgerRows).padStart(4)} (read=${ledgerRead} skipped=${ledgerSkip}) noNote=${ledgerNoNote}  headerNotInLedger=${headers.filter((h) => !existsSync(path.join(ROOT, repo, 'shards', h))).length === 0 ? '' : ''}`);
+  console.log(`${flag} ${shard.padEnd(32)} cites=${String(checked).padStart(4)} bad=${String(bad.length).padStart(3)}  perFileSections=${String(perFile).padStart(4)}  ledger=${String(ledgerRows).padStart(4)} (read=${ledgerRead} skipped=${ledgerSkip}) noNote=${ledgerNoNote}  notMentionedInReport=${notMentioned}`);
   for (const b of bad.slice(0, 5)) console.log(`      BAD CITATION ${b}`);
+  for (const b of notMentionedSample) console.log(`      NOT MENTIONED IN REPORT ${b}`);
 }
 console.log(`\n${repo}: ${grandShards} shard reports, ${grandChecked} citations checked, ${grandBad} bad`);
