@@ -186,6 +186,12 @@ a disarmed one) and an explicit `unattendedTurnsRange` branch, because the valid
 range starts at 1 and would make the disarming write invalid. That is the exact defect
 `tests/test_turn_limits_fields.py` exists to catch, and it now pins the new key against the Settings
 panel (`TurnLimitsSection.tsx` + the `BrainConfig` TS field) rather than trusting the copy.
+
+> **Superseded 2026-10-22.** All three of those artifacts are gone: the test file
+> was deleted with the suite (2026-10-17) and the Settings panel was removed with
+> five other doors. The key still works and is set from the config file only;
+> `npm run check:brain-config`'s generic per-panel scan is what remains of that
+> pin, and it has no panel left to check this key against.
 New `tests/test_bot_unattended_ceiling.py` (18) covers the counting semantics (five provenance
 cases including the JSON-encoding control and a human quoting a Bot), the writer/reader prefix
 parity, the door at 2/3/9 turns, the human reset, the ungated human route, and **reachability

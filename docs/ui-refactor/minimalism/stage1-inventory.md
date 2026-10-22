@@ -1,5 +1,14 @@
 # Minimalism — Stage 1 inventory (2026-10-05)
 
+> **Superseded in part, 2026-10-22.** This inventory describes the Settings rail
+> as it stood before five doors were removed (Turn Limits, Subagents, Review
+> Inbox, Onboard, Agent Board's Settings entry) and before Plugins absorbed MCP
+> Servers. Rows naming `TurnLimitsSection.tsx` or `AISetupWizardSection.tsx`
+> refer to deleted files; the review-inbox rows now live inside the Skills and
+> Memory panels. Keep the findings (they are the record of what was noise), but
+> read the registry for what exists today.
+
+
 **Design principle, overriding everything else:** August's UI shows only what the user needs to
 know or act on *right now*. Anything interesting only to a developer does not belong in the main
 UI. Less text, fewer badges, fewer persistent indicators, more whitespace. Telemetry is **not**
