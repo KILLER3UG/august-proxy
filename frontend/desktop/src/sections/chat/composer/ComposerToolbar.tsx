@@ -61,7 +61,6 @@ export function ComposerToolbar({
   actionsTriggerRef,
   onToggleActions,
   onAttach,
-  folderSlot,
   onMention,
   onVoice,
   onCamera,
@@ -104,12 +103,6 @@ export function ComposerToolbar({
   actionsTriggerRef: React.RefObject<HTMLButtonElement | null>;
   onToggleActions: () => void;
   onAttach: () => void;
-  /** Optional control rendered beside the `+` in the left cluster — the
-   *  composer passes the folder chip here so the card stays one row tall.
-   *  It is a FRESH-SESSION control only: once the chat has messages the
-   *  folder binding is fixed and the titlebar chips are the read-only
-   *  context. */
-  folderSlot?: ReactNode;
   onMention: () => void;
   onVoice: () => void;
   /** Open the camera capture popover. When omitted, no camera item is shown. */
@@ -299,7 +292,6 @@ export function ComposerToolbar({
               </div>
             }
           />
-          {folderSlot}
           {onCamera && onCameraCapture && (
             <CameraPopover
               open={!!cameraOpen}

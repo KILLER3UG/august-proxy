@@ -1,25 +1,8 @@
-/* ── Session list nav — brand, new chat, icon dock for destinations ─── */
+/* ── Session list nav — brand, new chat, and the reference's destinations ── */
 
 import { motion } from "framer-motion";
-import {
-  Check,
-  ChevronDown,
-  Bot,
-  FolderOpen,
-  PanelLeft,
-  Plus,
-} from "lucide-react";
-import { addWorkspace, setCurrentWorkspace, useWorkspacesStore } from "@/store/workspaces";
-import { openFolderViaTauri } from "@/api/folder";
-import { toast } from "sonner";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Archive, FolderOpen, PanelLeft, Plus, Settings } from "lucide-react";
 import { t } from "@/lib/motion";
-
 
 export interface SessionListNavProps {
   onNew: () => void;
@@ -46,17 +29,15 @@ const plusIconMotion = {
   tap: { scale: 0.9, rotate: 90, transition: t.fast },
 };
 
-/** The sidebar is for what a chat is used for daily. Board and Learning were
- *  rows here; both are configuration-shaped surfaces now — the kanban lives in
- *  Settings as `agent-board`, and the human half of the learning loop is the
- *  Review Inbox section. Both routes stay in the command palette, so nothing is
- *  orphaned by this list shrinking. */
-const PRIMARY_DESTINATIONS = [
-  { to: '/automations', label: 'Automations', Icon: Bot },
+/** The reference's four quiet top rows. Projects and Artifacts are actions
+ *  into the chat surfaces (the project picker in the composer and the right
+ *  artifacts drawer), not new routes; Customize is the existing Settings. */
+const DESTINATIONS = [
+  { key: 'projects', label: 'Projects', Icon: FolderOpen, action: 'projects' },
+  { key: 'artifacts', label: 'Artifacts', Icon: Archive, action: 'artifacts' },
+  { key: 'customize', label: 'Customize', Icon: Settings, action: 'settings' },
 ] as const;
 
-
-/** Top of the session sidebar: collapse control + new chat + destination dock. */
 export function SessionListNav({
   onNew,
   onNavigate,
@@ -64,22 +45,11 @@ export function SessionListNav({
   activePath = '',
   workspaceName,
 }: SessionListNavProps) {
-  const workspaces = useWorkspacesStore((s) => s.workspaces);
-  const currentWorkspaceId = useWorkspacesStore((s) => s.currentWorkspaceId);
-  const selectedWorkspace = workspaces.find((w) => w.id === currentWorkspaceId);
   const brandLabel = workspaceName?.trim() || 'August';
-  const addWorkspaceFromPicker = async () => {
-    try {
-      const path = await openFolderViaTauri();
-      if (path.path) addWorkspace(path.path);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not open a workspace folder.');
-    }
-  };
 
   return (
     <div className="august-sidebar-nav flex flex-col shrink-0">
-      {/* Brand bar — same height token as the ChatTitlebar */}
+      {/* Brand bar — same height token as the ChatTitlebar. */}
       <div
         className="august-sidebar-brand h-[var(--shell-titlebar-h)] border-b border-sidebar-border/30 flex items-center justify-between px-2.5 shrink-0 select-none"
         data-tauri-drag-region
@@ -104,52 +74,6 @@ export function SessionListNav({
       </div>
 
       <div className="px-2 pt-1.5 pb-0.5">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs text-sidebar-foreground/80 transition hover:bg-sidebar-accent/50"
-              aria-label="Switch workspace"
-              data-testid="workspace-switcher"
-            >
-              <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />
-              <span className="min-w-0 flex-1 truncate">{selectedWorkspace?.name ?? brandLabel}</span>
-              <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-64">
-            {workspaces.length === 0 ? (
-              <DropdownMenuItem disabled>No workspaces added yet</DropdownMenuItem>
-            ) : workspaces.map((workspace) => (
-              <DropdownMenuItem
-                key={workspace.id}
-                onSelect={() => setCurrentWorkspace(workspace.id)}
-                className="flex items-center gap-2"
-              >
-                <FolderOpen className="size-3.5 shrink-0" />
-                <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
-                {workspace.id === currentWorkspaceId ? <Check className="size-3.5 shrink-0 text-muted-foreground" aria-label="Current workspace" /> : null}
-              </DropdownMenuItem>
-            ))}
-            <DropdownMenuItem onSelect={() => void addWorkspaceFromPicker()}>
-              <Plus className="mr-2 size-3.5" /> Add workspace…
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-
-      {/* New chat — a ROW, not a primary CTA. It was a filled pill with a
-          border and a shadow sitting above three quiet nav rows, which made it
-          read as the app's main action and pushed every chat below the fold.
-          Claude, Haze and KiloCode all draw it as one more nav row; the only
-          thing that makes it primary is the + glyph.
-
-          The three blocks above the list (workspace switcher, this row, the
-          destinations) are one tight stack: the reference's rail spends its
-          vertical space on the LIST, and the chat list is the thing the
-          sidebar is for. The padding between them was 8px+4px per block, which
-          is 24px of chrome above the first chat for three rows of controls. */}
-      <div className="px-2 pt-0.5 pb-0.5">
         <motion.button
           type="button"
           onClick={onNew}
@@ -162,25 +86,38 @@ export function SessionListNav({
           <motion.span className="inline-flex shrink-0 opacity-80" variants={plusIconMotion}>
             <Plus className="size-3.5" />
           </motion.span>
-          <span>New chat</span>
+          <span>New</span>
         </motion.button>
       </div>
 
-      {/* Keep the primary work destinations visible; the full route set remains
-          available from the command palette. Artifacts live in the right drawer. */}
       <div className="px-2 space-y-0.5 pb-0.5" role="navigation" aria-label="Workspace">
-        {PRIMARY_DESTINATIONS.map(({ to, label, Icon }) => (
-          <button
-            key={to}
-            type="button"
-            onClick={() => onNavigate(to)}
-            aria-current={activePath === to ? 'page' : undefined}
-            className={`w-full flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${activePath === to ? 'bg-sidebar-accent/70 text-sidebar-foreground' : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground'}`}
-          >
-            <Icon className="size-3.5 shrink-0" />
-            <span>{label}</span>
-          </button>
-        ))}
+        {DESTINATIONS.map(({ key, label, Icon, action }) => {
+          const active = action === 'settings' && activePath === '/settings';
+          return (
+            <motion.button
+              key={key}
+              type="button"
+              onClick={() => {
+                if (action === 'projects') {
+                  window.dispatchEvent(new CustomEvent('august:open-project-picker'));
+                } else if (action === 'artifacts') {
+                  window.dispatchEvent(new CustomEvent('august:open-right-sidebar'));
+                } else {
+                  onNavigate('/settings');
+                }
+              }}
+              aria-current={active ? 'page' : undefined}
+              initial="rest"
+              whileHover="hover"
+              whileTap="tap"
+              variants={rowMotion}
+              className={`w-full flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${active ? 'bg-sidebar-accent/70 text-sidebar-foreground' : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground'}`}
+            >
+              <Icon className="size-3.5 shrink-0" />
+              <span>{label}</span>
+            </motion.button>
+          );
+        })}
       </div>
     </div>
   );

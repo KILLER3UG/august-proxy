@@ -475,21 +475,8 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
         <ComposerToolbar
           sessionId={sessionId}
           loadedSessionId={loadedSessionId}
-          /* The folder chip used to occupy its own full-width row INSIDE the
-             card, which made the composer three stacked rows — chip, input,
-             toolbar — where every reference has one. It rides the row's
-             left cluster instead, beside the `+`. Only on a fresh session:
-             once the chat has messages the binding is fixed and the titlebar
-             chips are the read-only context. */
-          folderSlot={
-            messages.length === 0 ? (
-              <ComposerWorkspaceChips
-                sessionId={sessionId}
-                workbenchSessionId={workbenchSession?.id || activeWorkbenchSessionId || null}
-                workspacePath={workspacePath}
-              />
-            ) : null
-          }
+          /* The project decision rides the footer beside the model/effort
+             chip, not a separate row inside the message card. */
           input={input}
           attachmentsCount={readyAttachmentsCount ?? attachments.length}
           attachmentsReading={attachmentsReading}
@@ -620,13 +607,20 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
           Before a session's first turn there is no measurement, and the
           readout renders nothing at all rather than a confident `0%`. */}
       <div
-        className="mt-1.5 flex items-baseline justify-between gap-3 px-1 select-none"
+        className="mt-1.5 flex items-center justify-between gap-3 px-1 select-none"
         data-testid="composer-footer-row"
       >
         <p className="min-w-0 flex-1 truncate text-2xs text-muted-foreground/60">
           August is an AI assistant and can make mistakes. Please double-check responses.
         </p>
-        <div className="flex shrink-0 items-baseline gap-2">
+        <div className="flex min-w-0 shrink-0 items-center gap-2">
+          {messages.length === 0 ? (
+            <ComposerWorkspaceChips
+              sessionId={sessionId}
+              workbenchSessionId={workbenchSession?.id || activeWorkbenchSessionId || null}
+              workspacePath={workspacePath}
+            />
+          ) : null}
           <ModelEffortMenu
             visibleModels={visibleModels}
             selected={selectedModel}

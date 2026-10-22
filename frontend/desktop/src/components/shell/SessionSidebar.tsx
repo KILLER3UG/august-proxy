@@ -14,7 +14,7 @@ interface SessionSidebarProps {
 }
 
 const SIDEBAR_WIDTH_KEY = "august-session-sidebar-width";
-const DEFAULT_WIDTH = 280;
+const DEFAULT_WIDTH = 320;
 const MIN_WIDTH = 220;
 const MAX_VIEWPORT_FRACTION = 0.33;
 
