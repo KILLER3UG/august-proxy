@@ -51,6 +51,7 @@ from app.adapters.proxy_tool_defs import (
     sanitize_anthropic_tool_definition,
     sanitize_tool_schema,
 )
+from app.services.workbench.json_salvage import parse_tool_arguments
 
 logger = logging.getLogger(__name__)
 
@@ -452,7 +453,14 @@ async def execute_managed_openai_tool_calls(
             if isinstance(func, dict):
                 argStr = func.get('arguments', '{}')
                 assert isinstance(argStr, str)
-                parsedArgs = json.loads(argStr)
+                # One parse door: strict, then the tolerant salvage pass, then
+                # `_raw`. A validator that only checks the tool NAME (above)
+                # cannot catch a broken argument blob, and the old
+                # `except: parsedArgs = {}` handed the registry an argument-less
+                # call — which is the phantom execution the managed loop
+                # documents against. `_raw` carries no required property, so the
+                # registry refuses honestly instead of running the tool blind.
+                parsedArgs = parse_tool_arguments(argStr)
             else:
                 parsedArgs = {}
         except (json.JSONDecodeError, TypeError):

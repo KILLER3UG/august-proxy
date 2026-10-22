@@ -623,12 +623,9 @@ async def resolveManagedAnthropicToolUses(
                 if not isinstance(tc, dict):
                     continue
                 tcFn = as_dict(tc.get('function'), {})
-                try:
-                    toolInput = json.loads(as_str(tcFn.get('arguments'), '{}'))
-                except (json.JSONDecodeError, TypeError):
-                    # Never execute a malformed blob as `{}` — keep the raw
-                    # text so the caller surfaces a validation error.
-                    toolInput = {'_raw': as_str(tcFn.get('arguments'), '')}
+                from app.services.workbench.json_salvage import parse_tool_arguments
+
+                toolInput = parse_tool_arguments(as_str(tcFn.get('arguments'), '{}'))
                 block: dict[str, object] = {
                     'type': 'tool_use',
                     'id': as_str(tc.get('id'), ''),
@@ -1175,12 +1172,9 @@ def _translateOpenaiToAnthropicResponse(openaiResponse: dict[str, object], model
         if not isinstance(tc, dict):
             continue
         tcFn = as_dict(tc.get('function'), {})
-        try:
-            toolInput = json.loads(as_str(tcFn.get('arguments'), '{}'))
-        except (json.JSONDecodeError, TypeError):
-            # Never execute a malformed blob as `{}` — keep the raw text so
-            # the caller surfaces a validation error.
-            toolInput = {'_raw': as_str(tcFn.get('arguments'), '')}
+        from app.services.workbench.json_salvage import parse_tool_arguments
+
+        toolInput = parse_tool_arguments(as_str(tcFn.get('arguments'), '{}'))
         contentList.append(
             {
                 'type': 'tool_use',
@@ -1304,15 +1298,18 @@ def translateMessagesToAnthropic(messages: list[dict[str, object]]) -> list[dict
                     if not isinstance(tc, dict):
                         continue
                     fn = as_dict(tc.get('function'), {})
-                    try:
-                        fnArgs = fn.get('arguments', {})
-                        args: object = (
-                            json.loads(as_str(fn.get('arguments'), '{}'))
-                            if isinstance(fnArgs, str)
-                            else as_dict(fnArgs, {})
-                        )
-                    except Exception:
-                        args = {}
+                    from app.services.workbench.json_salvage import parse_tool_arguments
+
+                    fnArgs = fn.get('arguments', {})
+                    # An unparseable argument blob must not become `{}` — the
+                    # loop's rule is that a malformed call answers with a
+                    # [Validation Error] naming what was received, and this leg
+                    # used to `except: args = {}` straight past it.
+                    args: object = (
+                        parse_tool_arguments(as_str(fnArgs, ''))
+                        if isinstance(fnArgs, str)
+                        else as_dict(fnArgs, {})
+                    )
                     contentBlocks.append(
                         {
                             'type': 'tool_use',

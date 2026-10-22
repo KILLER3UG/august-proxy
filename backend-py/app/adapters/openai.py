@@ -45,6 +45,7 @@ from app.models.openai import dump_openai_upstream_body
 from app.providers import resolver as providerResolver
 from app.providers.clients import BaseProviderClient, getClient
 from app.providers.model_resolver import resolve
+from app.services.workbench.json_salvage import salvage_json_object
 from app.type_aliases import JsonValue
 
 # Back-compat aliases (previous camelCase names on this module).
@@ -526,14 +527,12 @@ async def handleChatCompletions(
                         tcd = as_dict(tc, {})
                         fn = as_dict(tcd.get('function'), {})
                         args_raw = as_str(fn.get('arguments'), '')
-                        args: object = {}
-                        if args_raw:
-                            try:
-                                parsed = json.loads(args_raw)
-                                if isinstance(parsed, dict):
-                                    args = parsed
-                            except (TypeError, ValueError):
-                                args = {}
+                        # Best-effort read of the CLIENT's own argument blob. An
+                        # unparseable value used to become `{}` on the way
+                        # upstream, which silently dropped what the caller sent —
+                        # a single-backslash Windows path lost its whole payload.
+                        # Salvage only parses; it never invents a key.
+                        args: object = salvage_json_object(args_raw) or {}
                         input_items.append(
                             {
                                 'type': 'function_call',
@@ -719,14 +718,9 @@ def translate_chat_to_responses_body(
                 tcd = as_dict(tc, {})
                 fn = as_dict(tcd.get('function'), {})
                 args_raw = as_str(fn.get('arguments'), '')
-                args: object = {}
-                if args_raw:
-                    try:
-                        parsed = json.loads(args_raw)
-                        if isinstance(parsed, dict):
-                            args = parsed
-                    except (TypeError, ValueError):
-                        args = {}
+                # See the sibling leg: salvage the client's blob rather than
+                # forwarding `{}` for anything strict json.loads could not read.
+                args: object = salvage_json_object(args_raw) or {}
                 input_items.append(
                     {
                         'type': 'function_call',
@@ -848,14 +842,7 @@ def _openaiToAnthropicBody(body: dict[str, object]) -> dict[str, object]:
                 tcd = as_dict(tc, {})
                 fn = as_dict(tcd.get('function'), {})
                 args_raw = as_str(fn.get('arguments'), '')
-                args: dict[str, object] = {}
-                if args_raw:
-                    try:
-                        parsed = json.loads(args_raw)
-                        if isinstance(parsed, dict):
-                            args = parsed
-                    except (TypeError, ValueError):
-                        args = {}
+                args: dict[str, object] = salvage_json_object(args_raw) or {}
                 blocks.append(
                     {
                         'type': 'tool_use',

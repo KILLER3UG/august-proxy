@@ -10,7 +10,6 @@ SSE line formatting lives in :mod:`app.adapters.sse_format` (Phase 3 extract).
 
 from __future__ import annotations
 
-import json
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -68,13 +67,13 @@ class ToolCallDelta:
 
     def to_anthropic_tool_use(self) -> dict[str, Any]:
         """Build an Anthropic-format tool_use content block."""
-        try:
-            tool_input = json.loads(self.function_arguments) if self.function_arguments else {}
-        except (json.JSONDecodeError, TypeError):
-            # Never execute a malformed blob as `{}` (native-path parity):
-            # keep the raw text under `_raw` so callers surface a
-            # [Validation Error] result instead of a phantom arg.
-            tool_input = {'_raw': self.function_arguments}
+        from app.services.workbench.json_salvage import parse_tool_arguments
+
+        # One door for the whole loop: strict parse, then the same salvage pass
+        # the workbench round-trip uses (fences, prose, single-backslash Windows
+        # paths), then `_raw` so a call that cannot be read answers
+        # [Validation Error] instead of executing with phantom args.
+        tool_input = parse_tool_arguments(self.function_arguments)
         return {
             'type': 'tool_use',
             'id': self.id or f'toolu_{uuid.uuid4().hex[:16]}',
@@ -282,12 +281,12 @@ class AnthropicNativeStreamState:
         blocks = self.data.content_blocks
         if not (0 <= idx < len(blocks)) or blocks[idx].get('type') != 'tool_use':
             return
-        try:
-            blocks[idx]['input'] = json.loads(raw)
-        except (json.JSONDecodeError, TypeError):
-            # Keep the raw text so the executor can surface the model's
-            # malformed arguments instead of silently running with {}.
-            blocks[idx]['input'] = {'_raw': raw}
+        from app.services.workbench.json_salvage import parse_tool_arguments
+
+        # Salvage before giving up: this is the Anthropic-native accumulator, and
+        # a single-backslash Windows path used to land in `_raw` here while the
+        # same call arriving through the OpenAI round-trip was repaired.
+        blocks[idx]['input'] = parse_tool_arguments(raw)
 
     def process_message_delta(self, event: dict[str, Any]) -> None:
         """Extract stop_reason and output_tokens."""
