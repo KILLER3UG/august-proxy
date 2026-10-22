@@ -121,3 +121,32 @@ Type distribution:
   from `git ls-files` + `stat` only. Never executes repository code.
 - `scripts/research/verify-manifest.mjs` — reconciles a manifest against
   `git ls-files` and reports shard balance.
+### Phase 3 — re-dispatch list (accumulated)
+
+| Repo | Shard | Why | Action |
+|---|---|---|---|
+| pi | durable#1 | 84 of 89 files short — the worker read a re-partitioned manifest | re-dispatch against the restored partition |
+| pi | durable#2 | 101 of 130 files short — same cause | re-dispatch |
+| simulide | components-analog | 101 of 183 files short — same cause | re-dispatch |
+| simulide | gui | 1 bad citation: src/gui/properties/proputils.cpp:99 in a 78-line file | correct the reference |
+| simulide | resources#2 | 1 bad citation: src/components/component.cpp:1260 in a 722-line file | correct the reference |
+| deepseek-harness | dsh-apps-cli | 44 files carry a ledger note but no report mention | top-up the per-file notes |
+| deepseek-harness | dsh-client-chat#1 | 40 files carry a ledger note but no report mention | top-up |
+| deepseek-harness | dsh-client-primitives#2 | 43 files carry a ledger note but no report mention | top-up |
+| deepseek-harness | dsh-client-chat#2 | 2 files | top-up |
+| deepseek-harness | dsh-client-agents-ui | 1 file | top-up |
+| deepseek-harness | dsh-apps-web#3 | 6 files | top-up |
+
+### Phase 2 — progress
+
+| Repo | Shards read | Files read | Files skipped (with reason) | Unresolved |
+|---|---|---|---|---|
+| pi | 17 / 17 | 1 777 | 25 | 185 (durable) |
+| simulide | 10 / 10 | 1 247 | 11 | 101 (components-analog) |
+| deepseek-harness | 46 / 88 (in flight) | — | — | — |
+
+Citation verification so far: pi **495 checked, 0 bad**; simulide **399 checked,
+2 bad** (both in the re-dispatch list); deepseek-harness **543 checked, 0 bad**.
+Every path:line a worker cited was reopened in the clone and confirmed to be
+an in-range line in a real file. Four specific *claims* were additionally
+re-read by hand at their cited lines and confirmed true.

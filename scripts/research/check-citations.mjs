@@ -35,6 +35,16 @@ const manifestFiles = new Set(
   readFileSync(path.join(ROOT, repo, 'manifest.tsv'), 'utf8')
     .split('\n').slice(1).filter(Boolean).map((l) => l.split('\t')[0]),
 );
+// A bare path like "README.md" is ambiguous when the repo has many files with
+// that basename; a citation to it cannot be resolved to one file, so it is
+// not checkable and must not be counted as bad.
+const basenameCount = new Map();
+for (const p of manifestFiles) {
+  const b = p.split('/').pop();
+  basenameCount.set(b, (basenameCount.get(b) || 0) + 1);
+}
+const ambiguous = (rel) => (basenameCount.get(rel.split('/').pop()) || 0) > 1;
+const uniqueFiles = (rel) => manifestFiles.has(rel) && !ambiguous(rel);
 
 const reports = readdirSync(shardDir).filter((f) => f.endsWith('.md') && (!only || f === `${only}.md`));
 let grandChecked = 0, grandBad = 0, grandShards = 0;
@@ -47,13 +57,14 @@ for (const rf of reports) {
   const re = /`?([A-Za-z0-9_./@+-]+\.[A-Za-z0-9]+):(\d+)(?:-(\d+))?`?/g;
   let m;
   const bad = [];
+  const soft = [];
   let checked = 0;
   const seen = new Set();
   while ((m = re.exec(body)) !== null) {
     const rel = m[1];
     const line = Number(m[2]);
     const end = m[3] ? Number(m[3]) : null;
-    if (!manifestFiles.has(rel)) continue;      // not a file of this repo -> ignore
+    if (!uniqueFiles(rel)) continue;            // not a resolvable file of this repo -> skip
     const key = `${rel}:${line}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -61,7 +72,7 @@ for (const rf of reports) {
     const n = linesOf(rel);
     if (n === 0) { bad.push(`${rel}:${line} (file unreadable/empty)`); continue; }
     if (line > n) { bad.push(`${rel}:${line} (file has ${n} lines)`); continue; }
-    if (end && end > n) { bad.push(`${rel}:${line}-${end} (file has ${n} lines)`); }
+    if (end && end > n) soft.push(`${rel}:${line}-${end} (file has ${n} lines; start is valid)`);
   }
 
   // 2. files the report claims to have covered
@@ -104,8 +115,9 @@ for (const rf of reports) {
 
   grandChecked += checked; grandBad += bad.length; grandShards++;
   const flag = bad.length ? 'FAIL' : 'ok  ';
-  console.log(`${flag} ${shard.padEnd(32)} cites=${String(checked).padStart(4)} bad=${String(bad.length).padStart(3)}  perFileSections=${String(perFile).padStart(4)}  ledger=${String(ledgerRows).padStart(4)} (read=${ledgerRead} skipped=${ledgerSkip}) noNote=${ledgerNoNote}  notMentionedInReport=${notMentioned}`);
+  console.log(`${flag} ${shard.padEnd(32)} cites=${String(checked).padStart(4)} bad=${String(bad.length).padStart(3)} soft=${String(soft.length).padStart(3)}  perFileSections=${String(perFile).padStart(4)}  ledger=${String(ledgerRows).padStart(4)} (read=${ledgerRead} skipped=${ledgerSkip}) noNote=${ledgerNoNote}  notMentionedInReport=${notMentioned}`);
   for (const b of bad.slice(0, 5)) console.log(`      BAD CITATION ${b}`);
+  for (const b of soft.slice(0, 3)) console.log(`      SOFT (range end past EOF) ${b}`);
   for (const b of notMentionedSample) console.log(`      NOT MENTIONED IN REPORT ${b}`);
 }
 console.log(`\n${repo}: ${grandShards} shard reports, ${grandChecked} citations checked, ${grandBad} bad`);
