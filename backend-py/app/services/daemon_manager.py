@@ -5,7 +5,7 @@ Manages the lifecycle of daemons: spawn, list, kill, result storage, crash
 handling, exponential backoff, and graceful shutdown.
 
 Daemons run on the Cerebellum model (fast, cheap) with a restricted read-only
-tool set. For tool-using background tasks, use spawn_subagent instead.
+tool set. For tool-using background tasks, use spawn_subagents instead.
 
 Design: docs/design/cognitive-architecture-v1.md §5.4
 """

@@ -21,7 +21,7 @@ async def _spawnDaemon(
     subsequent turns.
 
     For complex background tasks that need full tool access, use
-    ``spawn_subagent`` instead.
+    ``spawn_subagents`` instead.
     """
     from app.services.daemon_manager import DaemonSpec, getManager
 

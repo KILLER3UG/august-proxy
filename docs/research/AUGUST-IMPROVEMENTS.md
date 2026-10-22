@@ -620,6 +620,20 @@ lineage" (`packages/sdk/server/src/server.ts:129-147`).
    in a *security* table is exactly the defect the repo's own marker-table
    rule exists to catch.
 
+**Shipped (2026-10-23).** Both defects are fixed. `_spawnRule` derives the
+worker prompt's spawn sentence from the same `allowedNames` list that filters
+its surface, so it permits a spawn exactly when a spawn tool is offered; at
+the default `maxDepth=1` the worker text is unchanged. `_SPAWN_TOOLS` now
+names only `spawn_subagents` — confirmed against the populated registry (152
+tools registered; `spawn_subagents` present, the singular absent), and the
+stale "use spawn_subagent instead" docstrings were corrected. The shared
+capabilities block's blanket "do NOT spawn further subagents" line was
+dropped, because it rendered into worker prompts too and would have
+contradicted the new conditional sentence. The advertisement-level narrowing
+(change 3) was already true: a child at the depth cap is never offered the
+tool. Still open: an explicit gate asserting every deny-set name is a
+registered tool.
+
 **The proposed change**
 
 1. **Make the prompt and the mechanism agree.** Either the worker prompt

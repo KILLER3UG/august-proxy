@@ -166,9 +166,13 @@ several places that matter:
   `strong=True` while every command runs soft.**
 - **The code-mode ↔ hardline parity gate is gone** (deleted with the suite on
   2026-10-17). The port is real; the drift check is not.
-- **The worker prompt says "Do not spawn further sub-agents" while the
-  mechanism offers the spawn tool** (`subagent.py:752` vs `:105-118`) — a
-  prompt that states a rule the code does not enforce.
+- **The worker prompt's spawn rule is now derived from its own surface**
+  (`subagent.py:_spawnRule`): the spawn tool is offered only while
+  `delegation.maxDepth` allows another level, and the sentence permits a spawn
+  exactly when the tool is offered — at the default `maxDepth=1` the text is
+  unchanged. The deny set also carried the never-registered singular
+  `spawn_subagent`; it now names only the registered `spawn_subagents`, checked
+  against the populated registry.
 
 ---
 

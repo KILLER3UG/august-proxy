@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from typing import Callable, cast
+from typing import AbstractSet, Callable, cast
 
 from app.json_narrowing import as_bool, as_dict, as_int, as_list, as_str
 from app.services.tool_registry import ARG_SHAPE_EXCEPTIONS
@@ -41,11 +41,14 @@ logger = logging.getLogger(__name__)
 # worker fails per the retry policy.
 SUBAGENT_MODEL_TIMEOUT_S = 240
 
-# Sub-agent recursion guard: BOTH spawn tool spellings must be excluded or a
-# sub-agent can recurse through the plural tool — the old singular-only
-# filter allowed unbounded recursion + semaphore-slot deadlock. Agent-
-# management tools (create_agent / set_agent_mode) are also blocked: a
+# Sub-agent recursion guard: the spawn tool is excluded unless the configured
+# maxDepth still allows another level (see _blocked_tools) — subtracting it
+# unconditionally made `delegation.maxDepth` dead configuration above 1.
+# Agent-management tools (create_agent / set_agent_mode) are also blocked: a
 # sub-agent must not mutate the agent registry or switch its own mode.
+# Only the PLURAL `spawn_subagents` is registered; the singular spelling this
+# set also carried was never a tool, so it was removed rather than left as a
+# name no registry can match.
 # Tools a child may never use regardless of depth: spawning is depth-gated
 # below (see _blocked_tools), and `create_agent`/`set_agent_mode` would let a
 # child redefine its own permissions.
@@ -66,12 +69,24 @@ _SUBAGENT_NEVER_TOOLS = frozenset(
 )
 
 # Offered only while the configured depth cap still allows another level.
-_SPAWN_TOOLS = frozenset({'spawn_subagent', 'spawn_subagents'})
+_SPAWN_TOOLS = frozenset({'spawn_subagents'})
 
 # How many times the stream-rule (narration) reminder may re-prompt one
 # sub-agent before the round is accepted as-is. Matches the parent loop's
 # one-nudge-then-stop discipline.
 _STREAM_RULE_MAX_RETRIES = 3
+
+
+def _spawnRule(allowedNames: AbstractSet[str]) -> str:
+    """The spawn sentence for a worker's system prompt, matching its surface.
+
+    Spawn tools are offered exactly when `may_spawn_children` allows another
+    level, so the sentence is derived from the same list that filters those
+    tools: a blanket prohibition contradicted an armed deeper delegation.
+    """
+    if allowedNames & _SPAWN_TOOLS:
+        return ' You may spawn a further sub-agent only if the goal splits into independent work.'
+    return ' Do not spawn further sub-agents.'
 
 
 def _subagent_answer(accumulated: str, last_round: str) -> str:
@@ -749,7 +764,7 @@ async def executeSubAgent(
     systemText = (
         f'{agentCtx}\n\n'
         'You are a focused sub-agent. Complete the assigned goal using the available tools, '
-        'then return a concise episode handoff. Do not spawn further sub-agents.\n'
+        f'then return a concise episode handoff.{_spawnRule(allowedNames)}\n'
         'For multi-step goals, track your plan with submit_todos (one item per step, exactly '
         'one in_progress) and keep it current with update_todos — the list is yours alone and '
         'the user watches it live. Advance update_state as you work.\n\n'

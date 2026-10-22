@@ -12,7 +12,7 @@ import os
 from typing import AbstractSet
 
 # Read-only / list-style tools safe to run concurrently in one model round.
-# spawn_subagent(s) are included so the model can fire several in one turn;
+# spawn_subagents is included so the model can fire several in one turn;
 # each worker runs in the orchestrator pool and does not mutate parent state
 # until its own tool loop (isolated).
 PARALLEL_SAFE_TOOLS: frozenset[str] = frozenset(

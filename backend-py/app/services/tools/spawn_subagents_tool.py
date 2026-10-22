@@ -1,5 +1,5 @@
 """
-``spawn_subagents`` tool — registered alongside ``spawn_subagent``.
+``spawn_subagents`` tool — the registered spawn tool.
 
 Enables an agent to spawn multiple sub-agents in parallel via the
 ``SubagentOrchestrator``.

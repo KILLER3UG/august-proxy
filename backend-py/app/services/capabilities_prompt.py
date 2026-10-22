@@ -429,7 +429,7 @@ def format_agents_block() -> str:
             'to launch one or more subagents in parallel.',
             '- Prefer one spawn_subagents call when investigating independent areas; set '
             'background=true (default) so each completion is delivered to you as it finishes.',
-            '- Subagents: complete the assigned goal; do NOT spawn further subagents.',
+            '- Subagents: complete the assigned goal and return a concise episode handoff.',
             '- For long-running decomposable work, name workstreams and pass dependsOn / '
             'sourceWorkstreams so workers resume from episodes, not tool traces.',
             '- Goal contract: set acceptanceCriteria, stopCondition, maxIterations on work items.',
