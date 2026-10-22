@@ -1,0 +1,11 @@
+shard	files	bytes	KB	read-KB
+build-root	13	99130	97	97
+resources#1	202	4231728	4133	2471
+resources#2	7	2000334	1953	1953
+angel-jit	85	2432640	2376	2376
+components-analog	183	617251	603	603
+components-digital	144	498977	487	487
+gui	213	1096418	1071	1071
+icons-assets	224	531208	519	0
+microsim	258	1190461	1163	1163
+simulator-core	30	102841	100	100
