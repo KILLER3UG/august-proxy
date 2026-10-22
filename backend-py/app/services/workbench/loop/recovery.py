@@ -680,6 +680,18 @@ _BUDGET_FINAL_DIRECTIVE = (
     'did not, and what the user should do next. Do not start new work.\n</turn_budget>'
 )
 
+# The tool-round ceiling gets the same one-round treatment as the budget ladder's
+# last rung: the work a turn did is worth more delivered than truncated. It is a
+# separate string because it has to name the ceiling the model hit — "budget"
+# would read as a cost limit, and a model told it ran out of money stops trying to
+# finish the task and starts apologising.
+_ROUND_CAP_FINAL_DIRECTIVE = (
+    '\n\n<round_ceiling>\nThis turn has used its {cap} tool rounds. Tool calls are no longer '
+    'available for this round. Answer NOW in plain text: what you completed, what is still '
+    'outstanding, and the exact next step. Do not start new work and do not apologise for '
+    'the limit — a summary of real progress is the deliverable.\n</round_ceiling>'
+)
+
 
 # Transcript landmark pins (P4), shared by the pre-turn auto-compact, the
 # reactive overflow rescue and the budget compaction. They live here because

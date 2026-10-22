@@ -18,6 +18,7 @@ import logging
 
 from app.json_narrowing import as_dict, as_int, as_list, as_str
 from app.services.error_families import classify_family as _error_family
+from app.services.workbench.tool_protocol import tool_result_failed
 
 logger = logging.getLogger('workbench')
 
@@ -56,39 +57,54 @@ _ERROR_FAMILY_WINDOW = 6
 RUNAWAY_NUDGE_ROUNDS = 25
 RUNAWAY_STOP_ROUNDS = 40
 
+#: What an ABSENT key means. This guard used to be opt-in, and the result was
+#: the bug it was written for: a turn that varied its arguments every round was
+#: permanently novel, so the stall counter never fired, the round cap was 0, and
+#: the only thing that ended it was the context window. An install that never
+#: opened Settings had no bound at all. Armed-by-default is the safe direction —
+#: 25 rounds is far past any real step of work, and every leg of it is reversible
+#: by writing 0.
+RUNAWAY_ARMED_BY_DEFAULT = True
+
 
 def _runawayBudget() -> tuple[int, int]:
     """(nudge at, hard-stop at) for the runaway backstop. 0/0 = off.
 
-    Brain-config keys ``runawayNudgeRounds`` / ``runawayStopRounds``. Unlike
-    the stall thresholds these are NOT defaults-on: an ABSENT key means OFF, not
-    the shipped constants.
+    Brain-config keys ``runawayNudgeRounds`` / ``runawayStopRounds``. An ABSENT
+    key now means the shipped constants, not off; ``0`` means off and must stay
+    writable, because an armed ceiling that cannot be disarmed is a lockout.
+    A configured nudge of 0 means "hard stop with no warning", which is a
+    different thing from absent and is honoured as such.
 
-    That is a deliberate difference from ``MAX_MANAGED_TOOL_ROUNDS``, which is
-    uncapped by default and was kept that way on purpose. The backstop ends
-    turns, and this project treats any rule that ends a turn early as opt-in by
-    default — the ``verifierEnforced`` gate was opt-in and was then removed
-    altogether rather than made the default. Only ``runawayStopRounds`` has to
-    be set; ``runawayNudgeRounds`` then falls back to
-    :data:`RUNAWAY_NUDGE_ROUNDS`.
+    The other three arms of this rule each ended a turn the user did not expect:
+    ``MAX_MANAGED_TOOL_ROUNDS`` stays uncapped by default (a flat round cap
+    punished long legitimate runs, and this guard is the version of that bound
+    that only counts rounds which achieved nothing), and the budget ladder
+    remains opt-in because it degrades an answer that is merely expensive.
 
-    A read failure also returns off, so a broken brain store can never be the
-    reason someone's turn gets killed.
+    A read failure falls back to the shipped constants, and says so at warning:
+    silently disarming the only bound on a turn is how the loop came back.
     """
     try:
         from app.services.brain_config_service import getRuntimeConfig
 
         cfg = getRuntimeConfig()
-        # -1 is "unset", distinct from a configured 0 and from a value.
-        stop = as_int(cfg.get('runawayStopRounds'), -1)
-        nudge = as_int(cfg.get('runawayNudgeRounds'), -1)
-    except Exception:  # noqa: BLE001 -- fail-closed to OFF; matches this module's baseline
-        logger.debug('runaway budget read failed; backstop stays off', exc_info=True)
-        return 0, 0
-    if stop <= 0:
-        return 0, 0
-    if nudge < 0:
-        nudge = RUNAWAY_NUDGE_ROUNDS
+        stop_raw = cfg.get('runawayStopRounds')
+        nudge_raw = cfg.get('runawayNudgeRounds')
+    except Exception:  # noqa: BLE001 -- an unreadable store must not disarm the bound
+        logger.warning('runaway budget read failed; backstop stays armed at the shipped defaults', exc_info=True)
+        stop_raw = None
+        nudge_raw = None
+
+    if stop_raw is None:
+        if not RUNAWAY_ARMED_BY_DEFAULT:
+            return 0, 0
+        stop = RUNAWAY_STOP_ROUNDS
+    else:
+        stop = as_int(stop_raw, RUNAWAY_STOP_ROUNDS)
+        if stop <= 0:
+            return 0, 0
+    nudge = RUNAWAY_NUDGE_ROUNDS if nudge_raw is None else as_int(nudge_raw, RUNAWAY_NUDGE_ROUNDS)
     nudge = min(max(0, nudge), stop - 1)
     # A nudge at or past the stop would fire in the same round.
     return (nudge, stop)
@@ -172,6 +188,7 @@ def _recordWorldDelta(
     *,
     world_paths: set[str],
     family_by_target: dict[tuple[str, str], str],
+    clean_targets: set[tuple[str, str]],
 ) -> bool:
     """World-delta evidence for the stall detector (audit D4).
 
@@ -182,36 +199,62 @@ def _recordWorldDelta(
 
     * a path the turn had not touched before (read or written) — collected
       from the call's args via ``_bulk_paths_from_args``;
+    * a (tool, target) that came back CLEAN for the first time this turn;
     * a (tool, target) that was failing with a known error family and now
       returns a clean result — the shell telling you the truth.
+
+    A FAILED call earns none of that, and that is the point. The first version
+    credited a new path BEFORE looking at the receipt, so naming forty paths that
+    do not exist — a ``read_file`` on a guess, a ``run_command`` whose ``cd``
+    misses — was forty rounds of "progress", and the backstop could never arm
+    against the very loop it exists for. The request ceiling still bounds that
+    model; this flag is only allowed to mean *the world is different now*. It
+    also credits a first clean result, because the alternative was a false stop:
+    a shell-debugging or search-only turn that keeps learning something new has
+    no path to show for it, and used to be cut off at 40 rounds with a message
+    claiming nothing had been read.
 
     Returns True when THIS call moved the world; the caller ORs it into the
     round's flag, and the stall check treats a world-delta round as progress
     even when phase/step is flat and the surface is argument-stale.
     """
     target = _toolTarget(toolName, args or {})
+    text = result if isinstance(result, str) else ''
+    family = _error_family(text) if text else ''
+    # TWO predicates, unioned, because each sees a failure the other misses:
+    # `tool_result_failed` reads the receipt vocabulary (prefixes, `Exit code:`,
+    # a JSON `ok: false`), while `_error_family` reads the eight-family taxonomy
+    # the steering uses. Live probe: a missing-file receipt is `not_found` to the
+    # family classifier and nothing to the receipt vocabulary, so crediting its
+    # path made 121 rounds of guessing at filenames look like 121 rounds of
+    # progress and no bound fired at all.
+    failed = tool_result_failed(text) if text else False
+    failed = failed or bool(family)
     delta = False
-    try:
-        collected = list(_bulk_paths_from_args(args or {}))
-        # _bulk_paths_from_args only walks list-valued keys; the single-file
-        # tools (read_file, write_file, edit_lines, …) carry a scalar
-        # path/file_path — the most common touch there is.
-        for key in ('path', 'filePath', 'file_path', 'directory'):
-            val = as_str((args or {}).get(key), '')
-            if val:
-                collected.append(val)
-        for path in collected:
-            if path and path not in world_paths:
-                world_paths.add(path)
-                delta = True
-    except Exception:  # noqa: BLE001 -- moved verbatim from workbench.py BLE001 baseline
-        logger.debug('world-delta path collection failed', exc_info=True)
-    if not isinstance(result, str):
+    if not failed:
+        try:
+            collected = list(_bulk_paths_from_args(args or {}))
+            # _bulk_paths_from_args only walks list-valued keys; the single-file
+            # tools (read_file, write_file, edit_lines, …) carry a scalar
+            # path/file_path — the most common touch there is.
+            for key in ('path', 'filePath', 'file_path', 'directory'):
+                val = as_str((args or {}).get(key), '')
+                if val:
+                    collected.append(val)
+            for path in collected:
+                if path and path not in world_paths:
+                    world_paths.add(path)
+                    delta = True
+        except Exception:  # noqa: BLE001 -- moved verbatim from workbench.py BLE001 baseline
+            logger.debug('world-delta path collection failed', exc_info=True)
+        if target not in clean_targets:
+            clean_targets.add(target)
+            delta = True
+    if not text:
         return delta
-    family = _error_family(result)
     if family:
         family_by_target[target] = family
-    elif target in family_by_target and not result.startswith('Error'):
+    elif target in family_by_target and not failed:
         del family_by_target[target]
         delta = True
     return delta

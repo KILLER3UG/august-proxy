@@ -218,7 +218,8 @@ role wins, so leaving `chat_plan` empty is how you make max effort beat plan
 mode. Those three override the selected model because the condition was chosen
 explicitly; `chat_default` and `cortex` only fill a turn that arrived with no
 model at all. The routing decision is logged at info level with the role name.
-`maxWorkbenchToolLoops` here overrides the workbench tool-round cap (default `0 = uncapped`).
+`maxWorkbenchToolLoops` here overrides the workbench tool-round cap (default `150`;
+`0 = uncapped`). Settings → Turn limits shows the effective number, not a blank.
 
 **Turn budget ladder** — three soft per-turn ceilings, each **off by default**
 (`0` = disabled, so an untouched install never walks the ladder):

@@ -84,13 +84,17 @@ from app.services.workbench.tool_protocol import (
 from app.services.workbench.validator import validationErrorText
 
 logger = logging.getLogger('workbench')
-# Tool-round cap. DISABLED by default (0 = unlimited): a hard 25-round cap
-# killed long legitimate runs (big refactors, multi-step research) and read to
-# the model as an arbitrary stop. Real runaway protection now comes from the
-# stall detector below (phase/step stuck + novel-work check). Set
-# brain-orchestrator maxWorkbenchToolLoops > 0 in Settings → Brain to opt back
-# into a cap.
-MAX_MANAGED_TOOL_ROUNDS = 0
+# Tool-round cap. ARMED by default at 150 rounds — the one number that guarantees
+# a turn ends. It used to be 0 (unlimited) because a hard 25-round cap killed long
+# legitimate runs and read to the model as an arbitrary stop, and the bound was
+# delegated to the stall detector plus the world-delta backstop. Neither of those
+# is an absolute bound: the backstop counts only the rounds that achieved nothing,
+# so a model that keeps touching a NEW path every round reset it forever and the
+# turn ran until the context window closed. 150 is far past the longest genuine
+# single-turn run (a big refactor lands in the 60-80 range) and is still a number
+# a spinning model cannot reach by being busy. 0 = unlimited stays writable for a
+# run that really needs it; the cap is then the user's own decision, not ours.
+MAX_MANAGED_TOOL_ROUNDS = 150
 # Recurring-task / daemon sub-agents run unbounded today (they bypass the
 # orchestrator's worker pool). Cap concurrent runs so a burst of due tasks
 # cannot spawn an arbitrary number of model calls at once.
@@ -527,6 +531,7 @@ from app.services.workbench.loop.recovery import (  # noqa: E402
     _BUDGET_LADDER,
     _CONTEXT_OVERFLOW_MARKERS,  # noqa: F401 -- re-export: readers introspect the marker list
     _DETERMINISTIC_400_MARKERS,  # noqa: F401 -- re-export: one table, two doors
+    _ROUND_CAP_FINAL_DIRECTIVE,  # noqa: F401 -- re-export: the ceiling's one-round summary ask
     _budgetBreached,
     _budgetTriggeredCompaction,
     _is_failing_receipt,  # noqa: F401 -- re-export: subagent.py compaction pins
@@ -569,8 +574,8 @@ def _chatContextPromotion() -> tuple[str, str]:
 def _managedToolLoopCap() -> int:
     """Effective tool-round cap for this turn.
 
-    brain-orchestrator ``maxWorkbenchToolLoops`` (Settings → Brain) overrides
-    the module default; 0 disables the cap entirely.
+    brain-orchestrator ``maxWorkbenchToolLoops`` (Settings → Turn limits)
+    overrides the module default; 0 disables the cap entirely.
     """
     try:
         from app.services.brain_config_service import getRuntimeConfig
@@ -582,9 +587,10 @@ def _managedToolLoopCap() -> int:
                 return value
     except Exception:
         logger.debug('maxWorkbenchToolLoops read failed; using default', exc_info=True)
-    # Absent key → MAX_MANAGED_TOOL_ROUNDS, which has been 0 (uncapped) since
-    # 38944632. This line used to claim 25 in both the docstring and here,
-    # which is what AGENTS.md then repeated (audit finding 2026-09-15 #6).
+    # Absent key → MAX_MANAGED_TOOL_ROUNDS, the armed default. It was 0
+    # (uncapped) from 38944632 until the "model loops forever" report: with the
+    # budget ladder off and the backstop counting only the rounds that achieved
+    # nothing, an absent key meant nothing in the process bounded a turn.
     return MAX_MANAGED_TOOL_ROUNDS
 
 
@@ -597,6 +603,23 @@ def _modelRetryDelayMs(attempt: int, response: dict[str, object], policy: dict[s
         return min(retryAfter, policy['maxDelayMs'])
     base = min(policy['baseDelayMs'] * 2 ** max(0, attempt - 1), policy['maxDelayMs'])
     return base + random.randint(0, 400)
+
+
+def _retryWaitRefusalMs(response: dict[str, object], policy: dict[str, int]) -> int:
+    """The server-requested wait when it exceeds what this loop will sleep, else 0.
+
+    The reference harness pi refuses a request whose ``Retry-After`` is above its
+    ceiling instead of absorbing it, so the failure surfaces with the delay named.
+    Clamping is the seductive version of this bug and it is not harmless: the
+    ceiling here is 30 s and the retry budget is 10, so a gateway answering
+    ``Retry-After: 3600`` turned one stubborn 429 into five minutes of sleeping
+    inside a SINGLE round — every loop counter frozen, no event to show, and a
+    spinner that is really a wait list. A turn that is going to fail should fail
+    at once and say what it was told to wait for.
+    """
+    requested = as_int(response.get('retryAfterMs'), 0)
+    ceiling = as_int(policy.get('maxDelayMs'), 30000)
+    return requested if requested > ceiling else 0
 
 
 async def _interruptibleSleep(seconds: float) -> None:
@@ -3315,6 +3338,11 @@ async def _sendWorkbenchMessageStreamImpl(
     _budgetArms = _turnBudget()
     _budgetStep = 0
     _budgetFinalFired = False
+    # The tool-round ceiling's own final round. Kept separate from
+    # `_budgetFinalFired` because the two end the turn under different reasons
+    # (`cap` vs `budget`) and the ledger row must say which limit was hit;
+    # sharing the flag would report a ceiling stop as a cost stop.
+    _roundCapFinalFired = False
     # Tracks WHICH authority narrowed the surface. The A6 clean-round restore
     # may reverse the reversible self-heal downgrade, but a budget narrowing is
     # a consequence of the operator's budget arms and must survive to the end
@@ -3430,6 +3458,10 @@ async def _sendWorkbenchMessageStreamImpl(
     # family per (tool, target) so a clean retry counts as progress.
     worldPaths: set[str] = set()
     familyByTarget: dict[tuple[str, str], str] = {}
+    # (tool, target) pairs this turn has already seen come back CLEAN. A first
+    # clean result is new information even when it touches no path, so it counts
+    # as world delta; the same clean target again does not.
+    cleanTargets: set[tuple[str, str]] = set()
     roundWorldDelta = {"moved": False}
     # Runaway backstop state (roadmap #1). Counted on world delta alone, so
     # argument novelty cannot reset it. The thresholds are brain-config and
@@ -3454,28 +3486,44 @@ async def _sendWorkbenchMessageStreamImpl(
         logger.debug('turn skill collection open failed', exc_info=True)
     while True:
         toolRound += 1
-        modelRounds += 1
         mutationsBeforeRound = getattr(session, 'mutationCount', 0)
         # Reactive prune-then-compact may shrink the surface once
         # per round on a context-overflow error; the flag keeps it from
         # ping-ponging against a surface that refuses to shrink.
         overflowReducedThisRound = False
-        if managedToolLoopCap > 0 and toolRound > managedToolLoopCap:
+        # A final-answer round has already run: either the budget ladder spent
+        # its last rung, or the round cap gave the model one tool-free round to
+        # report where it stopped. Either way the turn ends here, after that
+        # answer reached the transcript — not with the work cut off mid-sentence.
+        if _budgetFinalFired or _roundCapFinalFired:
+            reason = 'budget' if _budgetFinalFired else 'cap'
+            logger.info(
+                'workbench %s ended on %s after %d rounds', sessionId, reason, toolRound
+            )
+            turnEndReason = reason
+            break
+        # Counted on `modelRounds`, not `toolRound`: the self-heal legs do
+        # `toolRound -= 1` to re-run a round, so a ceiling read off the loop's
+        # budget counter is a ceiling a failing model can re-arm. `modelRounds`
+        # only ever counts a request that actually left the process, which is the
+        # number `turn_end` and the ledger already report — so the cap, the badge
+        # and the row cannot disagree about how many turns of work were spent.
+        if managedToolLoopCap > 0 and modelRounds >= managedToolLoopCap:
+            # The ceiling is not a reason to lose the work. Spend one round on a
+            # summary the same way the budget ladder's last rung does, so hitting
+            # the cap delivers "here is what I did and what is left" instead of a
+            # bare error at the top of a turn. The block above ends the turn on
+            # the NEXT round, once that answer is in the transcript.
+            _roundCapFinalFired = True
             msg = (
-                f'Tool loop exceeded maxWorkbenchToolLoops ({managedToolLoopCap}); '
-                'stopping to avoid unbounded cost.'
+                f'Tool-round ceiling reached ({managedToolLoopCap}); this round answers '
+                'in text only, and the turn ends after it.'
             )
             logger.warning('workbench %s', msg)
+            systemText = f'{systemText}{_ROUND_CAP_FINAL_DIRECTIVE.format(cap=managedToolLoopCap)}'
+            _emitRecovery(emit, 'budget', 1, 'stopped', True)
             if emit:
-                emit({'type': 'error', 'message': msg})
-            turnError = turnError or msg
-            turnEndReason = 'cap'
-            break
-        # The budget ladder's last rung already had its one tool-free round.
-        if _budgetFinalFired:
-            logger.info('workbench %s ended on turn budget after %d rounds', sessionId, toolRound)
-            turnEndReason = 'budget'
-            break
+                emit({'type': 'warning', 'message': msg})
         # Turn budget ladder, rung by rung (audit P1#12). Checked once per
         # round: a breach spends ONE rung and reports it, so an over-budget
         # turn degrades in visible steps rather than being cut off mid-flight.
@@ -3632,11 +3680,14 @@ async def _sendWorkbenchMessageStreamImpl(
             # uncapped and the budget ladder off by default, nothing else
             # bounded it short of overflowing the context window.
             #
-            # The evidence is world delta alone — a path the turn had not
-            # touched before, or a (tool, target) that was failing and now
-            # returns clean. Neither argument variety nor a flat update_state
-            # can move that flag, so this counts the thing the other guard
-            # structurally cannot see.
+            # The evidence is world delta alone — a path the turn had not touched
+            # before, a (tool, target) that came back clean for the first time, or
+            # a previously failing target that now returns clean. None of that can
+            # be faked by argument variety or a flat update_state, so this counts
+            # the thing the other guard structurally cannot see. A FAILED call
+            # earns nothing: naming a path that does not exist is not the world
+            # moving, and until that was checked this guard could be reset forever
+            # by a model guessing at filenames.
             if _runawayStopRounds > 0 and toolRound >= MIN_ROUNDS_BEFORE_STALL_CHECK:
                 if roundWorldDelta["moved"]:
                     runawayRounds = 0
@@ -3645,8 +3696,9 @@ async def _sendWorkbenchMessageStreamImpl(
                     runawayRounds += 1
                     if runawayRounds >= _runawayStopRounds:
                         msg = (
-                            f'Stopped: {runawayRounds} tool rounds ran without the turn touching '
-                            'anything new — no new path and no previously failing call recovered.'
+                            f'Stopped: {runawayRounds} tool rounds ran without the turn achieving '
+                            'anything new — no new path read or written, no call returning clean '
+                            'for the first time, and nothing you retried started working.'
                         )
                         logger.warning('workbench %s', msg)
                         _emitRecovery(emit, 'runaway', runawayRounds, 'stopped', True)
@@ -3654,10 +3706,13 @@ async def _sendWorkbenchMessageStreamImpl(
                             emit({'type': 'error', 'message': msg})
                         turnError = turnError or msg
                         # Reuses 'stall-stop' rather than adding a reason: it IS
-                        # the same class of stop, and the reason vocabulary is
-                        # read by the frontend badge, the turn_outcomes column
-                        # and the docs. A new token would have to be added to
-                        # all three to say the same thing.
+                        # the same class of stop. A new token is not three edits —
+                        # the zod enum in schemas/workbench.ts, the hardcoded union
+                        # in lib/streamEvents.ts (where an unknown reason coerces to
+                        # undefined and the badge silently vanishes), the type in
+                        # types/workbench.ts, the copy in lib/turn-end.ts, the
+                        # LearningPanel label list and these docs all read it, so
+                        # the vocabulary is kept closed on purpose.
                         turnEndReason = 'stall-stop'
                         break
                     if _runawayNudgeRounds > 0 and runawayRounds >= _runawayNudgeRounds:
@@ -3670,8 +3725,9 @@ async def _sendWorkbenchMessageStreamImpl(
                                     'source': SOURCE_HARNESS_NUDGE,
                                     'content': (
                                         f'[Proxy Self-Heal] The last {runawayRounds} tool rounds each '
-                                        'looked different but none of them changed anything: no new '
-                                        'file was read, and nothing you retried started working. '
+                                        'looked different but none of them achieved anything: no new '
+                                        'file was read or written, no call came back clean for the '
+                                        'first time, and nothing you retried started working. '
                                         'Varying the call without changing the world is a loop. Stop, '
                                         'say what you have established in one sentence with '
                                         'update_state(phase=..., step=...), then either do the thing '
@@ -3691,10 +3747,6 @@ async def _sendWorkbenchMessageStreamImpl(
                                         ),
                                     }
                                 )
-            # Audit D4: the stall check above has consumed the previous
-            # round's world-delta; this round's executions now fill the flag
-            # for the next check.
-            roundWorldDelta["moved"] = False
             # Error-family steer: independent of the novelty check above, because
             # six *different* commands failing the same way are one problem and
             # would otherwise read as progress until the round cap eats the turn.
@@ -3727,6 +3779,13 @@ async def _sendWorkbenchMessageStreamImpl(
                         }
                     )
                 break
+        # Audit D4: the stall and runaway checks above have consumed the
+        # previous round's world-delta, so clear it here — OUTSIDE that gate.
+        # It used to sit inside `toolRound >= MIN_ROUNDS_BEFORE_STALL_CHECK`,
+        # which meant rounds 1-7 never cleared it and the first check at round 8
+        # read seven rounds of movement as though it were one, crediting a turn
+        # that had already stopped changing anything.
+        roundWorldDelta["moved"] = False
         if _isCancelled():
             turnEndReason = 'interrupted'
             break
@@ -3825,6 +3884,17 @@ async def _sendWorkbenchMessageStreamImpl(
                     )
                 turnError = turnError or msg
                 break
+            # Counted HERE, not at the top of the round: the ceiling and
+            # `turn_end.rounds` are supposed to be the number of requests that
+            # actually left the process, and three paths reach this line and
+            # then break WITHOUT dispatching — the final-answer round (cap or
+            # budget), the chain-fallback replay veto, and a failed durability
+            # flush. Counting at the loop top made a 150-round ceiling report
+            # 152, which is the same class of lie the ledger was fixed for.
+            # Inside the chain loop (so a fallback model counts its own
+            # dispatch) and outside the retry loop (so a transport retry does
+            # not inflate the round count the user sees in the badge).
+            modelRounds += 1
             for retryAttempt in range(retryPolicy['maxRetries'] + 1):
                 _llmT0 = time.monotonic()
                 # Stream text live: per-delta finalOutput/thinking events go
@@ -4196,6 +4266,21 @@ async def _sendWorkbenchMessageStreamImpl(
                             }
                         )
                     continue
+                refusedWaitMs = _retryWaitRefusalMs(response, retryPolicy)
+                if refusedWaitMs:
+                    ceilingS = as_int(retryPolicy.get('maxDelayMs'), 30000) / 1000
+                    original = as_str(response.get('error'))
+                    msg = (
+                        f'Upstream asked to wait {refusedWaitMs / 1000:.0f}s before this request '
+                        f'would be retried, over the {ceilingS:.0f}s ceiling — failing now instead '
+                        f'of stalling the turn. {original}'.strip()
+                    )
+                    logger.warning('workbench refusing a %dms server retry wait', refusedWaitMs)
+                    response['error'] = msg
+                    response['retryWaitRefusedMs'] = refusedWaitMs
+                    if emit:
+                        emit({'type': 'warning', 'message': msg})
+                    break
                 delayMs = _modelRetryDelayMs(retryAttempt + 1, response, retryPolicy)
                 logger.warning(
                     'workbench model call failed (retry %d/%d in %dms): %s',
@@ -5352,7 +5437,12 @@ async def _sendWorkbenchMessageStreamImpl(
             # Audit D4: record what this call did to the world, so the stall
             # detector can credit real movement over self-report.
             if _recordWorldDelta(
-                toolName, toolInput, result, world_paths=worldPaths, family_by_target=familyByTarget
+                toolName,
+                toolInput,
+                result,
+                world_paths=worldPaths,
+                family_by_target=familyByTarget,
+                clean_targets=cleanTargets,
             ):
                 roundWorldDelta["moved"] = True
             # Record what this session just observed: a successful read

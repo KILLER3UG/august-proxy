@@ -157,8 +157,10 @@ is the primary entry point:
 1. Get-or-create the session; append the user message.
 2. Resolve effort (low/medium/high/max) and provider/model.
 3. Optionally compress context if estimated tokens exceed half the budget.
-4. Enter the **tool loop** (default cap `0 = uncapped`, overridable via the
-   Brain setting `maxWorkbenchToolLoops`):
+4. Enter the **tool loop** (default cap `150` rounds, overridable via the
+   Brain setting `maxWorkbenchToolLoops`; `0` = uncapped). Hitting the cap spends
+   one tool-free round on a summary and ends `turn_end{reason: 'cap'}`, so the
+   work is delivered rather than cut off:
    - Stream `thinking` / `finalOutput` / `toolCall` / `toolResult` events. Wire
      names are **camelCase** — import them from
      [`workbench/emit_types.py`](../backend-py/app/services/workbench/emit_types.py)

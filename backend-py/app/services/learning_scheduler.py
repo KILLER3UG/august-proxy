@@ -334,8 +334,9 @@ def _review_job() -> dict[str, Any]:
     that went *well* and extracted the preference or the multi-attempt procedure
     it contained, which is why the store stayed empty while hundreds of real
     turns passed. Opt-in and default-off: this spends a model call on a cadence,
-    so an absent `memoryReview` means off, the same rule `runawayNudgeRounds`
-    follows. Imported at call time so patching the module attribute is what runs.
+    so an absent `memoryReview` means off. (The runaway backstop no longer
+    follows that rule — a bound that costs nothing unless it trips is armed by
+    default. Imported at call time so patching the module attribute is what runs.)
     """
     from app.services.skill_distiller import run_review_pass
 

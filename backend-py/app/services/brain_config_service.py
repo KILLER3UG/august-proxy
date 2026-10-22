@@ -37,6 +37,10 @@ from app.services import config_service
 from app.services.cognitive_config import DEFAULT_FEATURES
 from app.services.memory_store import record_config_audit
 from app.services.workbench import workbench as workbenchSvc
+from app.services.workbench.loop.guards import (
+    RUNAWAY_NUDGE_ROUNDS,
+    RUNAWAY_STOP_ROUNDS,
+)
 from app.services.workbench.subagent_fanout import (
     FANOUT_ROUND_BUDGET_DEFAULT,
     MAX_CHILDREN_PER_FANOUT_DEFAULT,
@@ -179,7 +183,9 @@ subagentFanoutRoundBudgetRange = (0, 2000)
 budgetSoftUsdRange = (0, 10_000)
 budgetSoftTokensRange = (0, 50_000_000)
 budgetWallClockSecRange = (0, 86_400)  # 24h
-# Runaway-backstop thresholds. 0 = not armed (shipped state). The guard itself
+# Runaway-backstop thresholds. 0 = disarmed; an ABSENT key is armed (the guard
+# falls back to the shipped constants), because the opt-in default was the
+# condition that let an argument-varying turn run forever. The guard itself
 # clamps nudge into [0, stop-1] (loop/guards.py:_runawayBudget), so a nudge at or
 # past the stop is not rejected here — it is normalized at read, and the UI
 # shows the resolved pair.
@@ -220,10 +226,12 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # best-effort failure just leaves the skill as it was pre-P2#15.
     ('skillKeywordExpansion', 'skill_keyword_expansion', False, 'bool'),
     ('maxAgentDepth', 'max_agent_depth', DEFAULT_FEATURES.get('max_agent_depth', 4), 'num'),
-    # Tool-round cap: DISABLED by default (0 = unlimited) — the old 25-round
-    # cap killed long legitimate runs. Set > 0 in Settings → Brain to opt in;
-    # stall detection still stops genuinely spinning turns.
-    ('maxWorkbenchToolLoops', 'max_workbench_tool_loops', DEFAULT_FEATURES.get('max_workbench_tool_loops', 0), 'num'),
+    # Tool-round cap: ARMED by default at the workbench module's constant. It
+    # used to ship at 0 (unlimited) — which, with the budget ladder also off and
+    # the runaway backstop disarmed, meant a turn had no bound at all. 0 still
+    # means "unlimited" and stays writable; the shipped default is what a fresh
+    # install gets without opening Settings.
+    ('maxWorkbenchToolLoops', 'max_workbench_tool_loops', workbenchSvc.MAX_MANAGED_TOOL_ROUNDS, 'num'),
     # Turn budget ladder (audit P1#12): soft per-turn ceilings, each DISABLED by
     # default (0 = off). Unlike the tool-round cap these do not cut a turn off —
     # a breach degrades it in steps (bare surface → compaction → one tool-free
@@ -233,15 +241,14 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     ('budgetSoftUsd', 'budget_soft_usd', 0, 'num'),
     ('budgetSoftTokens', 'budget_soft_tokens', 0, 'num'),
     ('budgetWallClockSec', 'budget_wall_clock_sec', 0, 'num'),
-    # Runaway backstop thresholds. ABSENT = off, and `_snakeToCamel` builds the
-    # runtime config from `_defaultsCamel()`, so the default here must not be a
-    # number the guard would read as "configured". loop/guards.py uses -1 as its
-    # "unset" sentinel and falls the nudge back to RUNAWAY_NUDGE_ROUNDS when it
-    # is negative — registering these as 0 made that fallback unreachable and
-    # turned "set only a hard stop" into a silent kill at round 40 with no
-    # warning. The default is None so an unarmed key is genuinely ABSENT.
-    ('runawayNudgeRounds', 'runaway_nudge_rounds', None, 'num'),
-    ('runawayStopRounds', 'runaway_stop_rounds', None, 'num'),
+    # Runaway backstop thresholds. These are the EFFECTIVE defaults, not
+    # sentinels: the guard arms itself when the key is absent, so a default of
+    # None made Settings render "off" for a backstop that was actually counting
+    # rounds. Registered as the shipped constants, the panel shows what the loop
+    # will do, and 0 stays the way to disarm it. loop/guards.py keeps its own
+    # absent-key fallback so a hand-edited or older store cannot lose the bound.
+    ('runawayNudgeRounds', 'runaway_nudge_rounds', RUNAWAY_NUDGE_ROUNDS, 'num'),
+    ('runawayStopRounds', 'runaway_stop_rounds', RUNAWAY_STOP_ROUNDS, 'num'),
     # Same absent-means-OFF rule: a default of 0 here would be indistinguishable
     # from an operator disarming the ceiling, and `_snakeToCamel` would hand the
     # guard a configured-looking number.

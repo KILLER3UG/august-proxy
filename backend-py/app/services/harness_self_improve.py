@@ -167,7 +167,19 @@ def _introspect_flow(out: dict[str, Any]) -> None:
         from app.services.brain_config_service import getRuntimeConfig
 
         cfg = as_dict(getRuntimeConfig())
-        flow['max_tool_rounds_per_turn'] = as_int(cfg.get('maxWorkbenchToolLoops'), 25)
+        # The fallback is the module's own default, not a remembered number:
+        # this value is what the model is told about its own loop, and it quoted
+        # 25 for months after the shipped default stopped being 25.
+        from app.services.workbench.loop.guards import _runawayBudget
+        from app.services.workbench.workbench import MAX_MANAGED_TOOL_ROUNDS
+
+        flow['max_tool_rounds_per_turn'] = as_int(
+            cfg.get('maxWorkbenchToolLoops'), MAX_MANAGED_TOOL_ROUNDS
+        )
+        # Armed ceiling for a turn that keeps changing the world vs one that
+        # does not: the round cap and the no-world-delta stop are the two bounds
+        # the model cannot see from its own context.
+        flow['runaway_stop_rounds'] = _runawayBudget()[1]
         flow['auto_route_min_samples'] = as_int(cfg.get('autoRouteMinSamples'), 3)
         flow['max_agent_depth'] = as_int(cfg.get('maxAgentDepth'), 1)
     except Exception as exc:

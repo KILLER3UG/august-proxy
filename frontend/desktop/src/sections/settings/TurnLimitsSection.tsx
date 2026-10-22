@@ -14,10 +14,12 @@
  * edit — the same schema-driven approach the reference harnesses use for their
  * own agent settings.
  *
- * 0 = off everywhere, and that is the shipped default on purpose: this project
- * treats any rule that ends a turn early as opt-in, the way `verifierEnforced`
- * was opt-in before it was removed. The hints say so rather than implying a
- * limit is recommended.
+ * 0 = off, and the value shown is the EFFECTIVE one: a key the backend never
+ * received is reported by the backend's own defaults, not by a local 0. The
+ * round cap and the budget ladder ship at 0 (opt-in); the runaway backstop
+ * ships armed, because an install that never opened this panel had no bound on
+ * a turn at all and a model that varies its arguments every round trips nothing
+ * else. Writing 0 here still disarms it.
  */
 
 import { useMemo, useState } from 'react';
@@ -101,7 +103,7 @@ const TURN_FIELDS: FieldSpec[] = [
   {
     key: 'runawayNudgeRounds',
     label: 'Runaway warning after (rounds)',
-    hint: 'Warn when a turn runs this long without changing anything. Needs a hard stop below. 0 = off.',
+    hint: 'Warn when a turn runs this long without touching anything new. 0 = warn never, just stop.',
     min: 0,
     max: 100000,
     unit: 'rounds',
@@ -109,7 +111,7 @@ const TURN_FIELDS: FieldSpec[] = [
   {
     key: 'runawayStopRounds',
     label: 'Runaway hard stop after (rounds)',
-    hint: 'Ends a turn that keeps calling different things. 0 = off.',
+    hint: 'Ends a turn that keeps calling different things without changing anything. Armed by default; 0 = off.',
     min: 0,
     max: 100000,
     unit: 'rounds',
@@ -123,6 +125,10 @@ const TURN_FIELDS: FieldSpec[] = [
     unit: 'turns',
   },
 ];
+
+function asNumber(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
 
 function formatValue(spec: FieldSpec, value: number): string {
   if (value === 0) return 'off';
@@ -195,13 +201,19 @@ export function TurnLimitsSection() {
     () =>
       TURN_FIELDS.map((spec) => {
         const raw = config[spec.key];
-        const current = typeof raw === 'number' ? raw : 0;
+        // Narrowing an index-signature read does not stick in TS, so the
+        // backend's default goes through a helper rather than a typeof test.
+        const fallback = asNumber(defaults[spec.key], 0);
+        // An unconfigured key is NOT zero: the runaway backstop arms itself when
+        // the key is absent, so reading absence as 0 rendered "off" under a loop
+        // that was counting rounds. Ask the backend what the default is.
+        const current = asNumber(raw, fallback);
         const draftValue = draft[spec.key];
         const shown =
           draftValue !== undefined
             ? Number(draftValue)
             : current;
-        const isDefault = current === (typeof defaults[spec.key] === 'number' ? defaults[spec.key] : 0);
+        const isDefault = current === fallback;
         return { spec, current, shown, isDefault };
       }),
     [config, defaults, draft],

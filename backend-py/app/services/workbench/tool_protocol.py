@@ -25,6 +25,7 @@ instead of dead-ending.
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -69,10 +70,38 @@ RECEIPT_TONE: dict[str, str] = {
     'Error': 'failure',  # the loop's documented tool return contract ("Error: …")
     '[Validation Error]': 'failure',  # validator.validationErrorText
     '[Blocked]': 'denial',  # sandbox / permission / sub-agent guards
+    # The repeat guardrail's own spelling (`tool_guardrails.py`) — a colon, not
+    # brackets. It was not in the vocabulary, so every round a blocked tool spent
+    # after the 8th failure read as a SUCCESS: is_error False in the ledger, tone
+    # 'none' in the transcript, and — the part that mattered — a fresh world-delta
+    # credit that reset the runaway backstop forever. A model that keeps calling
+    # one blocked tool with one new argument per round is exactly the
+    # "loops infinitely" report, and it was unbounded because the harness could
+    # not recognise its own refusal.
+    'Blocked:': 'denial',
     SYNTHETIC_TOOL_RESULT_PREFIX: 'denial',  # a call that never executed
 }
 
 ERROR_RECEIPT_PREFIXES: tuple[str, ...] = tuple(RECEIPT_TONE)
+
+# A denial may be tagged with the subsystem that refused it, and that tag has to
+# come FIRST because the UI strips it to render the reason
+# (`CommandOutputPane.tsx::SANDBOX_TAG_RE` is anchored at the start). A
+# prefix-only vocabulary therefore cannot see those receipts at all:
+# `[sandbox:seatbelt] Blocked: …` is a refusal that read as success. Stripping
+# one leading tag before matching keeps the emitter's shape (and the UI) alone
+# while putting every denial back inside the one table.
+_LEADING_TAG_RE = re.compile(r'^\[[a-z0-9:_.-]+\]\s*', re.I)
+
+
+def _marker_form(text: str) -> str:
+    """The receipt with one leading capability tag removed, for marker matching."""
+    stripped = text.lstrip()
+    for prefix in RECEIPT_TONE:
+        if stripped.startswith(prefix):
+            return stripped
+    tag = _LEADING_TAG_RE.match(stripped)
+    return stripped[tag.end():] if tag else stripped
 
 RECEIPT_TONES: frozenset[str] = frozenset({'failure', 'denial'})
 
@@ -150,10 +179,11 @@ def tool_result_failed(text: str) -> bool:
     """
     if not text:
         return False
+    marker = _marker_form(text)
     return (
-        text.startswith(ERROR_RECEIPT_PREFIXES)
-        or _exit_code_failure(text)
-        or _structured_failure(text)
+        marker.startswith(ERROR_RECEIPT_PREFIXES)
+        or _exit_code_failure(marker)
+        or _structured_failure(marker)
     )
 
 
@@ -166,10 +196,11 @@ def receipt_tone(text: str) -> str:
     """
     if not text:
         return 'none'
+    marker = _marker_form(text)
     for prefix, tone in RECEIPT_TONE.items():
-        if text.startswith(prefix):
+        if marker.startswith(prefix):
             return tone
-    if _exit_code_failure(text) or _structured_failure(text):
+    if _exit_code_failure(marker) or _structured_failure(marker):
         return 'failure'
     return 'none'
 

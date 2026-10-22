@@ -212,8 +212,10 @@ the `AUGUST_VERIFIER_REVIEWER` critic were removed by user request.
 `run_command` still surfaces exit codes (zero included) in results.
 
 **Harness budgets & self-correction** — `MAX_MANAGED_TOOL_ROUNDS` defaults to
-**0 = uncapped** (a cap is opt-in via brain-config `maxWorkbenchToolLoops`;
-the "defaults to 25" claim was stale since `38944632`). A turn whose
+**150** (an armed ceiling; brain-config `maxWorkbenchToolLoops` overrides it and
+`0` = uncapped. The "defaults to 25" claim was stale since `38944632`, and the
+`0 = uncapped` default that replaced it was stale as a *safe* default from
+2026-10-22 — see the two-bound note below). A turn whose
 `update_state` phase/step never advances across 8+ stalled rounds gets a
 reflection nudge, then hard-stops. Flat phase/step is **not** proof of
 spinning on its own: argument novelty on the assistant surface and world
@@ -242,26 +244,72 @@ rung per round — bare tool surface, then compaction, then one tool-free answer
 and the turn then ends as `budget`. It is priced through
 `cost_estimator.price_for_model` like everything else, so the budget arm and
 the Usage page cannot disagree; the wall-clock arm is `time.monotonic()`, not
-`time.time()`. Numbers in this file that duplicate code
+`time.time()`. **A server-requested wait above the ceiling is refused, not
+absorbed** (`_retryWaitRefusalMs`): clamping `Retry-After` to 30 s and then
+retrying `maxRetries=10` times turned one stubborn 429 into five minutes of
+sleeping inside a single round — every loop counter frozen, no event to show, and
+a spinner that is really a wait list. Measured both ways with the scripted
+provider: refused turns fail in 0.5 s naming the 3600 s the gateway asked for;
+with the predicate disabled the turn was still asleep at 45 s. Numbers in this file that duplicate code
 constants are guarded by `npm run check:docs`.
 
-**Nothing bounds a turn by default, and that is deliberate — with one opt-in
-backstop.** `MAX_MANAGED_TOOL_ROUNDS` 0 plus the ladder off leaves the stall
-counter as the only bound, and the stall counter resets on argument novelty. A
-model that calls a *different* `(tool, target)` every round — `tool_describe`,
-`brain_query`, `search`, anything taking no path argument — is permanently
-novel, so it never stalls, never gets the reflection nudge, and was bounded
-only by overflowing the context window. `_runawayBudget` counts on **world
-delta alone** (`runawayNudgeRounds` / `runawayStopRounds`; nudge 25, stop 40),
-which neither argument variety nor a flat `update_state` can move; it emits
+**Two bounds are armed by default: a no-progress stop and an absolute ceiling.**
+Until 2026-10-22 nothing bounded a turn at all — `MAX_MANAGED_TOOL_ROUNDS` 0, the
+budget ladder off, and the runaway backstop shipped *disarmed* — and the reported
+symptom was a model that loops forever. The stall counter alone cannot be that
+bound: it resets on argument novelty, so a model that calls a *different*
+`(tool, target)` every round — `tool_describe`, `brain_query`, `search`, anything
+taking no path argument — is permanently novel, so it never stalls and never gets
+the reflection nudge. `_runawayBudget` counts on **world delta alone**
+(`runawayNudgeRounds` / `runawayStopRounds`; nudge 25, stop 40), which neither
+argument variety nor a flat `update_state` can move; it emits
 `recovery {kind: 'runaway'}` and reuses the `stall-stop` reason so the reason
 vocabulary the frontend badge, `turn_outcomes` and these docs all read stays
-unchanged. **An absent key means OFF, not the shipped constants** — a rule that
-ends a turn early is opt-in here, the way `verifierEnforced` was before it was
-removed. Two neighbours it must not be confused with, both pinned by
-`tests/test_runaway_backstop.py`: re-reading one file at shifting offsets is
-caught by the `(tool, target)` polling guard and is *not* the runaway case,
-and a fresh path each round is real progress and resets the counter.
+unchanged. **An absent key means ARMED at those shipped constants; `0` means off**
+and stays writable so an armed ceiling can always be disarmed — the old
+"absent = OFF" rule is what made the bound invisible on an install that never
+opened Settings, and the Settings panel used to render `0 = off` for a backstop
+that was counting rounds. World delta can still be re-armed honestly (a model
+touching a genuinely new path every round *is* working), so the second bound is
+counted on `modelRounds` — requests that actually left the process — not
+`toolRound`, which the self-heal legs decrement with `toolRound -= 1` and which a
+failing model could therefore re-arm indefinitely. At the ceiling the turn spends
+ONE tool-free summary round (`_roundCapFinalFired`, the same shape as the budget
+ladder's last rung) and ends `cap`, so 150 rounds of work are delivered as a
+report instead of vanishing behind an error. The reference harness pi has **no**
+turn bound and trusts the model plus the context window; August keeps its own
+because it runs cheap local models and an unattended Bot path that no human is
+watching. Two neighbours the runaway case must not be confused with: re-reading
+one file at shifting offsets is caught by the `(tool, target)` polling guard and
+is *not* the runaway case, and a fresh path each round is real progress and resets
+the counter — which is exactly what the ceiling exists to bound.
+**The bound was defeated by the harness's own refusal text.** The repeat guardrail
+emits `Blocked: 'x' has failed N times.` while the receipt vocabulary registered
+`[Blocked]` with brackets, so from the 8th failure on every round of a stuck model
+was a receipt that `tool_result_failed`, `receipt_tone`, the durable `is_error` and
+the world-delta credit ALL read as success. The probe measured it: 60 rounds of one
+blocked tool, 52 credited as progress, `turn_end {reason: 'finished'}` at 61 rounds
+after the script ran out. `Blocked:` is now a registered denial and `_marker_form`
+strips one leading capability tag before matching, so `[sandbox:seatbelt] Blocked: …`
+(a denial whose tag must stay first because `CommandOutputPane.tsx`'s regex is
+anchored on it) reads as the refusal it is. The rule this generalises: **a marker
+table has to be checked against every emitter, not just the ones that inspired it** —
+`sandbox/policy.py::as_tool_text` was already writing a tagged denial and had been
+invisible to `is_error` the whole time. Same class as the 400-marker lesson above.
+**Tool arguments are parsed at one door now.** `json_salvage.parse_tool_arguments`
+is strict parse → salvage → `{'_raw': text}`, and the four accumulators that turn
+stream deltas into a tool call route through it. Three of them held a bare
+`json.loads` with no salvage (the Anthropic-native accumulator, the OpenAI→Anthropic
+bridge, and one leg that swallowed into `args = {}` — the exact phantom-argument
+execution the loop documents against), so a Windows path written with one backslash
+failed on the Anthropic wire and succeeded on the OpenAI one for the same model. The
+repair is decided **per string literal**: a body containing an escape JSON cannot
+read proves the model wrote raw backslashes in that value, so every backslash in
+*that* body is doubled, while a body whose escapes are all valid is left alone —
+otherwise the common `write_file` case, a `content` field carrying real `\n`
+escapes, would ship a file full of literal two-character backslash-ns. Stated limit:
+`C:\new\file` is a valid JSON escape sequence and stays a newline; that document also
+parses strictly, so it was never the repair's to touch.
 **A request the provider refuses on shape is repaired, not replayed.** A
 deterministic 400 is already kept out of the retry policy (an identical request
 would fail identically), but that left the harder case: `session.messages` is

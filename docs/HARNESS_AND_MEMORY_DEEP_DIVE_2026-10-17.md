@@ -94,6 +94,16 @@ The only default bound is the stall detector, and it resets on argument novelty 
 world delta — so a model that calls a *different* no-path tool every round never trips
 it. That is a deliberate, documented trade (`AGENTS.md:106-122`), not an oversight.
 
+> **SUPERSEDED 2026-10-22.** That paragraph was true on the date of this dive, and the
+> paragraph it described is what the owner then hit: a model did loop forever, because
+> the trade was deliberate and nothing was armed. Two bounds are now armed by default —
+> the world-delta backstop at nudge 25 / stop 40, and a 150-round ceiling counted on
+> requests actually sent rather than on `toolRound` (which the self-heal legs
+> decrement, so a failing model could re-arm it). The "resets on world delta" hole in
+> the last sentence was real twice over: a *failed* call used to credit a new path, so
+> guessing at filenames was "progress". See `AGENTS.md` "Two bounds are armed by
+> default". The budget ladder is still off by default.
+
 Context assembly: the system prompt is built **once** per turn (`:2710`) and only
 rebuilt on surface/mode change. Volatile content — the memory block, the profile lane,
 relevant skills, the code map, session state — is appended to the **last user message**
