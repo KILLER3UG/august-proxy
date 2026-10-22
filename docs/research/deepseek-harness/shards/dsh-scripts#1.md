@@ -728,13 +728,13 @@ The cluster that a harness research effort should care most about is **not** the
 - Key abstractions: n/a.
 - Data flow: fed to the translation prompt as a few-shot example.
 - Non-obvious design decisions: the headings are Problem/Decision/Consequences — the same shape across examples so the model learns consistency, not per-file quirks.
-- Surprising: the language switcher line `English | [中文](agent-note.zh.md)` is part of the example, so the model learns to emit it.
+- Surprising: the language switcher line `English | `` [中文](agent-note.zh.md) ``` is part of the example, so the model learns to emit it.
 
 ### scripts/fixtures/translation-prompt/examples/agent-note.zh.md
 - Purpose: The Chinese counterpart of the example Agent Note.
 - Key abstractions: n/a.
 - Data flow: the paired side of the few-shot example.
-- Non-obvious design decisions: the switcher is flipped (`[English](agent-note.md) | 中文`) — the example teaches the *asymmetry* of the switcher.
+- Non-obvious design decisions: the switcher is flipped (``` [English](agent-note.md) `` | 中文`) — the example teaches the *asymmetry* of the switcher.
 
 ### scripts/fixtures/translation-prompt/examples/product.md
 - Purpose: Product README example for the translation prompt.

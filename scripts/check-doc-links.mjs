@@ -34,10 +34,24 @@ function findMarkdownFiles(dir, depth = 0) {
 
 function extractRelativeLinks(content) {
   const links = [];
+  /* Code spans and fenced blocks are PROSE, not navigation: a research note
+   * quoting the link syntax it is describing — `[x](dsh-session:…)`, a
+   * PowerShell `[System.Uri](Join-Path …)` — writes those as examples, and
+   * CommonMark renders a code span literally. The first version scanned raw
+   * text, so 22 quoted examples in the research shards read as 22 broken
+   * navigation links and the gate cried wolf on files whose links all work. */
+  const prose = content
+    /* A run of N backticks opens a span that closes at the NEXT run of N —
+       CommonMark's own rule. A naive single-backtick pattern mis-pairs on
+       ```...``` quotes (two research shards quote link syntax inside
+       double-backtick spans), which re-exposed exactly the links the strip
+       existed to skip. */
+    .replace(/(`{3,})[\s\S]*?\1/g, (m) => ' '.repeat(m.length))
+    .replace(/(`+)[^`]*?\1/g, (m) => ' '.repeat(m.length));
   // Match [text](path) and [text](path "title")
   const regex = /\[([^\]]*)\]\(([^)]+)\)/g;
   let match;
-  while ((match = regex.exec(content)) !== null) {
+  while ((match = regex.exec(prose)) !== null) {
     const target = match[2].split('#')[0].split(' ')[0]; // Strip anchors and titles
     if (target && !target.startsWith('http') && !target.startsWith('mailto:') && !target.startsWith('<')) {
       links.push(target);

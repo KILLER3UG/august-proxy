@@ -627,7 +627,7 @@ The plan strip's geometry: a menu-surface panel inset by the shared dock inset f
 ### packages/client/ui-conversation/src/client/user-text/session-reference-rule.ts
 - Purpose: the Session-reference matcher — original-text candidates with explicit wire spelling and longest known labels.
 - Key abstractions: `sessionReferenceRule` (id `'session'`, order 10); the `session` entry in `UserTextDataMap`; the `sessionLabels` fact.
-- Data flow: the rule scans forward from `from` for `@`; at each position it first tries the explicit wire form `@[label](dsh-session:id)`, then the supplied labels.
+- Data flow: the rule scans forward from `from` for `@`; at each position it first tries the explicit wire form `` `@`` [label](dsh-session:id) `` ``, then the supplied labels.
 - Non-obvious design decisions: the wire form is matched with a **sticky, anchored** regex (`/…/uy`) at each `@` position, so a wire reference inside a path is not mis-read. Among overlapping supplied labels the **longest** wins (`packages/client/ui-conversation/src/client/user-text/session-reference-rule.ts:31-37`).
 - Edge cases / failure handling: the labels fact is read **once** per match call and only when needed (`readLabels` guard), so a document with no `@` never touches the fact.
 - Surprising: the rule returns the *whole wire form* as the node's range but only the bracketed label as its data — the original text is preserved verbatim while the UI shows the friendly name.

@@ -1106,7 +1106,7 @@ This shard is the **repository's verification and release-orchestration layer** 
 - Key abstractions: a single object with two keys — `request` (`targetFilename` plus the `messages` array) and `response` (the three parsed sections with the corrected switcher).
 - Data flow: written by `verify-translation-prompt.ts --snapshot` and compared by `translation-prompt.expected.spec.ts` through `toMatchFileSnapshot`.
 - Non-obvious design decisions: the golden contains the **whole** rendered system prompt (the committed `docs/i18n/translation-prompt.md` body) plus three user/assistant gold-pair turns and the source document — so a change to the prompt text is a visible diff in this file, not a silent behaviour change. The examples are synthetic fixtures (`scripts/fixtures/translation-prompt/examples/*`), so editing a real paired document does not churn this golden.
-- Edge cases / failure handling: the response's `final` body carries the corrected language switcher `[English](snapshot-note.md) | 中文` and the YAML frontmatter, both asserted in `verify-translation-prompt.ts:75`.
+- Edge cases / failure handling: the response's `final` body carries the corrected language switcher ``` [English](snapshot-note.md) `` | 中文` and the YAML frontmatter, both asserted in `verify-translation-prompt.ts:75`.
 - Surprising: the golden is the *only* place the full prompt text is pinned twice (once as a document, once as a rendered request), so a prompt edit cannot pass by changing only one of the two.
 
 ### scripts/snapshots/python-sdk-single-exe/* (30 files)

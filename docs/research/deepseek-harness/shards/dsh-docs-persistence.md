@@ -1770,7 +1770,7 @@ structural, generated, or mirrored content whose substance is stated above.
 - `docs/user/index.zh.md` — the Chinese landing page: the same
   `layout: false` frontmatter and the same `meta http-equiv: refresh` to
   `./guide/quickstart`, differing from the English file only in the
-  `[English](index.md) | 中文` switch line.
+  `` `[English](index.md)` | 中文 `` switch line.
 
 ## Ideas worth stealing
 

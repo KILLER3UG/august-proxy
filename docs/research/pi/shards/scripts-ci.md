@@ -140,7 +140,7 @@ This shard is the **machinery around the agent**, not the agent: 121 files that 
 - The same two lines for the per-user npm config directory.
 
 ### .pi/prompts/cl.md
-- The changelog-audit prompt: find the last tag, list the commits, check each package's `[Unreleased]` section, and enforce the **cross-package duplication rule** (a change in `ai`/`agent`/`tui` that affects users must also appear in `coding-agent`). It also specifies the entry format for external contributions (`Description ([#N](url) by [@user](url))`) and proposes a `### New Features` section *for confirmation before writing it*.
+- The changelog-audit prompt: find the last tag, list the commits, check each package's `[Unreleased]` section, and enforce the **cross-package duplication rule** (a change in `ai`/`agent`/`tui` that affects users must also appear in `coding-agent`). It also specifies the entry format for external contributions (`Description (`` [#N](url) `` by `` [@user](url) ``)`) and proposes a `### New Features` section *for confirmation before writing it*.
 
 ### .pi/prompts/deslop.md
 - Purpose: simplify a finished workpackage without changing behaviour — with a hard human gate in front of any significant removal.

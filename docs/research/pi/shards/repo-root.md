@@ -342,7 +342,7 @@ This shard is pi's **repository-level contract layer** — the files that decide
 ### pi-test.ps1
 - Purpose: runs pi from TypeScript source on Windows, with an optional credential scrub.
 - Key abstractions: the `--no-env` flag and the list of 36 environment variables it removes (every major provider key, the OAuth tokens, `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`/`GITHUB_TOKEN`, `HF_TOKEN`, the Google Cloud variables, the whole AWS family including `AWS_BEARER_TOKEN_BEDROCK` and the ECS/web-identity URIs, and the Azure OpenAI triple).
-- Data flow: `node --import $resolverUrl $cliPath @forwardArgs`, where `$resolverUrl` is `[System.Uri](Join-Path …).AbsoluteUri` — a file URL, "because Windows paths are not specifiers".
+- Data flow: `node --import $resolverUrl $cliPath @forwardArgs`, where `$resolverUrl` is `` `[System.Uri](Join-Path …).AbsoluteUri` `` — a file URL, "because Windows paths are not specifiers".
 - Non-obvious design decisions: the credential list is **explicit and enumerated** rather than "unset everything that looks like a key" — it is a maintained list, so a new provider's variable must be added to three files (`pi-test.sh`, `pi-test.ps1`, and the ai package's `env-api-keys.ts`, which the comment at `pi-test.sh:18` cites).
 - Edge cases / failure handling: `Remove-Item -Path "Env:$name" -ErrorAction SilentlyContinue` so a variable that was never set is not an error; the script captures `$LASTEXITCODE` and exits with it.
 - Surprising: the same script is both the *developer entry point* and the *no-credentials safety mode* — one flag separates "run pi locally" from "run pi with a clean environment".

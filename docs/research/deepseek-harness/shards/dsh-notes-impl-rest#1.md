@@ -993,7 +993,7 @@ This shard is **the entire `implemented` Agent-Note corpus of the deepseek-harne
 - Data flow: source types → normalized model → catalog + inventory + digests → per-root acknowledgements → accepted checkpoint preservation.
 - Non-obvious design decisions: "Source locations, alias names, ordinary comments, and property order are presentation details outside the digest"; historical records retain source file paths without line numbers because their source trees differ from the current checkout; referenced and recursive types participate in structural comparison while opaque values retain explicit coverage limits.
 - Edge cases / failure handling: a digest detects a difference but cannot explain whether it adds optional data or changes an existing property — which is why the catalog carries the *normalized* model, not just hashes; regenerating a catalog does not establish that the author reviewed the consequences.
-- Surprising: the note was later superseded on one point — "The [reader-compatibility review decision](2026-10-08-session-reader-compatibility-review.md) supersedes the automatic version floor" — and says so in its own text, which is exactly the "keep the note current" discipline the corpus AGENTS.md demands.
+- Surprising: the note was later superseded on one point — "The `[reader-compatibility review decision](2026-10-08-session-reader-compatibility-review.md)` supersedes the automatic version floor" — and says so in its own text, which is exactly the "keep the note current" discipline the corpus AGENTS.md demands.
 
 ### .agents/notes/implemented/process/2026-09-11-persistence-type-history.zh.md
 - Chinese twin; its 问题 states that a digest detects change but cannot explain it.

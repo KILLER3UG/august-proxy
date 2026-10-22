@@ -378,7 +378,7 @@ This shard is the **September 2026 wave of frozen `feature`-class Agent Notes** 
 
 ### The 46 Simplified-Chinese counterparts (`.zh.md`)
 
-Each file below is the paired Chinese side of the English note named in its opening `[English](…) | 中文` switcher. All 46 are `Status: implemented`, carry the same `Archived:` line, and reproduce the English note's section structure one-to-one; the mechanism itself is documented in the English file above, so these notes record what is specific to *this* file. Code identifiers, file paths, config keys and error codes are left verbatim in every case.
+Each file below is the paired Chinese side of the English note named in its opening ``` [English](…) `` | 中文` switcher. All 46 are `Status: implemented`, carry the same `Archived:` line, and reproduce the English note's section structure one-to-one; the mechanism itself is documented in the English file above, so these notes record what is specific to *this* file. Code identifiers, file paths, config keys and error codes are left verbatim in every case.
 
 - `.agents/notes/archived/feature/2026-09-01-workflow-run-in-background.zh.md` — faithful Chinese rendering; section headers translated (问题/决策/曾考虑的替代方案/后果); the H1 uses a fullwidth colon (`# Agent Note：…`) and the title translates "run" as 任务注册表.
 - `.agents/notes/archived/feature/2026-09-05-sidebar-text-preview-and-file-tree.zh.md` — the largest counterpart (23 KB, 126 lines mirroring the English); section headers left in English; every locale string pair is reproduced in the file (e.g. 「正在读取…」/ "Reading…", 「空目录」/ "Empty directory"), so this file is also the authoritative record of the tree's 13-key `sidebarFiles` namespace.

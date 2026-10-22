@@ -714,7 +714,7 @@ This shard is the **frozen `process/` half of DeepSeek Harness's archived Agent 
 
 ### Chinese mirrors (`.zh.md`)
 
-All 86 are faithful, equal-authority Chinese renderings of the English note of the same stem, with the identical `Status: implemented` / `Archived: <date>` header, the same `English | [中文](…)` switcher, the same section skeleton, and the same cross-links (with `.zh.md` targets for Chinese-side links). The archive rule in `AGENTS.md` says these are frozen; none may be edited or re-translated. Per-file specifics:
+All 86 are faithful, equal-authority Chinese renderings of the English note of the same stem, with the identical `Status: implemented` / `Archived: <date>` header, the same `English | `[中文](…)`` switcher, the same section skeleton, and the same cross-links (with `.zh.md` targets for Chinese-side links). The archive rule in `AGENTS.md` says these are frozen; none may be edited or re-translated. Per-file specifics:
 
 - `.agents/notes/archived/process/2026-06-11-doc-sync-enforcement.zh.md` — 问题/决策/曾考虑的替代方案/后果; 决策 opens with "两道门禁，沿用既有的 `scripts/` 风格（tsx ESM，每个脚本一项职责）" and lists `doc-typecheck` and `verify-event-taxonomy` plus the 2026-06-17 `verify-md-wrap` amendment.
 - `.agents/notes/archived/process/2026-06-11-quality-gates.zh.md` — 问题/决策/后果; the 决策 enumerates max-strict TS, Oxlint, jscpd, per-file 100% coverage, publint and the NodeNext consumer typecheck; ends with the same `<!-- agent-note-format: alternatives-not-recorded (pre-format Agent Note) -->` grandfather marker.

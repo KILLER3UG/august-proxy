@@ -557,7 +557,7 @@ Chinese translation of the session-reference reference.
 ### packages/context/session-reference/src/uri.ts
 - Purpose: the canonical session URI and the inline mention codec.
 - Key abstractions: `SESSION_REFERENCE_SCHEME = 'dsh-session:'`, `encodeSessionReferenceUri`, `decodeSessionReferenceUri`, `formatSessionReferenceMention`, `parseSessionReferenceText`.
-- Data flow: session id → `base64url(JSON.stringify(id))` → `dsh-session:<payload>` → the host inserts `@[label](uri)` → the parser rewrites it to `@label` and records the structured reference.
+- Data flow: session id → `base64url(JSON.stringify(id))` → `dsh-session:<payload>` → the host inserts `@`` [label](uri) ``` → the parser rewrites it to `@label` and records the structured reference.
 - Non-obvious design decisions: the decoder **re-encodes** the decoded id and refuses the URI if it does not match byte for byte (uri.ts:36-37) — a canonical form is a property of the bytes, not of the parse. Bare text is only treated as a reference when it has a non-empty base64url-shaped payload, and then it must still be canonical.
 - Edge cases / failure handling: an explicit Markdown mention with a malformed URI fails loudly; an empty or punctuation-only scheme mention stays ordinary discussion text.
 - Surprising: every JavaScript string session id round-trips exactly, because the id is JSON-encoded rather than concatenated into the URI.
