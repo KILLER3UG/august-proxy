@@ -152,6 +152,51 @@ details[open] > summary .disclosure-chevron {
   display: none !important;
 }
 
+/* Effort slider in the composer model card. The reference's track is a
+ * green→blue gradient with a white knob; the four effort levels are the
+ * stops, so the native range keeps keyboard and screen-reader behavior. */
+.model-effort-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 7px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #2bd6a3 0%, #37b7ff 100%);
+  outline: none;
+  cursor: pointer;
+}
+
+.model-effort-slider:focus-visible {
+  box-shadow: 0 0 0 2px hsl(var(--dt-ring-hsl, 223 71% 49%) / 0.35);
+}
+
+.model-effort-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 9999px;
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.45);
+  cursor: pointer;
+}
+
+.model-effort-slider::-moz-range-track {
+  height: 7px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #2bd6a3 0%, #37b7ff 100%);
+}
+
+.model-effort-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 9999px;
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.45);
+  cursor: pointer;
+}
+
 /* 5. Thinking indicator animations */
 /* `.thinking-text` / `.thinking-label` / `.thinking-dots` are the live ones
  * (ThinkingDisclosure and the tool rows).
@@ -1507,7 +1552,7 @@ details[open] > summary .disclosure-chevron {
   font-size: 0.8125rem;
   line-height: 1.6;
   color: color-mix(in srgb, var(--dt-muted-foreground) 82%, transparent);
-  font-style: italic;
+  font-style: normal;
 }
 .thought-summary-toggle {
   flex-shrink: 0;

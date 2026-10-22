@@ -63,6 +63,9 @@ export interface AggregatedModel {
   contextWindow?: number;
   supportsReasoning?: boolean;
   supportsThinking?: boolean;
+  /** True when the catalog advertises image input; the picker renders a
+   *  "Vision" pill only when this is present. */
+  vision?: boolean;
   isFree?: boolean;
   pinned?: boolean;
   /** USD per 1M tokens as the usage page bills (env → model → free → family

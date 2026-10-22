@@ -68,6 +68,7 @@ export function useChatModels(sessionId: string | null, activeSession: Session |
         pinned: m.pinned,
         supportsReasoning: !!(m.supportsReasoning || likely),
         supportsThinking: !!(m.supportsThinking || likely),
+        vision: m.vision === true,
         // Metadata the picker renders per row. The price is the one the usage
         // page bills at (server-resolved, `~` when estimated); absent is not 0,
         // so these pass `null` through untouched rather than defaulting.

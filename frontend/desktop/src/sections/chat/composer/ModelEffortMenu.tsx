@@ -1,35 +1,38 @@
 /* ── Combined model + effort menu ─────────────────────────────────────── */
-/* Reference-style picker: ONE combined dropdown. Provider names are group
- * headers, and each provider's models sit directly beneath it — no two-step
- * provider-then-flyout. The search field filters across every provider at
- * once (ids use `-`,`_`,`/`,`:` where a person types a space, so both sides
- * collapse the same way). The effort chip keeps its own small pane.
+/* Two-card picker, matching the reference:
  *
- * The previous layout was a provider list whose hover revealed a SEPARATE
- * flyout card beside the panel. The reference shows provider-over-model in a
- * single view, which is both fewer moving parts and the layout the shared
- * groupModelsByProvider() helper already produces. */
+ *   ┌──────────────────────────────┐ ┌──────────────────┐
+ *   │ provider mark  Provider  API >│ │ OpenCode GO  API ✓│
+ *   │ Models                       │ │ OpenCode ZEN API  │
+ *   │   model id          Vision ✓ │ │ …                 │
+ *   │ Effort  Max          Ctrl+T   │ │ New provider API  │
+ *   │   ─────────────●             │ │ ───────────────── │
+ *   │                              │ │ Manage models     │
+ *   └──────────────────────────────┘ └──────────────────┘
+ *
+ * The left card is the active provider's model list plus the effort slider.
+ * The right card is the provider rail, opened from the header chevron. The
+ * old single-list-with-inline-provider-headers layout is gone: the reference
+ * separates the two decisions, so the provider rail can stay open while the
+ * model list changes underneath it.
+ *
+ * The model list intentionally shows the raw id (as the reference does) and
+ * no price/wire/context metadata; those remain in the expanded model settings
+ * and in each row's title. The effort pane (the small chip beside the model
+ * chip) keeps the extended-thinking switch; the slider in the model card is
+ * the same effort state.
+ */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, Gauge, Pin, RefreshCw, Search, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Gauge, Search, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { chipTrigger, menuPanel, menuItem } from '@/lib/motion';
-import { providersApi } from '@/api/providers';
-import { refreshProviderCatalog } from '@/lib/provider-catalog';
+import { Button } from '@/components/ui/button';
+import { chipTrigger, menuFlyout, menuPanel } from '@/lib/motion';
+import { groupModelsByProvider, modelMatchesQuery } from '@/components/model/modelList';
 import type { ModelItem } from '../model-display';
-import { groupModelsByProvider } from '@/components/model/modelList';
-import {
-  formatContextWindow,
-  modelDisplayParts,
-  modelFormatLabel,
-  modelFormatNote,
-  modelPriceLabel,
-  priceSourceNote,
-} from '../model-display';
+import { modelDisplayParts } from '../model-display';
 import type { EffortLevel } from '../hooks/useChatSend';
 
 const EFFORT_OPTIONS: {
@@ -43,13 +46,7 @@ const EFFORT_OPTIONS: {
   { value: 'max', label: 'Max', triggerLabel: 'Max' },
 ];
 
-/** Chip label: `Provider · Model`. It used to print `Provider/model-id`, which
- *  truncated an identifier mid-id ("KiloCode/ox-alpha-free" → "KiloCode/ox-alp…")
- *  while every list in the very popover it opens said "Ox Alpha Free". The exact
- *  id stays available on hover, and in each row's tooltip. */
-/** The tier word a chip has room for: `poolside:Free` → `Free`; a tag that is
- *  only a vendor slug (`poolside`) → nothing; a bare `Free` from an id that
- *  carries no prefix → `Free`. */
+/** Chip label: `Provider · Model`, kept from the composer's existing contract. */
 function chipVariant(model: ModelItem, tag: string): string {
   if (!tag) return '';
   const colon = tag.indexOf(':');
@@ -60,23 +57,13 @@ function chipVariant(model: ModelItem, tag: string): string {
 export function chipModelLabel(model: ModelItem | null): string {
   if (!model) return 'Model';
   const { name, tag } = modelRowLabel(model);
-  // The chip has room for the tier, not the vendor slug — that is what the panel
-  // header and each row's own badge are for, and
-  // "KiloCode · Step 3.7 Flash stepfun:Free" overflowed it.
   const variant = chipVariant(model, tag);
   const label = variant ? `${name} (${variant})` : name;
   const raw = model.provider ? `${model.provider} · ${label}` : label;
   return raw.length > 34 ? `${raw.slice(0, 32)}…` : raw;
 }
 
-/** Row label: the catalog's friendly name when it carries one, else the
- *  prettified id with its variant split into a tag (the rule the model lists
- *  and the idle dropdown already use). `m.name` alone is not enough —
- *  `useChatModels` sets `name = name || id`, so it can still be an identifier.
- *
- *  The provider prefix is stripped from `tag` when it duplicates the group
- *  header: "Sonnet 4 5 / anthropic" under an "Anthropic" header says the same
- *  thing twice. */
+/** Row label for the trigger chip; the panel itself prints the raw id. */
 function modelRowLabel(model: ModelItem): { name: string; tag: string } {
   if (model.name && model.name !== model.id) return { name: model.name, tag: '' };
   const parts = modelDisplayParts(model.id || model.name);
@@ -88,49 +75,35 @@ type PaneKind = 'models' | 'effort';
 
 /** Composer-anchored panels: positioned by their BOTTOM edge (CSS bottom +
  *  clamped maxHeight) so short lists hug the chip instead of floating far
- *  above it. */
+ *  above it. The provider rail is positioned by its TOP edge after the model
+ *  card has rendered, so it can extend below it like the reference. */
 type PanelPos = { left: number; bottom: number; maxHeight: number };
+type ProviderPos = { left: number; top: number; maxHeight: number };
 
-/** 320 rather than 280 since the rows carry their own metadata line: the wire
- *  leaf ("chat/completions") is the identifier a 400 sends people looking for,
- *  and at 280 it truncated to "chat/completi…" — the fact the row exists to
- *  show, cut in half. The panel is still a modest floating card. */
-const MODELS_PANEL_W = 320;
-/** Ideal heights — panels render shorter than these when room is tight. The
- *  models panel keeps ~11 rows visible: rows are two lines since they carry
- *  their price/wire-format metadata, so the height that used to show 13
- *  single-line rows shows five. `anchorAbove` clamps it to the space above the
- *  chip either way, and the list scrolls internally. */
+const MODELS_PANEL_W = 304;
 const MODELS_PANEL_H = 520;
+const MODELS_PANEL_MIN_H = 216;
+const PROVIDER_PANEL_W = 184;
 const EFFORT_PANEL_H = 150;
 const EFFORT_PANEL_W = 264;
-
 /** Gap between the panel's bottom edge and the trigger chip. */
 const PANEL_GAP = 8;
 /** Viewport margin kept clear above/below a panel. */
 const VIEWPORT_MARGIN = 8;
 /** Never shrink below this — the list scrolls internally instead. */
 const MIN_PANEL_H = 96;
-/** Ceiling on rendered search hits per provider, so a one-letter query cannot
- *  mount hundreds of rows; `hidden` tells the user what the cap dropped. */
-const SEARCH_RESULT_CAP = 80;
 
 function clampLeft(left: number, w: number): number {
-  return Math.max(8, Math.min(left, window.innerWidth - w - 8));
+  return Math.max(VIEWPORT_MARGIN, Math.min(left, window.innerWidth - w - VIEWPORT_MARGIN));
 }
 
 /**
  * Bottom-edge anchoring (Zed/Cursor style): the panel's bottom edge sits
  * PANEL_GAP above the chip's top and the panel grows upward only as far
- * as the viewport allows. Returns a CSS `bottom` plus a clamped
- * `maxHeight`, so the visible height follows the CONTENT (short provider
- * lists stay next to the composer) instead of reserving the full ideal
- * height deep inside the transcript.
+ * as the viewport allows.
  */
 function anchorAbove(chipTop: number, idealH: number): { bottom: number; maxHeight: number } {
   const wantedBottomEdge = chipTop - PANEL_GAP;
-  // Clamp the bottom edge into the viewport; the lower bound keeps at least
-  // MIN_PANEL_H usable above the margin even when the chip sits near the top.
   const bottomEdge = Math.max(
     MIN_PANEL_H + VIEWPORT_MARGIN,
     Math.min(wantedBottomEdge, window.innerHeight - VIEWPORT_MARGIN),
@@ -139,6 +112,34 @@ function anchorAbove(chipTop: number, idealH: number): { bottom: number; maxHeig
     bottom: window.innerHeight - bottomEdge,
     maxHeight: Math.max(MIN_PANEL_H, Math.min(idealH, bottomEdge - VIEWPORT_MARGIN)),
   };
+}
+
+function ProviderMark({ provider }: { provider: string }) {
+  const initial = provider.trim().charAt(0).toUpperCase() || 'P';
+  return (
+    <span
+      className="flex size-[18px] shrink-0 items-center justify-center rounded-[5px] border border-border/60 bg-muted/50 text-[0.625rem] font-semibold leading-none text-foreground/75"
+      aria-hidden
+    >
+      {initial}
+    </span>
+  );
+}
+
+function ApiBadge() {
+  return (
+    <span className="shrink-0 rounded-[3px] border border-border/60 px-1 py-[1px] text-[0.5rem] font-medium uppercase tracking-[0.06em] leading-3 text-muted-foreground/70">
+      API
+    </span>
+  );
+}
+
+function VisionBadge() {
+  return (
+    <span className="shrink-0 rounded-[4px] bg-muted/70 px-1.5 py-[1px] text-[0.5625rem] leading-4 text-muted-foreground/80">
+      Vision
+    </span>
+  );
 }
 
 function ThinkingSwitch({
@@ -199,38 +200,83 @@ export function ModelEffortMenu({
   const [pane, setPane] = useState<PaneKind | null>(null);
   const [modelsPos, setModelsPos] = useState<PanelPos | null>(null);
   const [effortPos, setEffortPos] = useState<PanelPos | null>(null);
-  // Model-name search, applied INSIDE groupModelsByProvider so a query filters
-  // the grouped layout rather than replacing it with a separate flat list.
+  const [providerPos, setProviderPos] = useState<ProviderPos | null>(null);
+  const [showProviders, setShowProviders] = useState(false);
+  const [activeProvider, setActiveProvider] = useState('');
   const [query, setQuery] = useState('');
-  // Which provider groups are collapsed. A click on a provider header folds
-  // its models away (the reference lets you collapse a provider to scan the
-  // rest); clicking again reopens. While searching, collapse is disabled —
-  // filtering already narrows the list, and folding a match out of sight would
-  // fight the query.
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-  const toggleCollapsed = useCallback((provider: string) => {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(provider)) next.delete(provider);
-      else next.add(provider);
-      return next;
-    });
-  }, []);
-  const searchRef = useRef<HTMLInputElement>(null);
+
   const modelChipRef = useRef<HTMLButtonElement>(null);
   const effortChipRef = useRef<HTMLButtonElement>(null);
   const modelsPanelRef = useRef<HTMLDivElement>(null);
-  // The effort panel lives OUTSIDE modelsPanelRef in the portal — without its
-  // own ref, mousedown on a row inside it would hit the outside-click handler
-  // and close the menu before the click could land.
   const effortPanelRef = useRef<HTMLDivElement>(null);
+  const providerPanelRef = useRef<HTMLDivElement>(null);
 
-  // ── Keyboard: roving focus through the open panel ──────────────────────
-  // Every row here was mouse-only: ArrowDown did nothing and Tab walked out
-  // of the menu entirely, which made the highest-frequency picker in the
-  // composer unusable without a pointer. With provider headers inline, focus
-  // simply walks the painted rows in order — provider header, its models, the
-  // next provider — so there is no second panel to coordinate.
+  const groups = useMemo(() => groupModelsByProvider(visibleModels), [visibleModels]);
+  const activeGroup =
+    groups.find((g) => g.provider === activeProvider) ?? groups[0] ?? null;
+  const activeProviderName = activeGroup?.provider ?? '';
+  // Preserve the provider's own model order in this picker. The shared
+  // grouper sorts (pinned/free/name) for the settings surfaces; the reference
+  // keeps the catalog order here.
+  const activeModels = useMemo(
+    () => visibleModels.filter((m) => m.provider === activeProviderName),
+    [activeProviderName, visibleModels],
+  );
+  const searching = query.trim().length > 0;
+  // Search is cross-provider: the model id the user types may live under a
+  // provider whose rail is not the active one. The results keep the catalog's
+  // order and show the provider on the row.
+  const searchResults = useMemo(
+    () => (searching ? visibleModels.filter((m) => modelMatchesQuery(m, query)) : []),
+    [query, searching, visibleModels],
+  );
+
+  const effortIndex = Math.max(
+    0,
+    EFFORT_OPTIONS.findIndex((o) => o.value === effort),
+  );
+  const effortOpt = EFFORT_OPTIONS[effortIndex] ?? EFFORT_OPTIONS[1];
+
+  const cycleEffort = useCallback(() => {
+    const next = EFFORT_OPTIONS[(effortIndex + 1) % EFFORT_OPTIONS.length];
+    if (next) onEffortChange(next.value);
+  }, [effortIndex, onEffortChange]);
+
+  const openModels = useCallback(() => {
+    if (pane === 'models') {
+      setPane(null);
+      return;
+    }
+    const preferred =
+      selected && groups.some((g) => g.provider === selected.provider)
+        ? selected.provider
+        : groups[0]?.provider ?? '';
+    setActiveProvider(preferred);
+    setShowProviders(false);
+    setQuery('');
+    setPane('models');
+  }, [groups, pane, selected]);
+
+  const openEffort = useCallback(() => {
+    setPane((current) => (current === 'effort' ? null : 'effort'));
+  }, []);
+
+  const closeAll = useCallback(() => {
+    setPane(null);
+  }, []);
+
+  const toggleProviders = useCallback(() => {
+    if (!showProviders) {
+      const needed = MODELS_PANEL_W + 2 + PROVIDER_PANEL_W;
+      setModelsPos((prev) => {
+        if (!prev) return prev;
+        const maxLeft = window.innerWidth - needed - VIEWPORT_MARGIN;
+        return { ...prev, left: Math.max(VIEWPORT_MARGIN, Math.min(prev.left, maxLeft)) };
+      });
+    }
+    setShowProviders((open) => !open);
+  }, [showProviders]);
+
   const isNavigateTarget = (el: HTMLElement): boolean => {
     if (el.hasAttribute('hidden') || el.getAttribute('aria-hidden') === 'true') return false;
     const style = getComputedStyle(el);
@@ -255,10 +301,12 @@ export function ModelEffortMenu({
   };
 
   const onPanelKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    // The search field is INSIDE the panel, and its arrows belong to text
-    // editing (Home/End to the caret). Without this the roving focus swallowed
-    // the key and moved out of the field the user was typing in.
     if ((e.target as HTMLElement).tagName === 'INPUT') return;
+    if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 't') {
+      e.preventDefault();
+      cycleEffort();
+      return;
+    }
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault();
@@ -281,113 +329,15 @@ export function ModelEffortMenu({
     }
   };
 
-  // Move focus into the panel that just opened, and back to the chip that
-  // opened it when it closes. Keyed on the position state as well: the panels
-  // render into a portal and only exist once their coordinates are computed.
-  // `hasOpenedRef` stops the mount run: with `pane === null` on first render
-  // the "restore" branch would fire and yank initial focus into the model
-  // chip, leaving the composer textarea without focus.
-  const hasOpenedRef = useRef(false);
-  useEffect(() => {
-    if (pane) {
-      hasOpenedRef.current = true;
-      const panel = pane === 'models' ? modelsPanelRef.current : effortPanelRef.current;
-      panel?.focus();
-      return;
-    }
-    if (!hasOpenedRef.current) return;
-    hasOpenedRef.current = false;
-    const chip = pane === 'effort' ? effortChipRef.current : modelChipRef.current;
-    chip?.focus();
-  }, [pane, modelsPos, effortPos]);
-
-  const closeAll = useCallback(() => {
-    setPane(null);
-  }, []);
-
-  // Pin/unpin straight from the flyout: resolve the provider entry behind
-  // the aggregated model, flip its `pinned` flag, refresh the catalog.
-  const queryClient = useQueryClient();
-  const { data: providersList } = useQuery({
-    queryKey: ['ws-providers'],
-    queryFn: () => providersApi.list(),
-    staleTime: 30_000,
-  });
-  const toggleModelPin = useCallback(
-    (m: ModelItem) => {
-      const provider = (providersList ?? []).find(
-        (p) => p.name === m.provider && p.models.some((mm) => mm.id === m.id),
-      );
-      if (!provider) return;
-      const entry = provider.models.find((mm) => mm.id === m.id);
-      void providersApi
-        .updateModel(provider.id, m.id, { pinned: !entry?.pinned })
-        .then(() => refreshProviderCatalog(queryClient));
-    },
-    [providersList, queryClient],
-  );
-
-  // Refresh all providers: re-fetches every enabled provider's /models
-  // endpoint, then invalidates the client catalog so this dropdown, the
-  // settings tabs, and the chat composer all show the new list. Gated on
-  // the dropdown being open so it never fires in the background.
-  const refreshAll = useMutation({
-    mutationFn: () => providersApi.refreshAllModels(),
-    onSuccess: async (res) => {
-      const added = res.added ?? 0;
-      const refreshed = res.refreshed ?? 0;
-      const failed = res.failed ?? 0;
-      if (refreshed > 0) {
-        toast.success(
-          `Refreshed models${added ? ` (+${added} new)` : ''} across ${refreshed} provider${refreshed === 1 ? '' : 's'}`,
-        );
-      } else if (failed > 0) {
-        toast.error(`Refresh failed for ${failed} provider${failed === 1 ? '' : 's'}`);
-      } else {
-        toast.message('No changes to model catalog');
-      }
-      await refreshProviderCatalog(queryClient);
-    },
-    onError: (e: unknown) => {
-      toast.error(e instanceof Error ? e.message : 'Refresh failed');
-    },
-  });
-
-  // Provider-grouped catalog, ranked like everywhere else — the shared
-  // primitive, so pinning and provider ordering behave identically in this
-  // composer, the settings dropdown and the visibility modal. The query is
-  // passed INTO the helper, so searching filters the grouped layout (a
-  // provider header disappears only when none of its models match) rather
-  // than flattening it into a separate result list.
-  const groups = useMemo(() => groupModelsByProvider(visibleModels, query), [visibleModels, query]);
-  const searching = query.trim().length > 0;
-  const totalMatches = useMemo(() => groups.reduce((n, g) => n + g.items.length, 0), [groups]);
-
-  // Cap the FLATTENED match count while SEARCHING, so a one-letter query cannot
-  // mount hundreds of rows across every provider. `capped` reports what the cap
-  // held back. Unfiltered (no query) lists are never capped — the full catalog
-  // is the honest default, and the panel scrolls.
-  const cappedGroups = useMemo(() => {
-    if (!searching || totalMatches <= SEARCH_RESULT_CAP) return groups;
-    let remaining = SEARCH_RESULT_CAP;
-    const out: typeof groups = [];
-    for (const g of groups) {
-      if (remaining <= 0) break;
-      const take = g.items.slice(0, remaining);
-      remaining -= take.length;
-      out.push({ ...g, items: take });
-    }
-    return out;
-  }, [groups, searching, totalMatches]);
-  const cappedCount = Math.max(0, totalMatches - SEARCH_RESULT_CAP);
-
-  // Position the panel once on open (above the chip, like the reference).
+  // Position the left panel when it opens. The provider rail is measured after
+  // this card renders, so its top can line up with the card's top edge.
   useEffect(() => {
     if (!pane) {
       setModelsPos(null);
       setEffortPos(null);
+      setProviderPos(null);
+      setShowProviders(false);
       setQuery('');
-      setCollapsed(new Set());
       return;
     }
     if (pane === 'models') {
@@ -410,8 +360,44 @@ export function ModelEffortMenu({
         });
       }
       setModelsPos(null);
+      setProviderPos(null);
     }
   }, [pane]);
+
+  useLayoutEffect(() => {
+    if (!showProviders || pane !== 'models' || !modelsPanelRef.current) {
+      setProviderPos(null);
+      return;
+    }
+    const rect = modelsPanelRef.current.getBoundingClientRect();
+    const top = Math.min(
+      Math.max(VIEWPORT_MARGIN, rect.top),
+      Math.max(VIEWPORT_MARGIN, window.innerHeight - 128),
+    );
+    setProviderPos({
+      left: Math.min(
+        rect.right + 2,
+        window.innerWidth - PROVIDER_PANEL_W - VIEWPORT_MARGIN,
+      ),
+      top,
+      maxHeight: Math.max(120, window.innerHeight - top - VIEWPORT_MARGIN),
+    });
+  }, [activeGroup?.provider, pane, showProviders]);
+
+  // Focus the opened panel and restore the chip on close.
+  const hasOpenedRef = useRef(false);
+  useEffect(() => {
+    if (pane) {
+      hasOpenedRef.current = true;
+      const panel = pane === 'models' ? modelsPanelRef.current : effortPanelRef.current;
+      panel?.focus();
+      return;
+    }
+    if (!hasOpenedRef.current) return;
+    hasOpenedRef.current = false;
+    const chip = pane === 'effort' ? effortChipRef.current : modelChipRef.current;
+    chip?.focus();
+  }, [pane, modelsPos, effortPos]);
 
   useEffect(() => {
     if (!pane) return;
@@ -424,6 +410,7 @@ export function ModelEffortMenu({
       if (effortChipRef.current?.contains(target)) return;
       if (modelsPanelRef.current?.contains(target)) return;
       if (effortPanelRef.current?.contains(target)) return;
+      if (providerPanelRef.current?.contains(target)) return;
       closeAll();
     };
     document.addEventListener('mousedown', onDown);
@@ -435,29 +422,24 @@ export function ModelEffortMenu({
   }, [pane, closeAll]);
 
   const modelRow = (m: ModelItem, showProvider = false) => {
-    const isSel = selected?.id === m.id && selected?.provider === m.provider;
-    const { name, tag } = modelRowLabel(m);
-    // The row's second line: what this model will COST and what it will SAY on
-    // the wire. Both were reachable only one screen away (Model settings), which
-    // left the composer unable to answer "which format will this 400-ing model
-    // actually use?" — the question docs/TROUBLESHOOTING.md sends users to check.
-    const price = modelPriceLabel(m);
-    const format = modelFormatLabel(m);
-    // The variant tag already says "Free" for a `…-free` id; printing the cost
-    // chip's "Free" beside it reads "Free Free". Only a free model whose NAME
-    // does not say so needs the chip (a `free` flag on a plainly-named model),
-    // and a disagreement between the two is kept visible rather than hidden —
-    // in that case the chip is a number, not the word.
-    const showPrice = price !== 'Free' || !tag.includes('Free');
+    const isSelected = selected?.id === m.id && selected?.provider === m.provider;
+    const meta = [
+      `${m.provider}/${m.id}`,
+      m.contextWindow > 0 ? `${m.contextWindow.toLocaleString()} tokens` : '',
+      m.apiFormat ? `wire ${m.apiFormat}` : '',
+      m.supportsReasoning ? 'reasoning' : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
     return (
       <div
         key={`${m.provider}/${m.id}`}
-        {...menuItem}
-        role="button"
+        role="menuitem"
         tabIndex={0}
         data-testid="model-option"
-        title={`${m.provider}/${m.id}`}
-        className="group flex w-full cursor-pointer items-center gap-1.5 py-[8px] pl-3 pr-2 text-left text-[0.875rem] hover:bg-muted/50"
+        title={meta}
+        aria-label={`${m.id}${m.vision ? ', vision' : ''}${isSelected ? ', selected' : ''}`}
+        className="group flex min-h-8 w-full cursor-pointer items-center gap-1.5 px-3 py-1.5 text-left text-[0.8125rem] text-foreground/90 transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
         onClick={() => {
           onSelect(m);
           closeAll();
@@ -470,149 +452,93 @@ export function ModelEffortMenu({
           }
         }}
       >
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-foreground">
-            {name}
-            {tag && (
-              <span className="ml-1.5 text-2xs text-muted-foreground/60">{tag}</span>
-            )}
-          </span>
-          {(price || format || m.contextWindow > 0) && (
-            <span className="mt-0.5 flex min-w-0 items-center gap-2 text-2xs leading-4 text-muted-foreground/70">
-              {price && showPrice && (
-                <span
-                  className={cn('shrink-0', price === 'Free' && 'text-success-fg')}
-                  data-testid="model-option-price"
-                  title={priceSourceNote(m)}
-                >
-                  {price}
-                </span>
-              )}
-              {m.contextWindow > 0 && (
-                <span className="shrink-0" title={`${m.contextWindow.toLocaleString()} token context window`}>
-                  {formatContextWindow(m.contextWindow)}
-                </span>
-              )}
-              {/* The wire leaf the provider will actually receive, in mono so it
-                  reads as a path and not as prose. */}
-              {format && (
-                <span
-                  className="min-w-0 truncate font-mono"
-                  data-testid="model-option-format"
-                  title={modelFormatNote(m)}
-                >
-                  {format}
-                </span>
-              )}
-            </span>
-          )}
-        </span>
-        {showProvider && (
-          <span className="max-w-[38%] shrink-0 truncate text-2xs text-muted-foreground">
+        <span className="min-w-0 flex-1 truncate">{m.id || m.name}</span>
+        {showProvider ? (
+          <span className="max-w-[34%] shrink-0 truncate text-2xs text-muted-foreground/60">
             {m.provider}
           </span>
-        )}
-        <button
-          type="button"
-          title={m.pinned ? 'Unpin' : 'Pin'}
-          aria-label={m.pinned ? 'Unpin' : 'Pin'}
-          onClick={(e) => {
-            e.stopPropagation();
-            toggleModelPin(m);
-          }}
-          className={cn(
-            'shrink-0 cursor-pointer',
-            m.pinned
-              ? 'text-primary'
-              : 'text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground',
-          )}
-        >
-          <Pin className="size-3" />
-        </button>
-        {isSel && <Check className="size-3 shrink-0 text-primary" />}
+        ) : null}
+        {m.vision ? <VisionBadge /> : null}
+        {isSelected ? <Check className="size-3.5 shrink-0 text-foreground/80" /> : null}
       </div>
     );
   };
 
-  const effortOpt = EFFORT_OPTIONS.find((o) => o.value === effort) || EFFORT_OPTIONS[1];
+  const providerRow = (provider: string) => {
+    const isActive = provider === activeProviderName;
+    return (
+      <button
+        key={provider}
+        type="button"
+        role="menuitemradio"
+        aria-checked={isActive}
+        data-testid={`provider-group-${provider}`}
+        onClick={() => setActiveProvider(provider)}
+        className={cn(
+          'flex h-8 w-full items-center gap-2 px-3 text-left text-[0.8125rem] transition-colors',
+          isActive
+            ? 'text-foreground'
+            : 'text-muted-foreground/85 hover:bg-muted/40 hover:text-foreground',
+        )}
+      >
+        <span className="min-w-0 flex-1 truncate">{provider}</span>
+        <ApiBadge />
+        {isActive ? <Check className="size-3.5 shrink-0 text-foreground/80" /> : null}
+      </button>
+    );
+  };
+
   const modelsOpen = pane === 'models' && modelsPos !== null;
   const effortOpen = pane === 'effort' && effortPos !== null;
+  const providersOpen = modelsOpen && showProviders && providerPos !== null;
 
   return (
     <>
-      {/* One visual control with two accessible choices: model and effort. Claude
-         draws this as plain text on its footer line — model at normal weight,
-         effort lighter — and Haze fills the whole thing as one pill. It used to
-         be a segmented `bg-muted/30` plate with a hover panel per half, which is
-         the loudest of the three and matched none of them. KiloCode does use two
-         pills, which is why the two triggers stay separate; only the surface
-         changed. */}
       <div className="inline-flex min-w-0 shrink-0 items-center gap-1" data-testid="model-effort-control">
-      <motion.button
-        ref={modelChipRef}
-        type="button"
-        {...chipTrigger}
-        onClick={() => (pane === 'models' ? closeAll() : setPane('models'))}
-        className={cn(
-          'relative inline-flex items-center gap-1 text-[0.75rem] outline-none cursor-pointer h-6 max-w-[220px]',
-          'text-foreground/85 hover:text-foreground transition-colors duration-200',
-          'rounded-md px-1.5 py-0.5 hover:bg-muted/50',
-          /* Chevron hidden at rest. The Claude reference is a non-hovered
-             capture and shows no affordance beside the model name; revealing it
-             on hover/focus keeps the control discoverable without putting a
-             glyph in the resting layout that the reference does not have. */
-          'group',
-        )}
-        title={selected ? `${selected.provider}/${selected.id}` : 'Select model'}
-        aria-expanded={pane === 'models'}
-        aria-haspopup="dialog"
-        data-testid="model-chip"
-      >
-        <span className="min-w-0 truncate font-medium">
-          {chipModelLabel(selected)}
-        </span>
-        <ChevronDown
+        <motion.button
+          ref={modelChipRef}
+          type="button"
+          {...chipTrigger}
+          onClick={openModels}
           className={cn(
-            'size-3 shrink-0 transition-transform duration-200',
-            'opacity-0 group-hover:opacity-60 focus-visible:opacity-60',
-            modelsOpen && 'rotate-180 opacity-60',
+            'group relative inline-flex h-6 max-w-[220px] cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-[0.75rem] text-foreground/85 outline-none transition-colors duration-200 hover:bg-muted/50 hover:text-foreground',
           )}
-        />
-      </motion.button>
+          title={selected ? `${selected.provider}/${selected.id}` : 'Select model'}
+          aria-expanded={pane === 'models'}
+          aria-haspopup="dialog"
+          data-testid="model-chip"
+        >
+          <span className="min-w-0 truncate font-medium">{chipModelLabel(selected)}</span>
+          <ChevronDown
+            className={cn(
+              'size-3 shrink-0 transition-transform duration-200',
+              'opacity-0 group-hover:opacity-60 focus-visible:opacity-60',
+              modelsOpen && 'rotate-180 opacity-60',
+            )}
+          />
+        </motion.button>
 
-      {/* Effort is the quieter half of the line — a weight, not a second button. */}
-      <motion.button
-        ref={effortChipRef}
-        type="button"
-        {...chipTrigger}
-        onClick={() => (pane === 'effort' ? closeAll() : setPane('effort'))}
-        className={cn(
-          'group relative inline-flex items-center gap-1 text-[0.75rem] outline-none cursor-pointer h-6',
-          'text-muted-foreground hover:text-foreground transition-colors duration-200',
-          'rounded-md px-1.5 py-0.5 hover:bg-muted/50',
-        )}
-        title={`Effort: ${effortOpt.label} · extended thinking ${thinkingEnabled ? 'on' : 'off'}`}
-        aria-expanded={pane === 'effort'}
-        aria-haspopup="dialog"
-        data-testid="effort-chip"
-      >
-        {/* The reference's effort half is a BARE WORD — `Sonnet 5.5  High`, with
-            "no chip, no border, no pill, no background, no chevron" (measured at
-            2.6x). A `Gauge` before it and a permanently-visible `ChevronDown`
-            after it both contradict that, and the gauge at 0.7 opacity is
-            effectively always shown — the most visible offender on the line.
-            Both glyphs now reveal on hover/focus only, matching the model half's
-            treatment so the two halves of one control disclose the same way. */}
-        <Gauge className="size-3 shrink-0 opacity-0 group-hover:opacity-70 focus-visible:opacity-70 transition-opacity" />
-        <span className="shrink-0">{effortOpt.triggerLabel}</span>
-        <ChevronDown
-          className={cn(
-            'size-3 shrink-0 transition-transform duration-200',
-            'opacity-0 group-hover:opacity-60 focus-visible:opacity-60',
-            effortOpen && 'rotate-180 opacity-60',
-          )}
-        />
-      </motion.button>
+        <motion.button
+          ref={effortChipRef}
+          type="button"
+          {...chipTrigger}
+          onClick={openEffort}
+          className="group relative inline-flex h-6 cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-[0.75rem] text-muted-foreground outline-none transition-colors duration-200 hover:bg-muted/50 hover:text-foreground"
+          title={`Effort: ${effortOpt.label} · extended thinking ${thinkingEnabled ? 'on' : 'off'}`}
+          aria-expanded={pane === 'effort'}
+          aria-haspopup="dialog"
+          data-testid="effort-chip"
+        >
+          <Gauge className="size-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-70 focus-visible:opacity-70" />
+          <span className="shrink-0">{effortOpt.triggerLabel}</span>
+          <ChevronDown
+            className={cn(
+              'size-3 shrink-0 transition-transform duration-200',
+              'opacity-0 group-hover:opacity-60 focus-visible:opacity-60',
+              effortOpen && 'rotate-180 opacity-60',
+            )}
+          />
+        </motion.button>
       </div>
 
       {typeof document !== 'undefined' &&
@@ -623,59 +549,47 @@ export function ModelEffortMenu({
                 key="models-panel"
                 ref={modelsPanelRef}
                 {...menuPanel}
+                role="menu"
+                aria-label="Model and effort"
                 tabIndex={-1}
                 onKeyDown={onPanelKeyDown}
-                className="fixed z-50 flex flex-col bg-popover border border-border/60 rounded-xl shadow-2xl overflow-hidden"
+                className="fixed z-50 flex flex-col overflow-hidden rounded-xl border border-border/60 bg-popover shadow-2xl"
                 style={{
                   bottom: modelsPos.bottom,
                   left: modelsPos.left,
                   width: MODELS_PANEL_W,
+                  minHeight: Math.min(MODELS_PANEL_MIN_H, modelsPos.maxHeight),
                   maxHeight: modelsPos.maxHeight,
                 }}
                 data-testid="model-effort-menu"
               >
-                {/* Current-selection header — provider over model, like the
-                    reference's "Z.ai / GLM-5.3-Flash" block. */}
-                <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/40 py-2.5 pl-3 pr-1.5">
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[0.9375rem] font-semibold leading-5 text-foreground">
-                      {selected?.provider || 'Provider'}
-                    </div>
-                    <div className="truncate text-[0.8125rem] leading-5 text-foreground/80">
-                      {selected ? modelRowLabel(selected).name : 'No model selected'}
-                    </div>
-                  </div>
+                <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border/40 px-3">
+                  <ProviderMark provider={activeProviderName} />
+                  <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-semibold leading-5 text-foreground">
+                    {activeProviderName || 'Provider'}
+                  </span>
+                  <ApiBadge />
                   <button
                     type="button"
-                    onClick={(e) => {
-                      // Keep the dropdown open so the user sees the spinner
-                      // and the updated list after the network call lands.
-                      e.stopPropagation();
-                      if (!refreshAll.isPending) refreshAll.mutate();
-                    }}
-                    disabled={refreshAll.isPending}
-                    title="Re-fetch every provider's /models endpoint and update the list"
-                    data-testid="refresh-all-providers"
-                    aria-label="Refresh provider models"
-                    className="inline-flex shrink-0 cursor-pointer items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-muted/40 hover:text-foreground transition disabled:opacity-50"
+                    onClick={toggleProviders}
+                    aria-label={showProviders ? 'Hide providers' : 'Show providers'}
+                    aria-expanded={showProviders}
+                    aria-controls="model-provider-panel"
+                    data-testid="model-provider-toggle"
+                    className="ml-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:outline-none"
                   >
-                    <RefreshCw
-                      className={cn('size-3', refreshAll.isPending && 'animate-spin')}
-                    />
+                    <ChevronRight className="size-3.5" />
                   </button>
                 </div>
-                <div className="shrink-0 px-2 pb-1 pt-1">
-                  <div className="flex items-center gap-1.5 rounded-md border border-border/60 bg-muted/30 px-2 py-1.5 transition-colors focus-within:border-primary/40">
+
+                <div className="shrink-0 px-2 pb-1 pt-1.5">
+                  <div className="flex items-center gap-1.5 rounded-md border border-border/60 bg-muted/20 px-2 py-1.5 transition-colors focus-within:border-primary/40">
                     <Search className="size-3 shrink-0 text-muted-foreground" />
                     <input
-                      ref={searchRef}
                       type="text"
                       value={query}
-                      onChange={(e) => {
-                        setQuery(e.target.value);
-                      }}
+                      onChange={(e) => setQuery(e.target.value)}
                       onKeyDown={(e) => {
-                        // Escape clears the search first — one layer per press.
                         if (e.key === 'Escape' && query) {
                           e.preventDefault();
                           e.stopPropagation();
@@ -690,113 +604,144 @@ export function ModelEffortMenu({
                     {query ? (
                       <button
                         type="button"
-                        onClick={() => {
-                          setQuery('');
-                          searchRef.current?.focus();
-                        }}
+                        onClick={() => setQuery('')}
                         aria-label="Clear model search"
-                        className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground"
+                        className="shrink-0 text-muted-foreground hover:text-foreground"
                       >
                         <X className="size-3" />
                       </button>
                     ) : null}
                   </div>
                 </div>
+
+                <div className="shrink-0 px-3 pb-1 pt-1 text-[0.625rem] font-medium leading-4 text-muted-foreground/70">
+                  {searching ? 'Search results' : 'Models'}
+                </div>
+
                 <div
                   data-testid="models-panel-list"
-                  className="py-1 overflow-y-auto min-h-0 flex-1 chat-scroll"
+                  className="min-h-0 flex-1 overflow-y-auto py-0.5 chat-scroll"
                 >
-                  {groups.length === 0 && (
-                    <div className="px-3 py-2 text-[0.8125rem] text-muted-foreground">
+                  {(searching ? searchResults : activeModels).length > 0 ? (
+                    (searching ? searchResults : activeModels).map((m) =>
+                      modelRow(m, searching),
+                    )
+                  ) : (
+                    <div className="px-3 py-2 text-[0.8125rem] text-muted-foreground/70">
                       {loading
                         ? 'Loading…'
                         : searching
                           ? `No model matches “${query.trim()}”.`
-                          : 'No providers.'}
-                    </div>
-                  )}
-                  {cappedGroups.map((g) => {
-                    const isCur = g.provider === selected?.provider;
-                    // A search result must stay visible even if its provider
-                    // was collapsed before the query. Searching is a temporary
-                    // focused view; clearing the query restores the user's
-                    // previous collapsed groups.
-                    const isCollapsed = !searching && collapsed.has(g.provider);
-                    return (
-                      <div key={`g_${g.provider}`} data-testid={`provider-group-${g.provider}`}>
-                        {/* Provider group header — models sit directly beneath,
-                            matching the reference's provider-over-model view.
-                            Clicking the header collapses/expands that provider's
-                            models so a long catalog can be scanned by provider. */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!searching) toggleCollapsed(g.provider);
-                          }}
-                          disabled={searching}
-                          aria-expanded={!isCollapsed}
-                          aria-label={
-                            searching
-                              ? `${g.provider} results are expanded while searching`
-                              : `${isCollapsed ? 'Expand' : 'Collapse'} ${g.provider}`
-                          }
-                          title={searching ? 'Clear search to collapse providers' : undefined}
-                          data-testid={`provider-header-${g.provider}`}
-                          className={cn(
-                            'flex w-full items-center gap-2 px-3 pt-2 pb-1 text-left text-2xs font-semibold uppercase tracking-wide transition-colors',
-                            searching && 'cursor-default',
-                            isCur ? 'text-primary' : 'text-muted-foreground/70 hover:text-foreground',
-                          )}
-                        >
-                          {isCur && <Check className="size-2.5 shrink-0" />}
-                          <ChevronDown
-                            className={cn(
-                              'size-3 shrink-0 transition-transform',
-                              isCollapsed && '-rotate-90',
-                            )}
-                          />
-                          <span className="min-w-0 flex-1 truncate">{g.provider}</span>
-                          <span className="shrink-0 font-normal tabular-nums text-muted-foreground/50">
-                            {g.items.length}
-                          </span>
-                        </button>
-                        {!isCollapsed && g.items.map((m) => modelRow(m))}
-                      </div>
-                    );
-                  })}
-                  {cappedCount > 0 && (
-                    <div className="px-3 py-2 text-2xs text-muted-foreground">
-                      Showing the first {SEARCH_RESULT_CAP} of {totalMatches} matches — keep
-                      typing to narrow.
+                          : 'No models for this provider.'}
                     </div>
                   )}
                 </div>
-                {onEditModels && (
-                  <>
-                    <div className="mx-2 my-1 border-t border-border/40" />
+
+                <div className="shrink-0 border-t border-border/40 px-3 pb-2.5 pt-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-[0.6875rem] leading-4 text-muted-foreground">Effort</span>
+                      <span className="text-[0.75rem] font-semibold leading-4 text-foreground">
+                        {effortOpt.triggerLabel}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={cycleEffort}
+                      title="Cycle effort (Ctrl+T while this menu is open)"
+                      className="rounded-[4px] border border-border/60 px-1.5 py-0.5 text-[0.5625rem] font-medium leading-3 text-muted-foreground/70 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40"
+                    >
+                      Ctrl+T
+                    </button>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={EFFORT_OPTIONS.length - 1}
+                    step={1}
+                    value={effortIndex}
+                    aria-label="Effort"
+                    aria-valuetext={effortOpt.label}
+                    onChange={(e) => {
+                      const next = EFFORT_OPTIONS[Number(e.target.value)];
+                      if (next) onEffortChange(next.value);
+                    }}
+                    className="model-effort-slider mt-2 w-full"
+                  />
+                </div>
+              </motion.div>
+            )}
+
+            {providersOpen && providerPos && (
+              <motion.div
+                key="provider-panel"
+                ref={providerPanelRef}
+                {...menuFlyout}
+                id="model-provider-panel"
+                role="menu"
+                aria-label="Providers"
+                tabIndex={-1}
+                onKeyDown={onPanelKeyDown}
+                className="fixed z-50 flex flex-col overflow-hidden rounded-xl border border-border/60 bg-popover shadow-2xl"
+                style={{
+                  left: providerPos.left,
+                  top: providerPos.top,
+                  width: PROVIDER_PANEL_W,
+                  maxHeight: providerPos.maxHeight,
+                }}
+                data-testid="model-provider-panel"
+              >
+                <div className="min-h-0 flex-1 overflow-y-auto py-1 chat-scroll">
+                  {groups.length > 0 ? (
+                    groups.map((g) => providerRow(g.provider))
+                  ) : (
+                    <div className="px-3 py-2 text-[0.8125rem] text-muted-foreground/70">
+                      No providers.
+                    </div>
+                  )}
+                  {onEditModels ? (
                     <button
                       type="button"
                       onClick={() => {
                         closeAll();
                         onEditModels();
                       }}
-                      className="mx-1.5 mb-1.5 w-[calc(100%-12px)] cursor-pointer rounded-md px-2.5 py-[10px] text-left text-[0.9375rem] text-foreground/90 hover:bg-muted/40"
+                      data-testid="new-provider"
+                      className="flex h-8 w-full items-center gap-2 px-3 text-left text-[0.8125rem] text-muted-foreground/85 transition-colors hover:bg-muted/40 hover:text-foreground"
+                    >
+                      <span className="min-w-0 flex-1 truncate">New provider</span>
+                      <ApiBadge />
+                    </button>
+                  ) : null}
+                </div>
+                {onEditModels ? (
+                  <div className="shrink-0 border-t border-border/40 p-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        closeAll();
+                        onEditModels();
+                      }}
                       data-testid="manage-models"
+                      className="w-full rounded-md px-2.5 py-2 text-left text-[0.8125rem] text-foreground/90 transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
                     >
                       Manage models
                     </button>
-                  </>
-                )}
+                  </div>
+                ) : null}
               </motion.div>
             )}
+
             {effortOpen && effortPos && (
               <motion.div
                 key="effort-panel"
                 ref={effortPanelRef}
                 {...menuPanel}
+                role="menu"
+                aria-label="Effort"
                 tabIndex={-1}
                 onKeyDown={onPanelKeyDown}
-                className="fixed z-50 flex flex-col bg-popover border border-border/60 rounded-xl shadow-2xl overflow-hidden"
+                className="fixed z-50 flex flex-col overflow-hidden rounded-xl border border-border/60 bg-popover shadow-2xl"
                 style={{
                   bottom: effortPos.bottom,
                   left: effortPos.left,
@@ -807,25 +752,27 @@ export function ModelEffortMenu({
               >
                 <div className="min-h-0 flex-1 overflow-y-auto py-1 chat-scroll">
                   {EFFORT_OPTIONS.map((o) => {
-                    const isSel = effort === o.value;
+                    const isSelected = effort === o.value;
                     return (
-                      <button
+                      <Button
                         key={o.value}
                         type="button"
+                        variant="ghost"
+                        size="sm"
                         role="menuitemradio"
-                        aria-checked={isSel}
+                        aria-checked={isSelected}
                         data-testid={`effort-option-${o.triggerLabel}`}
                         onClick={() => onEffortChange(o.value)}
                         className={cn(
-                          'flex w-full cursor-pointer items-center justify-between px-3 py-[7px] text-left text-[0.8125rem] transition-colors',
-                          isSel
+                          'flex h-auto w-full cursor-pointer items-center justify-between rounded-none px-3 py-[7px] text-left text-[0.8125rem] transition-colors',
+                          isSelected
                             ? 'text-foreground'
                             : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground',
                         )}
                       >
                         <span>{o.triggerLabel}</span>
-                        {isSel && <Check className="size-3 shrink-0" />}
-                      </button>
+                        {isSelected && <Check className="size-3 shrink-0" />}
+                      </Button>
                     );
                   })}
                 </div>
