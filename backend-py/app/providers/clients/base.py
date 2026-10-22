@@ -137,8 +137,16 @@ def parseRetryAfterMs(retryAfterHeader: str | None) -> int | None:
 
 
 def isRetryableStatus(status: int) -> bool:
-    """True for 429 (Too Many Requests) and 503 (Service Unavailable)."""
-    return status in (429, 503)
+    """True for the statuses a gateway means transiently.
+
+    Was `429 | 503` only, so a plain 500 — which is what a lot of
+    OpenAI-compatible relays answer when their upstream blinks — failed the turn
+    outright, and 502/504 from a proxy or a cold container did too. Every SDK
+    this app talks to treats 408/409/429 and the whole 5xx band as retryable;
+    both call sites are pre-first-token (a stream is retried before any event is
+    consumed), so widening the set cannot replay partial output.
+    """
+    return status in (408, 409, 429) or status >= 500
 
 
 def getRetryDelayMs(response: httpx.Response, attempt: int) -> int:
@@ -153,12 +161,6 @@ def getRetryDelayMs(response: httpx.Response, attempt: int) -> int:
     baseDelay = min(1000 * 2 ** max(0, attempt - 1), 8000)
     jitter = random.randint(0, 400)
     return baseDelay + jitter
-
-
-def buildRateLimitMessage(status: int, body: str, attempts: int) -> str:
-    """Build a user-friendly rate-limit error message."""
-    guidance = 'Upstream is rate-limiting this request. The proxy retried automatically. If this keeps happening, spread traffic across multiple providers or API keys, reduce parallel requests, or move this workload to a higher-capacity plan.'
-    return f'Upstream Error ({status}): {body}\n\n{guidance}\nRetries attempted: {attempts}.'
 
 
 class ProviderResponse:
