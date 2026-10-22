@@ -209,6 +209,41 @@ def _applyModelCapabilityProfile(
     return tools
 
 
+def _applySessionStableOrder(
+    session: WorkbenchSession, tools: list[dict[str, object]]
+) -> list[dict[str, object]]:
+    """Keep the wire tool array a prefix extension of the previous round's.
+
+    Sorting by name is deterministic for a FIXED tool set, and the cached
+    builders rely on that. The set is not fixed: an MCP server that starts
+    mid-session or a skill that registers a tool adds a name, and a name sort
+    then shifts EVERY later tool — the array stops being a prefix extension and
+    the provider's tool-array cache breakpoint is busted for the rest of the
+    session. The bare-essential group still leads (a self-heal downgrade must
+    remain a prefix), and within each group the order is the order this session
+    first offered each name; a new name is appended rather than inserted.
+    """
+    names = [_toolDefName(t) for t in tools]
+    prev = getattr(session, '_wireToolOrder', None)
+    prevOrder = prev if isinstance(prev, list) else []
+    rank = {str(n): i for i, n in enumerate(prevOrder)}
+
+    def sortKey(pair: tuple[int, str]) -> tuple[int, int, int, str]:
+        _idx, name = pair
+        bare = 0 if name in _BARE_TOOL_ALLOW else 1
+        slot = rank.get(name)
+        # Known names keep their slot; new names sort among themselves after
+        # the known ones in their group.
+        return (bare, 0, slot, '') if slot is not None else (bare, 1, 0, name)
+
+    ordered = [t for _i, t in sorted(enumerate(tools), key=lambda p: sortKey((p[0], names[p[0]])))]
+    try:
+        setattr(session, '_wireToolOrder', [_toolDefName(t) for t in ordered])
+    except Exception:
+        logger.debug('session tool-order stamp failed', exc_info=True)
+    return ordered
+
+
 def _finalize_session_tools(
     session: WorkbenchSession, tools: list[dict[str, object]]
 ) -> list[dict[str, object]]:
@@ -219,8 +254,8 @@ def _finalize_session_tools(
     )
 
     if is_orchestrator_mode(session):
-        return filter_planner_tools(tools)
-    return tools
+        return _applySessionStableOrder(session, filter_planner_tools(tools))
+    return _applySessionStableOrder(session, tools)
 
 
 def _toolResultCap(session: WorkbenchSession) -> int:

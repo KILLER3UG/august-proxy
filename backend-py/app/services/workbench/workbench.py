@@ -1016,7 +1016,14 @@ def buildSystemPrompt(
     if skillsLine:
         intake.append(f'- Skills: {skillsLine}. Bodies load on demand via load_skill.')
     if tool_names:
-        intake.append(f'- Tools: {len(tool_names)} registered this turn (details in <capabilities>).')
+        # The pointer said "details in <capabilities>", and the block itself
+        # opens by saying the opposite: it is a NAME INDEX, and the full
+        # schemas are in the tools array. A model told to look for details in
+        # a place that holds none spends a round discovering that.
+        intake.append(
+            f'- Tools: {len(tool_names)} registered this turn '
+            '(name index in <capabilities>; schemas are in the tools array).'
+        )
     intake.append('</intake>')
     parts.append('\n'.join(intake))
     if hookTrustNotice:
