@@ -231,7 +231,27 @@ function AutoChangeHistory() {
   );
 }
 
-export function HarnessImprovementsSection() {
+/**
+ * The review queue: proposals the learning loop filed and a human must decide.
+ *
+ * `scope` is why this one component serves three doors. The inbox used to be a
+ * Settings section of its own; it is now a sub-section of the two surfaces whose
+ * state it actually changes — `skills` for harness/skill/config proposals,
+ * `memory` for the retirements — and the Learning hub keeps the unscoped view.
+ * Each scope fetches only its own family, so mounting both panels does not
+ * double-poll either endpoint, and the decision route per row is unchanged
+ * (`postDecide` already branches on `queue`).
+ *
+ * `framed` is false when a host panel supplies its own header; the section
+ * header would otherwise sit under the panel's and the page would have two.
+ */
+export function HarnessImprovementsSection({
+  scope = 'all',
+  framed = true,
+}: {
+  scope?: 'all' | 'skills' | 'memory';
+  framed?: boolean;
+} = {}) {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<Filter>('open');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -248,6 +268,7 @@ export function HarnessImprovementsSection() {
         `/api/harness/proposals${filter === 'open' ? '?status=open' : ''}`,
       ),
     refetchInterval: 30_000,
+    enabled: scope !== 'memory',
   });
   const memoryQ = useQuery({
     queryKey: ['memory-proposals'],
@@ -257,6 +278,7 @@ export function HarnessImprovementsSection() {
         `/api/august/memory/proposals${filter === 'open' ? '?status=pending' : ''}`,
       ),
     refetchInterval: 30_000,
+    enabled: scope !== 'skills',
   });
 
   const refresh = useCallback(() => {
@@ -275,7 +297,8 @@ export function HarnessImprovementsSection() {
     } catch {
       memory = []; // a malformed memory row must not blank the harness queue
     }
-    return [...harness, ...memory].sort((a, b) => {
+    const both = scope === 'skills' ? harness : scope === 'memory' ? memory : [...harness, ...memory];
+    return both.sort((a, b) => {
       // A measured regression is the one row here that carries its own
       // evidence of harm, so it outranks recency — everything else is still
       // newest-first.
@@ -283,7 +306,7 @@ export function HarnessImprovementsSection() {
       if (b.kind === 'revert') return 1;
       return a.createdAt < b.createdAt ? 1 : -1;
     });
-  }, [harnessQ.data, memoryQ.data]);
+  }, [harnessQ.data, memoryQ.data, scope]);
 
   const selected = rows.find((r) => rowKey(r) === selectedId) ?? null;
   /* A skill proposal IS a document. `payload` used to be dumped as escaped
@@ -431,7 +454,16 @@ export function HarnessImprovementsSection() {
   };
 
   return (
-    <div className="px-8 py-6 space-y-5 h-full flex flex-col overflow-hidden">
+    <div
+      className={
+        framed
+          ? 'px-8 py-6 space-y-5 h-full flex flex-col overflow-hidden'
+          : /* Embedded: the host panel owns the page padding and the scroll, so
+               this adds neither — an `h-full overflow-hidden` here would give the
+               Skills page a scroll region inside a scroll region. */
+            'space-y-4'
+      }
+    >
       {/* The panel-section header — NO icon, because the nav in front of it
           already carries the icon and the name (the settings rail and the
           hub's own rail are the same instrument). See the header grammar in
@@ -440,7 +472,9 @@ export function HarnessImprovementsSection() {
           panel and in the Learning hub's Inbox tab, and the same page must
           not look like two different pages depending on how you got here. */}
       <SectionHeader
-        title="Review Inbox"
+        /* One header component for all three hosts, so the type cannot drift
+           between them; only the words change with what the host is showing. */
+        title={framed ? 'Review Inbox' : scope === 'memory' ? 'Review queue' : 'Proposals'}
         className="mb-0 shrink-0"
         subtitle={
           <span data-testid="inbox-header-note">
@@ -448,9 +482,13 @@ export function HarnessImprovementsSection() {
                 has to track the switch: saying "nothing applies until you
                 approve it" while autonomous apply is on misdescribes when this
                 machinery writes to your skills. */}
-            {autonomyOn
-              ? 'Proposals and memory retirements for a human to decide — autonomous apply is on, and every change below is undoable.'
-              : 'Proposals and memory retirements for a human to decide — nothing applies until you approve it.'}
+            {scope === 'memory'
+              ? 'Facts the learning loop wants to retire — nothing leaves memory until you approve it.'
+              : scope === 'skills'
+                ? 'Skills and settings the learning loop wants to write — nothing applies until you approve it.'
+                : autonomyOn
+                  ? 'Proposals and memory retirements for a human to decide — autonomous apply is on, and every change below is undoable.'
+                  : 'Proposals and memory retirements for a human to decide — nothing applies until you approve it.'}
           </span>
         }
         actions={

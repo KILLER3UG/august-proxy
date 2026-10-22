@@ -125,7 +125,7 @@ export function WorkspaceShell({
   // deliberate: they stay deep-linkable, palette-reachable and searchable
   // (search reaches all of them, and the count caption says so).
   const railGroups = useMemo(
-    () => groupAllByCategory(decorated.filter((s) => s.tier !== 'hidden' && s.id !== 'ai-setup')),
+    () => groupAllByCategory(decorated.filter((s) => s.tier !== 'hidden')),
     [decorated],
   );
   const visibleForSearch = useMemo(() => decorated, [decorated]);
@@ -227,7 +227,10 @@ export function WorkspaceShell({
           badge={
             s.id === 'app-updates' && updateAvailable
               ? 'New'
-              : s.id === 'harness-improve' && inbox.total > 0
+              : // The review inbox has no door of its own any more — proposals
+                // live inside Skills and Memory — so the ambient "there is
+                // something to decide" badge marks those two doors instead.
+                (s.id === 'skills' || s.id === 'memory-knowledge') && inbox.total > 0
                 ? String(inbox.total)
                 : null
           }
@@ -265,10 +268,6 @@ export function WorkspaceShell({
     );
   };
 
-  /** The Onboard wizard sits outside the groups: it is a one-off flow rather
-   *  than a destination in the IA (and it is the landing section while setup is
-   *  incomplete). Drawn last, and only when the passed section list has it. */
-  const onboardSection = decorated.find((s) => s.id === 'ai-setup');
 
   return (
     /* Settings is a panel floating over the workspace rather than a page that
@@ -397,9 +396,6 @@ export function WorkspaceShell({
                     {items.map((s) => railRow(s, isFiltering ? hitHintFor(s) : undefined))}
                   </div>
                 ),
-              )}
-              {!isFiltering && onboardSection && (
-                <div className="pt-1">{railRow(onboardSection)}</div>
               )}
             </div>
           )}

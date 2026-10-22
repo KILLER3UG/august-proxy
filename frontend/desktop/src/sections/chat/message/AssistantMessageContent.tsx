@@ -218,10 +218,19 @@ export function AssistantMessageContent({
         {/* Truncated answer (audit P0#6): turn_end reason `length` means the
             model hit the output cap with its continuation budget spent — the
             text above LOOKS complete but isn't. The recovery event log
-            carries the attempt detail (recovery{kind, attempt, degraded}). */}
+            carries the attempt detail (recovery{kind, attempt, degraded}).
+
+            The notice names BOTH halves of the contract the user actually
+            has. It used to stop at "the answer above is incomplete", which
+            says what went wrong and nothing about what to do: the backend's
+            continuation budget is already spent, and "continue" is the word
+            that resumes the model on the next turn. Nothing is lost — the
+            partial answer stays in the conversation. */}
         {!(isLast && streaming) && message.turnEnd?.reason === 'length' ? (
           <div className="text-2xs text-warning/90" data-testid="truncated-answer-note">
-            cut off at the output limit — the answer above is incomplete
+            cut off at the output limit — the answer above is incomplete, and
+            everything it did say stays in the conversation. Send
+            &ldquo;continue&rdquo; to let the model pick up where it stopped.
           </div>
         ) : null}
         {/* turn_end badge: why the tool loop stopped + round count. A clean

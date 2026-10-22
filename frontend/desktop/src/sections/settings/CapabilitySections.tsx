@@ -1,32 +1,18 @@
-/* ── Subagents / Plugins / Browser Use settings sections ─────────────── */
-/* The registry entries existed but fell through to SettingsStub ("not
- * built yet"). Each panel now wires to the real backend surfaces:
- *  - Subagents   → /api/subagents/config (delegation limits) + /active roster
- *  - Plugins     → MCP servers + skills rosters
- *  - Browser Use → live browser/web tool roster (/api/browser/registered-tools)
- */
+/* ── Browser Use settings section ────────────────────────────────────── */
+/* Browser Use → the live browser/web tool roster (/api/browser/registered-tools).
 
-import { useEffect, useMemo, useState } from 'react';
+   The Subagents and Plugins panels that used to live here are gone: the
+   delegation limits stay live in the backend and are set from the config file,
+   and the plugin roster merged into the single writable Plugins door (the
+   integrations panel), which already listed the same MCP servers with the
+   ability to add and remove them. */
+
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import {
-  Bot,
-  Check,
-  ExternalLink,
-  Layers,
-  Loader2,
-  Plug,
-  RefreshCw,
-  Users,
-} from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { api } from '@/api/client';
-import { listActive } from '@/api/subagents';
-import { Button } from '@/components/ui/button';
-import { SettingsToggle } from '@/components/settings/SettingsToggle';
 import { SectionHeader } from '@/components/SectionHeader';
 import { cn } from '@/lib/utils';
-import { openExternal } from '@/lib/tauri-shell';
-
-const PLUGINS_URL = 'https://github.com/KILLER3UG/august-proxy#readme';
 
 /* ── shared bits ─────────────────────────────────────────────────────── */
 
@@ -72,31 +58,6 @@ function Row({
   );
 }
 
-function NumInput({
-  value,
-  min,
-  max,
-  onChange,
-}: {
-  value: number;
-  min: number;
-  max: number;
-  onChange: (n: number) => void;
-}) {
-  return (
-    <input
-      type="number"
-      value={value}
-      min={min}
-      max={max}
-      onChange={(e) => {
-        const n = Number(e.target.value);
-        if (Number.isFinite(n)) onChange(Math.max(min, Math.min(max, Math.round(n))));
-      }}
-      className="w-20 rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 text-xs text-foreground outline-none focus:border-primary/40"
-    />
-  );
-}
 
 function Card({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -106,243 +67,6 @@ function Card({ title, icon, children }: { title: string; icon?: React.ReactNode
         {title}
       </p>
       <div className="mt-2 divide-y divide-white/[0.04]">{children}</div>
-    </div>
-  );
-}
-
-/* ── Subagents ───────────────────────────────────────────────────────── */
-
-interface DelegationConfig {
-  maxConcurrent: number;
-  maxIterations: number;
-  maxDepth: number;
-  worktreeIsolation: boolean;
-}
-
-export function SubagentsSection() {
-  const [cfg, setCfg] = useState<DelegationConfig | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [loadError, setLoadError] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const roster = useQuery({
-    queryKey: ['subagents-active-settings'],
-    queryFn: () => listActive(),
-    refetchInterval: 10_000,
-  });
-
-  useEffect(() => {
-    void api
-      .get<DelegationConfig>('/api/subagents/config')
-      .then((d) => setCfg(d))
-      // A failed read must NOT invent values: this panel renders whatever
-      // `cfg` holds as the saved truth, and a subsequent toggle then writes
-      // those fabricated numbers into the config for real. Surface the
-      // failure instead and keep the panel honest about not having read.
-      .catch(() => setLoadError(true));
-  }, []);
-
-  const save = async (next: DelegationConfig) => {
-    setCfg(next);
-    setSaving(true);
-    setSaveError(null);
-    try {
-      await api.post('/api/subagents/config', next);
-    } catch {
-      setSaveError('Could not save — the change was not applied.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const patch = (p: Partial<DelegationConfig>) => {
-    if (cfg) void save({ ...cfg, ...p });
-  };
-
-  return (
-    <div className="px-8 py-6">
-      {/* The shared page header: a 20px title and NO icon -- the nav item
-          already carries the icon, and the reference's settings header has
-          none. This one rolled its own 24px title and a coloured glyph. */}
-      <h2 className="text-xl font-semibold tracking-tight text-foreground">
-        Subagents
-      </h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        How the model delegates work to parallel sub-agents (spawn_subagents).
-      </p>
-
-      {loadError ? (
-        <div
-          className="mt-6 text-sm text-danger-fg"
-          role="alert"
-          data-testid="subagent-config-error"
-        >
-          Could not read the current subagent limits. Nothing has been changed.
-        </div>
-      ) : !cfg ? (
-        <Loader2 className="mt-6 size-5 animate-spin text-muted-foreground" />
-      ) : (
-        <>
-          <div className="mt-5">
-            <Card title="Delegation limits" icon={<Bot className="size-4 shrink-0 text-primary" />}>
-              <Row label="Max concurrent subagents" hint="How many may run in parallel (1–30).">
-                <NumInput value={cfg.maxConcurrent} min={1} max={30} onChange={(n) => patch({ maxConcurrent: n })} />
-              </Row>
-              <Row label="Max iterations per subagent" hint="Tool rounds before a worker is force-stopped (5–200).">
-                <NumInput value={cfg.maxIterations} min={5} max={200} onChange={(n) => patch({ maxIterations: n })} />
-              </Row>
-              <Row label="Max delegation depth" hint="A subagent spawning its own subagents (1–5).">
-                <NumInput value={cfg.maxDepth} min={1} max={5} onChange={(n) => patch({ maxDepth: n })} />
-              </Row>
-              <Row
-                label="Worktree isolation"
-                hint="Each subagent works in its own git worktree and merges back."
-              >
-                <SettingsToggle
-                  checked={cfg.worktreeIsolation}
-                  onCheckedChange={(v) => patch({ worktreeIsolation: v })}
-                  label="Worktree isolation"
-                />
-              </Row>
-            </Card>
-          </div>
-
-          <div className="mt-4">
-            <Card
-              title={`Active now (${roster.data?.length ?? 0})`}
-              icon={<RefreshCw className={roster.isFetching ? 'size-4 animate-spin text-primary' : 'size-4 text-primary'} />}
-            >
-              {(roster.data?.length ?? 0) === 0 ? (
-                <p className="py-3 text-xs text-muted-foreground">No subagents running.</p>
-              ) : (
-                roster.data!.map((a) => (
-                  <Row key={a.taskId} label={a.goal || a.agentId} hint={`${a.agentId} · ${a.status}`}>
-                    <span className="text-xs text-muted-foreground">{a.status}</span>
-                  </Row>
-                ))
-              )}
-            </Card>
-          </div>
-          {saving && <p className="mt-2 text-2xs text-muted-foreground">Saving…</p>}
-          {saveError ? (
-            <p className="mt-2 text-2xs text-danger-fg" role="alert" data-testid="subagent-save-error">
-              {saveError}
-            </p>
-          ) : null}
-        </>
-      )}
-    </div>
-  );
-}
-
-/* ── Plugins ─────────────────────────────────────────────────────────── */
-
-interface McpServerRow {
-  id: string;
-  name: string;
-  status?: string;
-  enabled?: boolean;
-}
-
-interface SkillRow {
-  name: string;
-  description?: string;
-  source?: string;
-  enabled?: boolean;
-}
-
-export function PluginsSection() {
-  const servers = useQuery({
-    queryKey: ['plugins-mcp-servers'],
-    queryFn: () => api.get<{ servers: McpServerRow[] }>('/api/mcp/servers'),
-  });
-  const skills = useQuery({
-    queryKey: ['plugins-skills'],
-    queryFn: () => api.get<{ skills: SkillRow[] }>('/api/skills'),
-  });
-
-  const mcpCount = servers.data?.servers?.length ?? 0;
-  const skillCount = skills.data?.skills?.length ?? 0;
-
-  return (
-    <div className="px-8 py-6">
-      <h2 className="text-xl font-semibold tracking-tight text-foreground">
-        Plugins
-      </h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Everything that extends the agent: MCP servers, skills, and integrations.
-      </p>
-
-      <div className="mt-5 space-y-4">
-        <Card title={`MCP servers (${mcpCount})`} icon={<Plug className="size-4 shrink-0 text-primary" />}>
-          {servers.isLoading ? (
-            <Loader2 className="my-3 size-4 animate-spin text-muted-foreground" />
-          ) : mcpCount === 0 ? (
-            <p className="py-3 text-xs text-muted-foreground">
-              No MCP servers configured — add one under Settings → MCP Servers.
-            </p>
-          ) : (
-            <div className="grid gap-2 sm:grid-cols-2" data-testid="plugin-server-grid">
-              {servers.data!.servers.map((s) => (
-                <div key={s.id} className="flex min-w-0 items-center gap-2.5 rounded-lg border border-border/60 bg-background/50 p-3">
-                  <span className="grid size-8 shrink-0 place-items-center rounded-md bg-muted/60 text-primary"><Plug className="size-4" /></span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-xs font-medium text-foreground">{s.name}</span>
-                    <span className="block truncate text-2xs text-muted-foreground">{s.status || (s.enabled ? 'Enabled' : 'Disabled')}</span>
-                  </span>
-                  {s.enabled ? <Check className="size-3.5 shrink-0 text-success" aria-label="Enabled" /> : null}
-                </div>
-              ))}
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={() => window.location.assign('/settings/tools-connections')}
-            className="mt-3 inline-flex items-center gap-1 text-xs text-muted-foreground transition hover:text-foreground"
-          >
-            Manage MCP servers <ExternalLink className="size-3" />
-          </button>
-        </Card>
-
-        <Card title={`Skills (${skillCount})`} icon={<Layers className="size-4 shrink-0 text-primary" />}>
-          {skills.isLoading ? (
-            <Loader2 className="my-3 size-4 animate-spin text-muted-foreground" />
-          ) : skillCount === 0 ? (
-            <p className="py-3 text-xs text-muted-foreground">No skills installed.</p>
-          ) : (
-            <div className="grid gap-2 sm:grid-cols-2" data-testid="plugin-skill-grid">
-              {skills.data!.skills.slice(0, 12).map((s) => (
-                <div key={s.name} className="flex min-w-0 items-center gap-2.5 rounded-lg border border-border/60 bg-background/50 p-3">
-                  <span className="grid size-8 shrink-0 place-items-center rounded-md bg-muted/60 text-primary"><Layers className="size-4" /></span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-xs font-medium text-foreground">{s.name}</span>
-                    <span className="block truncate text-2xs text-muted-foreground">{s.description?.slice(0, 90) || s.source || 'Skill'}</span>
-                  </span>
-                  {s.enabled !== false ? <Check className="size-3.5 shrink-0 text-success" aria-label="Enabled" /> : null}
-                </div>
-              ))}
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={() => window.location.assign('/settings/skills')}
-            className="mt-3 inline-flex items-center gap-1 text-xs text-muted-foreground transition hover:text-foreground"
-          >
-            Manage skills <ExternalLink className="size-3" />
-          </button>
-        </Card>
-
-        <div className="flex items-center justify-between rounded-xl border border-border/60 bg-card/60 p-4">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground">Plugin directory</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Browse community plugins and tool packs on GitHub.
-            </p>
-          </div>
-          <Button variant="outline" size="sm" onClick={() => void openExternal(PLUGINS_URL)}>
-            Open <ExternalLink className="ml-1.5 size-3" />
-          </Button>
-        </div>
-      </div>
     </div>
   );
 }

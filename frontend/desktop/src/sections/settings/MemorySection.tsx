@@ -30,6 +30,7 @@
  * Writes go to /api/august/memory/manage (add-box) and
  * /api/brain/stores/{name}/{id} (edit/delete). */
 
+import { HarnessImprovementsSection } from './HarnessImprovementsSection';
 import { useEffect, useMemo, useState } from 'react';
 import { BrainBackupsCard } from './BrainBackupsCard';
 import type { ReactNode } from 'react';
@@ -1612,6 +1613,11 @@ export function MemorySection({ active }: { active: { id: string } }) {
       </MemoryGroup>
 
       <BrainBackupsCard />
+
+      {/* Memory's own half of the review queue: the retirements the learning
+          loop proposes. Deciding them beside the facts they would remove beats
+          sending the user to an inbox on the other side of Settings. */}
+      <HarnessImprovementsSection scope="memory" framed={false} />
             </>
           )}
 

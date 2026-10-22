@@ -38,6 +38,7 @@ import { SettingsTabs } from '@/components/settings/SettingsTabs';
 import { settingsTabPanelId } from '@/components/settings/settingsTabIds';
 import { ValuePill, type ValuePillOption } from '@/components/ui/ValuePill';
 import { LearningPanel } from '@/sections/settings/LearningPanel';
+import { HarnessImprovementsSection } from './HarnessImprovementsSection';
 import { SkillPacksPanel } from '@/sections/settings/SkillPacksPanel';
 import { SkillVersionsPanel } from '@/sections/settings/SkillVersionsPanel';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
@@ -757,6 +758,11 @@ export function SkillsSection({ host = 'settings' }: { host?: LearningHost } = {
               rules out. The Learning panel drops its own frame here and
               keeps it in the Learning hub, where it stands alone. */}
           <div className="mt-4 overflow-hidden rounded-xl border border-border/60 bg-card/60">
+            {/* The review queue for THIS surface: the skills and settings the
+                learning loop wants to write. It used to be a Settings section of
+                its own, which is how proposals piled up in a place nobody
+                opened — the decision belongs where the change lands. */}
+            <HarnessImprovementsSection scope="skills" framed={false} />
             {/* Part 16 Phase E: Learning (curator report + drafts). */}
             <LearningPanel framed={false} />
             {/* Skill packs: install-from-remote. */}

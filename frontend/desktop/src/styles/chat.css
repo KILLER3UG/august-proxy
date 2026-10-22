@@ -591,9 +591,14 @@ details[open] > summary .disclosure-chevron {
 }
 
 .august-composer textarea {
+  /* Symmetric on purpose. This rule wins over the utility classes with
+     !important, and it used to read padding-top .5rem / padding-bottom .25rem
+     inside a 2.25rem minimum height — so one 1.25rem line sat 8px from the top
+     and 4px from the bottom of its own box, which is the "floating placeholder"
+     the composer showed. 8 + 20 + 8 is exactly 36px: the line is centred, and a
+     wrapped paragraph keeps the same rhythm as it grows. */
   min-height: 2.25rem !important;
-  padding-top: 0.5rem !important;
-  padding-bottom: 0.25rem !important;
+  padding-block: 0.5rem !important;
   font-size: 0.875rem;
 }
 

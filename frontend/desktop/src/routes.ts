@@ -10,6 +10,7 @@ import {
   History,
   Kanban,
   GraduationCap,
+  PackageOpen,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -33,6 +34,9 @@ const RunsPage = lazy(() =>
 );
 const BoardPage = lazy(() =>
   import('@/sections/board/BoardPage').then((m) => ({ default: m.BoardPage })),
+);
+const ArtifactsPage = lazy(() =>
+  import('@/sections/artifacts/ArtifactsPage').then((m) => ({ default: m.ArtifactsPage })),
 );
 const HistoryPage = lazy(() =>
   import('@/sections/history/HistoryPage').then((m) => ({ default: m.HistoryPage })),
@@ -111,6 +115,13 @@ export const SECTION_ROUTES: readonly SectionRoute[] = [
     label: 'Board',
     Icon: Kanban,
     element: React.createElement(LazySection, { name: 'Board' }, React.createElement(BoardPage)),
+    nav: true,
+  },
+  {
+    path: '/artifacts',
+    label: 'Artifacts',
+    Icon: PackageOpen,
+    element: React.createElement(LazySection, { name: 'Artifacts' }, React.createElement(ArtifactsPage)),
     nav: true,
   },
   {

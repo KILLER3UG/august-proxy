@@ -25,10 +25,9 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, ChevronRight, Gauge, Search, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Search, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
 import { chipTrigger, menuFlyout, menuPanel } from '@/lib/motion';
 import { groupModelsByProvider, modelMatchesQuery } from '@/components/model/modelList';
 import type { ModelItem } from '../model-display';
@@ -71,7 +70,6 @@ function modelRowLabel(model: ModelItem): { name: string; tag: string } {
   return { name: parts.name, tag };
 }
 
-type PaneKind = 'models' | 'effort';
 
 /** Composer-anchored panels: positioned by their BOTTOM edge (CSS bottom +
  *  clamped maxHeight) so short lists hug the chip instead of floating far
@@ -84,8 +82,6 @@ const MODELS_PANEL_W = 304;
 const MODELS_PANEL_H = 520;
 const MODELS_PANEL_MIN_H = 216;
 const PROVIDER_PANEL_W = 184;
-const EFFORT_PANEL_H = 150;
-const EFFORT_PANEL_W = 264;
 /** Gap between the panel's bottom edge and the trigger chip. */
 const PANEL_GAP = 8;
 /** Viewport margin kept clear above/below a panel. */
@@ -197,18 +193,16 @@ export function ModelEffortMenu({
   thinkingEnabled: boolean;
   onThinkingChange: (v: boolean) => void;
 }) {
-  const [pane, setPane] = useState<PaneKind | null>(null);
+  // One pane now: the effort chip was removed, so the picker is open or closed.
+  const [pane, setPane] = useState<'models' | null>(null);
   const [modelsPos, setModelsPos] = useState<PanelPos | null>(null);
-  const [effortPos, setEffortPos] = useState<PanelPos | null>(null);
   const [providerPos, setProviderPos] = useState<ProviderPos | null>(null);
   const [showProviders, setShowProviders] = useState(false);
   const [activeProvider, setActiveProvider] = useState('');
   const [query, setQuery] = useState('');
 
   const modelChipRef = useRef<HTMLButtonElement>(null);
-  const effortChipRef = useRef<HTMLButtonElement>(null);
   const modelsPanelRef = useRef<HTMLDivElement>(null);
-  const effortPanelRef = useRef<HTMLDivElement>(null);
   const providerPanelRef = useRef<HTMLDivElement>(null);
 
   const groups = useMemo(() => groupModelsByProvider(visibleModels), [visibleModels]);
@@ -256,10 +250,6 @@ export function ModelEffortMenu({
     setQuery('');
     setPane('models');
   }, [groups, pane, selected]);
-
-  const openEffort = useCallback(() => {
-    setPane((current) => (current === 'effort' ? null : 'effort'));
-  }, []);
 
   const closeAll = useCallback(() => {
     setPane(null);
@@ -334,7 +324,6 @@ export function ModelEffortMenu({
   useEffect(() => {
     if (!pane) {
       setModelsPos(null);
-      setEffortPos(null);
       setProviderPos(null);
       setShowProviders(false);
       setQuery('');
@@ -349,16 +338,7 @@ export function ModelEffortMenu({
           ...anchorAbove(r.top, MODELS_PANEL_H),
         });
       }
-      setEffortPos(null);
     } else {
-      const el = effortChipRef.current;
-      if (el) {
-        const r = el.getBoundingClientRect();
-        setEffortPos({
-          left: clampLeft(r.right - EFFORT_PANEL_W, EFFORT_PANEL_W),
-          ...anchorAbove(r.top, EFFORT_PANEL_H),
-        });
-      }
       setModelsPos(null);
       setProviderPos(null);
     }
@@ -389,15 +369,13 @@ export function ModelEffortMenu({
   useEffect(() => {
     if (pane) {
       hasOpenedRef.current = true;
-      const panel = pane === 'models' ? modelsPanelRef.current : effortPanelRef.current;
-      panel?.focus();
+      modelsPanelRef.current?.focus();
       return;
     }
     if (!hasOpenedRef.current) return;
     hasOpenedRef.current = false;
-    const chip = pane === 'effort' ? effortChipRef.current : modelChipRef.current;
-    chip?.focus();
-  }, [pane, modelsPos, effortPos]);
+    modelChipRef.current?.focus();
+  }, [pane, modelsPos]);
 
   useEffect(() => {
     if (!pane) return;
@@ -407,9 +385,7 @@ export function ModelEffortMenu({
     const onDown = (e: MouseEvent) => {
       const target = e.target as Node;
       if (modelChipRef.current?.contains(target)) return;
-      if (effortChipRef.current?.contains(target)) return;
       if (modelsPanelRef.current?.contains(target)) return;
-      if (effortPanelRef.current?.contains(target)) return;
       if (providerPanelRef.current?.contains(target)) return;
       closeAll();
     };
@@ -489,7 +465,6 @@ export function ModelEffortMenu({
   };
 
   const modelsOpen = pane === 'models' && modelsPos !== null;
-  const effortOpen = pane === 'effort' && effortPos !== null;
   const providersOpen = modelsOpen && showProviders && providerPos !== null;
 
   return (
@@ -509,33 +484,14 @@ export function ModelEffortMenu({
           data-testid="model-chip"
         >
           <span className="min-w-0 truncate font-medium">{chipModelLabel(selected)}</span>
+          {/* Visible at rest. The chevron was opacity-0 until hover, so the chip
+              read as a label rather than a control and nothing invited the
+              click — the affordance only appeared on the element you had to
+              hover to discover. */}
           <ChevronDown
             className={cn(
-              'size-3 shrink-0 transition-transform duration-200',
-              'opacity-0 group-hover:opacity-60 focus-visible:opacity-60',
-              modelsOpen && 'rotate-180 opacity-60',
-            )}
-          />
-        </motion.button>
-
-        <motion.button
-          ref={effortChipRef}
-          type="button"
-          {...chipTrigger}
-          onClick={openEffort}
-          className="group relative inline-flex h-6 cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-[0.75rem] text-muted-foreground outline-none transition-colors duration-200 hover:bg-muted/50 hover:text-foreground"
-          title={`Effort: ${effortOpt.label} · extended thinking ${thinkingEnabled ? 'on' : 'off'}`}
-          aria-expanded={pane === 'effort'}
-          aria-haspopup="dialog"
-          data-testid="effort-chip"
-        >
-          <Gauge className="size-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-70 focus-visible:opacity-70" />
-          <span className="shrink-0">{effortOpt.triggerLabel}</span>
-          <ChevronDown
-            className={cn(
-              'size-3 shrink-0 transition-transform duration-200',
-              'opacity-0 group-hover:opacity-60 focus-visible:opacity-60',
-              effortOpen && 'rotate-180 opacity-60',
+              'size-3 shrink-0 opacity-60 transition-transform duration-200',
+              modelsOpen && 'rotate-180',
             )}
           />
         </motion.button>
@@ -563,24 +519,31 @@ export function ModelEffortMenu({
                 }}
                 data-testid="model-effort-menu"
               >
-                <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border/40 px-3">
+                {/* The whole header is the control, not just the chevron. It
+                    used to be a div with a 20px button holding the arrow, so
+                    the provider name — the one thing you look at to know what
+                    you're about to change — did nothing when you clicked it. */}
+                <button
+                  type="button"
+                  onClick={toggleProviders}
+                  aria-label={`Change provider — currently ${activeProviderName || 'no provider'}`}
+                  aria-expanded={showProviders}
+                  aria-controls="model-provider-panel"
+                  data-testid="model-provider-toggle"
+                  className="flex h-11 w-full shrink-0 items-center gap-2 border-b border-border/40 px-3 text-left transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
+                >
                   <ProviderMark provider={activeProviderName} />
                   <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-semibold leading-5 text-foreground">
                     {activeProviderName || 'Provider'}
                   </span>
                   <ApiBadge />
-                  <button
-                    type="button"
-                    onClick={toggleProviders}
-                    aria-label={showProviders ? 'Hide providers' : 'Show providers'}
-                    aria-expanded={showProviders}
-                    aria-controls="model-provider-panel"
-                    data-testid="model-provider-toggle"
-                    className="ml-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:outline-none"
-                  >
-                    <ChevronRight className="size-3.5" />
-                  </button>
-                </div>
+                  <ChevronRight
+                    className={cn(
+                      'size-3.5 shrink-0 text-muted-foreground transition-transform duration-200',
+                      showProviders && 'rotate-90',
+                    )}
+                  />
+                </button>
 
                 <div className="shrink-0 px-2 pb-1 pt-1.5">
                   <div className="flex items-center gap-1.5 rounded-md border border-border/60 bg-muted/20 px-2 py-1.5 transition-colors focus-within:border-primary/40">
@@ -668,6 +631,14 @@ export function ModelEffortMenu({
                     }}
                     className="model-effort-slider mt-2 w-full"
                   />
+                  {/* The extended-thinking switch lived in its own effort
+                      popover. That popover is gone — the effort row IS the
+                      control now — so the switch moves in beside it rather
+                      than becoming unreachable. */}
+                  <div className="mt-2 flex items-center justify-between gap-2 border-t border-border/40 pt-2">
+                    <span className="text-2xs text-muted-foreground">Extended thinking</span>
+                    <ThinkingSwitch checked={thinkingEnabled} onChange={onThinkingChange} />
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -729,57 +700,6 @@ export function ModelEffortMenu({
                     </button>
                   </div>
                 ) : null}
-              </motion.div>
-            )}
-
-            {effortOpen && effortPos && (
-              <motion.div
-                key="effort-panel"
-                ref={effortPanelRef}
-                {...menuPanel}
-                role="menu"
-                aria-label="Effort"
-                tabIndex={-1}
-                onKeyDown={onPanelKeyDown}
-                className="fixed z-50 flex flex-col overflow-hidden rounded-xl border border-border/60 bg-popover shadow-2xl"
-                style={{
-                  bottom: effortPos.bottom,
-                  left: effortPos.left,
-                  width: EFFORT_PANEL_W,
-                  maxHeight: effortPos.maxHeight,
-                }}
-                data-testid="effort-menu"
-              >
-                <div className="min-h-0 flex-1 overflow-y-auto py-1 chat-scroll">
-                  {EFFORT_OPTIONS.map((o) => {
-                    const isSelected = effort === o.value;
-                    return (
-                      <Button
-                        key={o.value}
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        role="menuitemradio"
-                        aria-checked={isSelected}
-                        data-testid={`effort-option-${o.triggerLabel}`}
-                        onClick={() => onEffortChange(o.value)}
-                        className={cn(
-                          'flex h-auto w-full cursor-pointer items-center justify-between rounded-none px-3 py-[7px] text-left text-[0.8125rem] transition-colors',
-                          isSelected
-                            ? 'text-foreground'
-                            : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground',
-                        )}
-                      >
-                        <span>{o.triggerLabel}</span>
-                        {isSelected && <Check className="size-3 shrink-0" />}
-                      </Button>
-                    );
-                  })}
-                </div>
-                <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border/40 px-3 py-2">
-                  <span className="text-2xs text-muted-foreground">Extended thinking</span>
-                  <ThinkingSwitch checked={thinkingEnabled} onChange={onThinkingChange} />
-                </div>
               </motion.div>
             )}
           </AnimatePresence>,

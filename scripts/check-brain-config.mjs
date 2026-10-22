@@ -52,7 +52,6 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PROBE = resolve(root, 'backend-py/scripts/brain_config_probe.py');
-const PANEL = resolve(root, 'frontend/desktop/src/sections/settings/TurnLimitsSection.tsx');
 const MANIFEST = resolve(root, 'scripts/brain-config-ranges.pending.json');
 
 /** Find a python that can import the backend app. */
@@ -213,78 +212,16 @@ function panelRanges() {
   return out;
 }
 
-/** The panel's own table: key, min, max. */
-function panelFields() {
-  const text = readFileSync(PANEL, 'utf8');
-  const start = text.indexOf('const TURN_FIELDS');
-  if (start === -1) throw new Error('TURN_FIELDS is gone from TurnLimitsSection.tsx');
-  const end = text.indexOf('\n];', start);
-  const body = text.slice(start, end === -1 ? undefined : end);
-  const out = [];
-  const re = /key:\s*'([A-Za-z0-9_]+)'[\s\S]*?min:\s*(-?\d+)[\s\S]*?max:\s*(-?\d+)/g;
-  let m;
-  while ((m = re.exec(body)) !== null) {
-    out.push({ key: m[1], min: Number(m[2]), max: Number(m[3]) });
-  }
-  if (out.length === 0) throw new Error('no fields parsed out of TURN_FIELDS');
-  return out;
-}
+/* The per-panel table check that used to sit here (checks 1-4, driven by
+   TurnLimitsSection's TURN_FIELDS) left with the panel. Checks 5-7 below are
+   strictly more general: they scan EVERY settings file for a brain-config
+   mutation, require each written key to be in the backend's accepted set with a
+   fieldTable entry and an explicit range branch, and pair a declared (min, max)
+   with the backend's range. Nothing that table asserted has gone unchecked —
+   its subject left with the door. */
 
-const fields = panelFields();
 const errors = [];
 const notes = [];
-
-// 1. The key exists as a numeric key in the backend.
-for (const f of fields) {
-  if (!backend.numKeys.includes(f.key)) {
-    errors.push(
-      `the panel writes '${f.key}' but the backend's numKeys does not contain it — ` +
-        'the control renders and the PUT is rejected as an unknown field.'
-    );
-  }
-}
-
-// 2. The key has a fieldTable entry, so the backend can describe it.
-for (const f of fields) {
-  if (!backend.fieldKeys.includes(f.key)) {
-    errors.push(
-      `the panel writes '${f.key}' but the backend's fieldTable has no entry for it — ` +
-        'the key is not described, defaulted, or surfaced by the config API.'
-    );
-  }
-}
-
-// 3. The key has an EXPLICIT range branch.
-for (const f of fields) {
-  if (!backend.explicitRangeKeys.includes(f.key)) {
-    errors.push(
-      `the panel writes '${f.key}' but the validator gives it no explicit range branch — ` +
-        'it inherits the fallback range, which starts at 1, so the panel cannot write 0.'
-    );
-  }
-}
-
-// 4. The panel's range lies inside the backend's range.
-for (const f of fields) {
-  const range = backend.ranges[f.key];
-  if (!range || range.length !== 2) {
-    errors.push(`the backend reports no range for '${f.key}' — the panel cannot be checked.`);
-    continue;
-  }
-  const [lo, hi] = range;
-  if (f.min < lo || f.max > hi) {
-    errors.push(
-      `the panel offers ${f.key} in [${f.min}, ${f.max}] but the backend accepts ` +
-        `[${lo}, ${hi}] — the control offers values the backend refuses.`
-    );
-  }
-  if (f.min < lo || f.min > hi) {
-    errors.push(
-      `the panel's minimum for ${f.key} is ${f.min}, which the backend rejects ` +
-        `(accepted: ${lo}..${hi}).`
-    );
-  }
-}
 
 // 5. EVERY key any Settings panel writes is a key the backend ACCEPTS.
 //    The four assertions above cover one panel's table; this covers every
@@ -395,7 +332,6 @@ if (errors.length > 0) {
 
 for (const n of notes) console.log(`OK   ${n}`);
 console.log(
-  `\nAll ${fields.length} table field(s) and ${panelWritten.size} panel-written key(s) are ` +
-    'backend keys with a fieldTable entry, an explicit range branch, and a range the ' +
-    'backend accepts.',
+  `\nAll ${panelWritten.size} panel-written key(s) are backend keys with a fieldTable ` +
+    'entry, an explicit range branch, and a range the backend accepts.',
 );

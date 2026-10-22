@@ -21,7 +21,6 @@ import {
   type SettingsSection,
 } from '@/settings/settings-registry';
 import { WorkspaceShell, type WorkspaceSectionMeta } from '@/components/workspace/WorkspaceShell';
-import { useProviderOnboardingState } from '@/hooks/useProviderOnboardingState';
 import { SectionHeader as PanelHeader } from '@/components/SectionHeader';
 
 /** Header IA: 4 header groups (Setup / Agent / Data / App), the fourth added
@@ -33,7 +32,7 @@ const LEGACY_HUB_MAP: Record<string, string> = {
   system: 'basics',
   intelligence: 'capabilities',
   insights: 'data',
-  tools: 'tools-connections',
+  tools: 'plugins',
   access: 'agent-sandbox',
   security: 'agent-sandbox',
 };
@@ -45,12 +44,12 @@ function isHubId(id: string | null | undefined): boolean {
  *  landing page (profile + preferences), mirroring the reference design. */
 const DEFAULT_SECTION_ID = 'general';
 
-/** While first-run setup is incomplete (no provider + workspace yet),
- *  bare /settings lands on the guided AI Setup wizard instead. */
+/** Bare /settings lands on General. It used to detour to the guided AI Setup
+ *  wizard while first-run setup was incomplete; that door is gone, and the
+ *  checklist it drove is still reachable from the provider card, so the landing
+ *  page is now the same for a fresh install and a settled one. */
 function useLandingSectionId(): string {
-  const onboarding = useProviderOnboardingState();
-  const setupPending = !onboarding.dismissed && !onboarding.isLoading && !onboarding.allCoreDone;
-  return setupPending ? 'ai-setup' : DEFAULT_SECTION_ID;
+  return DEFAULT_SECTION_ID;
 }
 
 /** First-element query keys owned by settings sections — tab switches
@@ -291,18 +290,6 @@ const BackendMonitorWrapper = lazySection(() => import('./BackendMonitorSection'
 const FeatureFlowWrapper = lazySection(() => import('./FeatureFlowSection'), 'FeatureFlowSection');
 const ExternalAccessWrapper = lazySection(() => import('./ExternalAccessSection'), 'ExternalAccessSection');
 const AppUpdatesWrapper = lazySection(() => import('./UpdateSection'), 'UpdateSection');
-const SubagentsWrapper = lazySection(
-  () => import('./CapabilitySections').then((m) => ({ default: m.SubagentsSection })),
-  'SubagentsSection',
-);
-const TurnLimitsWrapper = lazySection(
-  () => import('./TurnLimitsSection').then((m) => ({ default: m.TurnLimitsSection })),
-  'TurnLimitsSection',
-);
-const PluginsWrapper = lazySection(
-  () => import('./CapabilitySections').then((m) => ({ default: m.PluginsSection })),
-  'PluginsSection',
-);
 const BrowserUseWrapper = lazySection(
   () => import('./CapabilitySections').then((m) => ({ default: m.BrowserUseSection })),
   'BrowserUseSection',
@@ -348,19 +335,16 @@ const AppearanceWrapper = lazySection(() => import('./AppearanceSection'), 'Appe
 const SystemHealthWrapper = lazySection(() => import('./SystemHealthSection'), 'SystemHealthSection');
 const ToolsConnectionsWrapper = lazySection(() => import('./IntegrationsSection'), 'IntegrationsSection');
 const SkillsWrapper = lazySection(() => import('./SkillsSection'), 'SkillsSection');
-const HarnessImprovementsWrapper = lazySection(() => import('./HarnessImprovementsSection'), 'HarnessImprovementsSection');
 const ModelFamiliesWrapper = lazySection(() => import('./ModelFamiliesSection'), 'ModelFamiliesSection');
 const ConversationsHistoryWrapper = lazySection(() => import('./ConversationsHistorySection'), 'ConversationsHistorySection');
 const AgentsAutomationWrapper = lazySection(() => import('./AgentsAutomationSection'), 'AgentsAutomationSection');
 const ComputerUseWrapper = lazySection(() => import('./ComputerUseSection'), 'ComputerUseSection');
-const KanbanWrapper = lazySection(() => import('./KanbanSection'), 'KanbanSection');
 const AgentSandboxWrapper = lazySection(() => import('./AccessHubSection'), 'AccessHubSection');
 const PromptTemplatesWrapper = lazySection(() => import('./PromptTemplatesSection'), 'PromptTemplatesSection');
 const PrivacyWrapper = lazySection(() => import('./PrivacySection'), 'PrivacySection');
 const PhonePairingWrapper = lazySection(() => import('./PhonePairingSection'), 'PhonePairingSection');
 const MemoryWrapper = lazySection(() => import('./MemorySection'), 'MemorySection');
 const HealthSimulatorWrapper = lazySection(() => import('./HealthSimulatorSection'), 'HealthSimulatorSection');
-const AISetupWizardWrapper = lazySection(() => import('./AISetupWizardSection'), 'AISetupWizardSection');
 
 export const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   usage: UsageWrapper,
@@ -374,25 +358,21 @@ export const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps
   'model-fleet': ModelFleetWrapper,
   'model-live': ModelLiveWrapper,
   'model-quotas': ModelQuotasWrapper,
-  // browser-use / subagents / plugins are wired to CapabilitySections —
-  // the live panels for delegation limits, the plugin roster, and the
-  // browser/web tool surface. Unimplemented registry entries are excluded
-  // from navigation and redirected to a real section.
+  // Browser Use keeps its door. The subagent limits and the turn bounds lost
+  // theirs deliberately: the keys stay live in the backend and are set from the
+  // config file, so removing the panel changes no behaviour — it only removes a
+  // number most installs should never tune. `plugins` below is the single merged
+  // door for plugins and MCP servers.
   'browser-use': BrowserUseWrapper,
-  subagents: SubagentsWrapper,
-  // The turn bounds the backend has always honoured (tool-round cap, budget
-  // ladder, runaway backstop) had no UI at all — the docs told users to set
-  // them and the app offered no door.
-  'turn-limits': TurnLimitsWrapper,
-  plugins: PluginsWrapper,
   account: AccountWrapper,
   general: GeneralWrapper,
   appearance: AppearanceWrapper,
   'ui-designer': AppearanceWrapper,
   'system-health': SystemHealthWrapper,
-  'tools-connections': ToolsConnectionsWrapper,
+  // Merged: the old `tools-connections` door and the read-only plugin
+  // roster are one door now, and it is the writable integrations panel.
+  plugins: ToolsConnectionsWrapper,
   skills: SkillsWrapper,
-  'harness-improve': HarnessImprovementsWrapper,
   'model-families': ModelFamiliesWrapper,
   'conversations-history': ConversationsHistoryWrapper,
   'agents-automation': AgentsAutomationWrapper,
@@ -403,14 +383,12 @@ export const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps
   'computer-use': ComputerUseWrapper,
   'api-access': ExternalAccessWrapper,
   'tool-grants': AgentSandboxWrapper,
-  'agent-board': KanbanWrapper,
   'python-sandbox': AgentSandboxWrapper,
   'kernel-venv': AgentSandboxWrapper,
   'agent-sandbox': AgentSandboxWrapper,
   'app-updates': AppUpdatesWrapper,
   'phone-pairing': PhonePairingWrapper,
   'prompt-templates': PromptTemplatesWrapper,
-  'ai-setup': AISetupWizardWrapper,
   privacy: PrivacyWrapper,
   'memory-knowledge': MemoryWrapper,
   'memory-facts': MemoryWrapper,

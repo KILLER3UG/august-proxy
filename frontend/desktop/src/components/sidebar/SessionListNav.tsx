@@ -101,7 +101,9 @@ export function SessionListNav({
                 if (action === 'projects') {
                   window.dispatchEvent(new CustomEvent('august:open-project-picker'));
                 } else if (action === 'artifacts') {
-                  window.dispatchEvent(new CustomEvent('august:open-right-sidebar'));
+                  // A page now, not the in-chat drawer: the drawer shows one
+                  // chat's artifacts, the page browses every chat's.
+                  onNavigate('/artifacts');
                 } else {
                   onNavigate('/settings');
                 }

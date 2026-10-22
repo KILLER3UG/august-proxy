@@ -544,11 +544,13 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
                         : 'Write a message…'
               }
               rows={1}
-              /* The horizontal padding is small on purpose: the `+` and the
-                 send circle now flank the text on the SAME row, so the text
-                 starts right after the `+` — the reference's `+` sits
-                 directly beside the placeholder. */
-              className="w-full resize-none bg-transparent px-1 pt-2 pb-0.5 text-sm outline-none placeholder:text-muted-foreground/70"
+              /* Symmetric padding, and that is the whole fix. The old `pt-2
+                 pb-0.5` made one line 30px of content inside a 36px minimum
+                 height, so the 6px of slack all landed under the text and the
+                 placeholder sat high in its own row — the "floating" look. With
+                 8px above and below, one line is exactly 36px and centred, and
+                 a wrapped paragraph keeps the same rhythm as it grows. */
+              className="w-full resize-none bg-transparent px-1 py-2 text-sm leading-5 outline-none placeholder:text-muted-foreground/70"
               style={{ minHeight: '36px', maxHeight: '240px' }}
             />
           )}
@@ -610,8 +612,16 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
         className="mt-1.5 flex items-center justify-between gap-3 px-1 select-none"
         data-testid="composer-footer-row"
       >
-        <p className="min-w-0 flex-1 truncate text-2xs text-muted-foreground/60">
-          August is an AI assistant and can make mistakes. Please double-check responses.
+        {/* The row shares width with the project and model chips, and those are
+            shrink-0 — so this line got whatever was left, which at a normal
+            window width meant it ended mid-word: "…Please doubl…". A truncated
+            disclaimer informs no one. Shortened to what fits, with the full
+            sentence on hover rather than dropped. */}
+        <p
+          className="min-w-0 flex-1 truncate text-2xs text-muted-foreground/60"
+          title="August is an AI assistant and can make mistakes. Please double-check responses."
+        >
+          August can make mistakes — double-check responses.
         </p>
         <div className="flex min-w-0 shrink-0 items-center gap-2">
           {messages.length === 0 ? (

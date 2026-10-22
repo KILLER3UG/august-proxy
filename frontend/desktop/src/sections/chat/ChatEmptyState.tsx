@@ -84,42 +84,7 @@ export function ChatEmptyState({
               Dispatch
             </button>
           </>
-        ) : (
-          <div className="flex flex-col items-center gap-3 text-center">
-            {/* Brand lockup. The empty chat is the one screen that says who is
-                answering, so it leads with the mark instead of a bare prompt.
-                The glyph is decorative — the wordmark beside it carries the
-                name, so the mark is hidden from AT rather than announced
-                twice.
-
-                REMOVED: the `Asterisk` glyph in a primary-tinted bordered box.
-                `Asterisk` is Claude's OWN brand mark, and this redesign is
-                measured against Claude — lifting its logo as August's identity
-                is the opposite of the goal. It was also the only saturated
-                element on the empty screen. The wordmark alone carries the
-                name; the reference's empty state shows nothing but the cursor
-                in an empty composer. */}
-            <div className="flex items-center gap-2.5">
-              <span className="text-2xs font-semibold uppercase tracking-caps text-muted-foreground">
-                August
-              </span>
-            </div>
-            {/* Not an <h1>: the titlebar already renders the chat's title as
-                the page's single h1, and an empty chat has BOTH on screen at
-                once — a screen with two h1s has no page title at all, as far
-                as heading navigation is concerned. This is the prompt under
-                the title, not the title. */}
-            <p className="august-empty-title text-foreground">
-              What should we work on?
-            </p>
-            {/* Voice line — concrete claims only: reading and editing the
-                workspace, running it, and the brain's durable memory. Each one
-                maps to a tool the harness actually has. */}
-            <p className="hero-subtitle max-w-xl text-muted-foreground/75">
-              paste an error, a goal, or a whole repo. i’ll read the code, run it, and remember what mattered for next time.
-            </p>
-          </div>
-        )}
+        ) : null}
 
         <div className="w-full pt-1">{children}</div>
 

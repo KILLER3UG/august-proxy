@@ -23,5 +23,5 @@ export type LearningHost = 'settings' | 'hub';
  *  is in — otherwise the Learning hub throws you into the Settings overlay
  *  and the hub context is gone. */
 export function inboxRoute(host: LearningHost): string {
-  return host === 'hub' ? '/learning?tab=inbox' : '/settings/harness-improve';
+  return host === 'hub' ? '/learning?tab=inbox' : '/settings/skills';
 }

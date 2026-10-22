@@ -736,7 +736,6 @@ export function AssistantBlockTimeline({
               showFull={thoughtExpanded}
               onToggle={() => toggleExpand(thoughtId, !thoughtExpanded)}
               collapsedDefault={isCollapseThinkingEnabled()}
-              durationLabel={sequenceDurationLabel ?? undefined}
             />
           ),
         });

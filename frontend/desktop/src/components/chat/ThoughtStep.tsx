@@ -12,16 +12,20 @@
  * Show more/less control. The turn-level "Done" marker lives on the rail
  * (RailDoneRow), not on the thought.
  *
- * Claude-parity rendering (2026-09-22): with the collapsed default on (now
- * the out-of-box behaviour), a thought renders as a ONE-LINE distilled
- * "what the model is doing" header (summarizeThoughtHeader) — the raw
- * chain-of-thought prose never shows unless the user clicks
- * "Show full reasoning".
+ * Claude-parity rendering (2026-09-22, revised 2026-10-22): with the
+ * collapsed default on (the out-of-box behaviour), a thought renders as the
+ * reference's card BODY — one distilled sentence per line, no header, no
+ * reveal. The card's TITLE ("Thought for 49s") belongs to the activity line
+ * above the pack, which already carries the elapsed time; a per-thought
+ * header repeated that run duration on every block, and a "Show full
+ * reasoning" affordance promised more than the reference shows. The raw
+ * chain-of-thought remains available through the collapse-thinking opt-out
+ * (the clamped-prose branch below).
  */
 
 import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Clock, Loader2 } from 'lucide-react';
-import { cn, fmtElapsed } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import {
   splitThinkingSentences,
   summarizeThoughtHeader,
@@ -41,8 +45,6 @@ export function ThoughtStep({
   showFull = false,
   onToggle,
   collapsedDefault = false,
-  duration,
-  durationLabel,
   className,
 }: {
   content: string;
@@ -55,12 +57,6 @@ export function ThoughtStep({
    *  Only applies while clamped and not generating; "Show full reasoning"
    *  expands, "Show less" returns to the summary. */
   collapsedDefault?: boolean;
-  /** The thought's own elapsed time, in milliseconds. The reference names the
-   *  card "Thought for 49s"; when absent the header says "Thought". */
-  duration?: number;
-  /** Preformatted elapsed label (the activity's own duration), for callers
-   *  that do not have a per-thought duration. */
-  durationLabel?: string;
   className?: string;
 }) {
   const reactId = useId();
@@ -120,7 +116,7 @@ export function ThoughtStep({
     return splitThinkingSentences(text)
       .map((s) => summarizeThoughtHeader(s, false))
       .filter((s) => s.length > 0)
-      .slice(0, 6);
+      .slice(0, 12);
   }, [text, isGenerating, summaryLine]);
 
   if (!text && !isGenerating) return null;
@@ -150,12 +146,6 @@ export function ThoughtStep({
   ) : (
     <Clock className="process-thought-clock" aria-hidden />
   );
-  const thoughtLabel =
-    durationLabel
-      ? `Thought for ${durationLabel}`
-      : typeof duration === 'number' && duration > 0
-        ? `Thought for ${fmtElapsed(duration)}`
-        : 'Thought';
 
   return (
     <div
@@ -171,9 +161,13 @@ export function ThoughtStep({
       </div>
 
       <div className="process-thought-body">
-        <div className="mb-1 text-2xs font-medium leading-4 text-muted-foreground/60">
-          {thoughtLabel}
-        </div>
+        {/* No per-thought header. The reference names the THINKING CARD
+            "Thought for 49s" once — here that title is the activity line's
+            job (it already carries the elapsed time while the turn is live),
+            and repeating the run's duration on every thought block is how
+            three blocks each claimed "Thought for 6s". No "Show full
+            reasoning" either: the distilled sentences ARE the card's content,
+            the way the reference's are. */}
         {summaryCollapsed ? (
           <>
             <div
@@ -199,26 +193,6 @@ export function ThoughtStep({
                   </span>
                 ))}
               </span>
-              {canReveal ? (
-                <button
-                  type="button"
-                  className="thought-summary-toggle"
-                  onClick={onToggle}
-                  aria-expanded={false}
-                >
-                  Show full reasoning
-                </button>
-              ) : null}
-            </div>
-            {/* Keep the prose mounted (visually hidden) so the overflow
-                measurement above stays accurate while collapsed. */}
-            <div className="thought-clamp thought-clamp-hide" aria-hidden>
-              <div
-                ref={proseRef}
-                className="process-thought-prose thought-content chat-thought-text"
-              >
-                <Markdown content={text} />
-              </div>
             </div>
           </>
         ) : (

@@ -43,27 +43,21 @@ import {
   MessagesSquare,
   Monitor,
   Network,
-  Plug,
   Radio,
   Search as SearchIcon,
   Shield,
   SlidersHorizontal,
   Smartphone,
-  Timer,
   Palette,
   Paintbrush,
   UserRound,
   Bell,
-  HeartPulse,
-  Wand2,
   Database,
   Stethoscope,
   Layers,
   AudioLines,
   Coins,
   Route,
-  Users,
-  Flame,
   Asterisk,
   Info,
   CheckCircle2,
@@ -356,16 +350,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     keywords: ['ui designer', 'customize', 'colors', 'paint', 'branding', 'sidebar color', 'chat input color', 'preview'],
     legacyAliases: ['ui-customization', 'theme-editor', 'design-ui'],
   },
-  {
-    id: 'ai-setup',
-    label: 'Onboard',
-    description: 'Guided first-run wizard: connect a provider, test it, pick models, and choose a safety mode.',
-    icon: Wand2,
-    category: 'basics',
-    tier: 'basic',
-    keywords: ['setup', 'wizard', 'getting started', 'first run', 'beginner', 'welcome', 'onboard'],
-    legacyAliases: ['onboard'],
-  },
 
   /* ── Agent capabilities header ─────────────────────────────────── */
   {
@@ -421,81 +405,18 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     ],
   },
   {
-    id: 'subagents',
-    label: 'Subagents',
-    description: 'Multi-agent coordination, subagent tools, and lifecycle.',
-    icon: Users,
-    category: 'capabilities',
-    tier: 'basic',
-    settingHints: [
-      'Max parallel subagents',
-      'Subagent tool access',
-      'Team orchestration',
-    ],
-    keywords: ['subagent', 'subagents', 'delegation', 'agent hierarchy', 'parallel agents', 'multi-agent'],
-    legacyAliases: ['subagent', 'sub-agents'],
-  },
-  {
-    id: 'turn-limits',
-    label: 'Turn Limits',
-    description:
-      'Optional bounds on a single turn — tool-round cap, cost/token/time budget, and the backstop for a turn that varies its calls forever.',
-    icon: Timer,
-    category: 'capabilities',
-    tier: 'basic',
-    settingHints: [
-      'Tool round cap',
-      'Soft cost budget',
-      'Wall-clock budget',
-      'Runaway backstop',
-      'Context relief',
-    ],
-    settingAliases: [
-      'maxWorkbenchToolLoops',
-      'tool loops',
-      'budget soft tokens',
-      'wall clock',
-      'runaway nudge rounds',
-      'contextReliefRotate',
-      'rotate context',
-    ],
-    keywords: [
-      'turn limits',
-      'budget',
-      'tool rounds',
-      'max rounds',
-      'loop cap',
-      'runaway',
-      'stall',
-      'cost ceiling',
-      'brain config',
-    ],
-    legacyAliases: ['brain-config-panel', 'turn-budget'],
-  },
-  {
     id: 'plugins',
     label: 'Plugins',
-    description: 'Extensions, plugins, and custom agent tool packs.',
+    description: 'Install plugins and MCP servers, connect Gmail, Calendar, Drive, GitHub and Slack, and manage the tools they add.',
     icon: Layers,
     category: 'capabilities',
     tier: 'basic',
-    keywords: ['plugins', 'plugin', 'extensions', 'tool packs', 'addon'],
-    legacyAliases: ['plugins-tab', 'plugin-store'],
-  },
-  {
-    id: 'tools-connections',
-    label: 'MCP Servers',
-    description: 'Add Gmail, Calendar, Drive, GitHub, Slack, and MCP extensions for August.',
-    icon: Plug,
-    category: 'capabilities',
-    tier: 'basic',
-    settingHints: [
-      'MCP server',
-      'Connection',
-      'API key',
-      'Integration directory',
-    ],
     keywords: [
+      'plugins',
+      'plugin',
+      'extensions',
+      'tool packs',
+      'addon',
       'mcp',
       'mcp servers',
       'integration',
@@ -511,7 +432,19 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       'filesystem',
       'directory',
     ],
-    legacyAliases: ['mcp', 'commands', 'connections', 'services', 'tools-connections', 'mcp-servers'],
+    // One door now: the MCP Servers tab merged in here, so every alias that
+    // used to reach it has to resolve to `plugins` or the deep link silently
+    // falls through to the first section in the file.
+    legacyAliases: [
+      'plugins-tab',
+      'plugin-store',
+      'mcp',
+      'mcp-servers',
+      'commands',
+      'connections',
+      'services',
+      'tools-connections',
+    ],
   },
   {
     id: 'skills',
@@ -654,19 +587,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     legacyAliases: ['agents', 'agent-permissions', 'automations', 'terminal'],
   },
   {
-    id: 'agent-board',
-    label: 'Agent Board',
-    description: 'Durable kanban board for multi-agent work across sessions.',
-    icon: Flame,
-    category: 'capabilities',
-    // Left the sidebar with the other configuration surfaces. Reachable from the
-    // Settings rail and from the command palette (`nav: true` feeds SECTION_NAV_ITEMS)
-    // — not from the chat rail any more.
-    tier: 'basic',
-    keywords: ['board', 'cards'],
-    legacyAliases: ['kanban'],
-  },
-  {
     id: 'agent-sandbox',
     label: 'Files & Shell Access',
     description:
@@ -784,19 +704,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     legacyAliases: ['feature-flow-viz', 'execution-visualizer'],
   },
   {
-    id: 'harness-improve',
-    label: 'Review Inbox',
-    description: 'Proposals and memory retirements for a human to decide — review, approve, or reject.',
-    icon: HeartPulse,
-    category: 'data',
-    // Was 'hidden': the only human-decision surface of the learning loop,
-    // reachable only by deep link or search — proposals piled up unseen.
-    // The rail badge (open inbox count) makes it ambient now.
-    tier: 'basic',
-    keywords: ['harness', 'proposal', 'self-improvement', 'introspect', 'review queue', 'approve', 'retirement', 'inbox'],
-    legacyAliases: ['reliability', 'harness-proposals'],
-  },
-  {
     // `category: 'capabilities'` is the truth here — the rail and search group
     // by it, and this section reads as a model knob, not a statistic. It sits
     // after the Data block purely because it was appended there historically,
@@ -851,10 +758,10 @@ export const LEGACY_TAB_MAP: ReadonlyMap<string, string> = (() => {
   return m;
 })();
 
-/** Old "services" tab historically mapped to "mcp"; keep that behaviour. */
+/** Old "services" tab historically mapped to the MCP door, now merged into Plugins. */
 export function resolveLegacyTab(raw: string | null): string {
   if (!raw) return SETTINGS_SECTIONS[0].id;
-  if (raw === 'services') return 'tools-connections';
+  if (raw === 'services') return 'plugins';
   return LEGACY_TAB_MAP.get(raw ?? '') ?? SETTINGS_SECTIONS[0].id;
 }
 
