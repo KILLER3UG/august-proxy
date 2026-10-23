@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { UiDesignerSection } from './UiDesignerSection';
 import { SectionHeader } from '@/components/SectionHeader';
 import { ValuePill } from '@/components/ui/ValuePill';
+import { Button } from '@/components/ui/button';
 import type { SettingsSection } from '@/settings/settings-registry';
 
 type AppearanceTheme = { id: string; label: string; swatches: [string, string]; mode: ThemeMode; preset?: string };
@@ -130,15 +131,17 @@ export function AppearanceSection({ active }: { active?: SettingsSection }) {
                 read the model&rsquo;s full reasoning behind those lines.
               </p>
             </div>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               role="switch"
               aria-checked={showRawReasoning}
               aria-label="Show raw reasoning"
               data-testid="appearance-show-raw-reasoning"
               onClick={() => setCollapseThinkingEnabled(showRawReasoning)}
               className={cn(
-                'relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors',
+                'relative mt-0.5 h-5 w-9 shrink-0 rounded-full border p-0 hover:bg-transparent',
                 showRawReasoning
                   ? 'border-primary/50 bg-primary/20'
                   : 'border-border/70 bg-muted/50',
@@ -150,7 +153,7 @@ export function AppearanceSection({ active }: { active?: SettingsSection }) {
                   showRawReasoning ? 'translate-x-[18px]' : 'translate-x-[3px]',
                 )}
               />
-            </button>
+            </Button>
           </div>
         </section>
 
