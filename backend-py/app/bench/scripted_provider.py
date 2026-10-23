@@ -110,6 +110,11 @@ class ScriptedClient:
 def load_script(path: str | Path) -> ScriptedClient:
     """Build a client from a JSON script file."""
     raw = json.loads(Path(path).read_text(encoding='utf-8'))
+    if not isinstance(raw, dict):
+        # A bare array used to raise AttributeError on `.get`, which the
+        # runner's (OSError, ValueError) guard did not catch: a mistyped script
+        # printed a traceback instead of the typed input error.
+        raise ValueError('script root must be a JSON object with a "rounds" list')
     return build_client(as_list(raw.get('rounds'), []))
 
 

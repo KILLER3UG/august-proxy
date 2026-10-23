@@ -17,6 +17,7 @@ same tools, same sandbox, same gates. What the bench adds:
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import logging
 import os
@@ -143,20 +144,33 @@ async def run_bench(opts: BenchOptions) -> int:
     # ── headless stance BEFORE anything session-related runs ─────────────
     os.environ['AUGUST_HEADLESS'] = '1'
 
+    # The scripted provider is a test fixture, not a product setting: it is
+    # installed for one run and the store it was armed in is put back in the
+    # run's `finally`. Without the restore, running the bench rewrote the
+    # user's default provider to a dead localhost entry (and created a
+    # providers.json in a checkout), so the next normal chat failed until the
+    # user found and fixed the store by hand.
+    scripted_previous_client: Any = None
+    saved_providers_store: dict[str, Any] | None = None
     if opts.script_path:
-        # Installed for the life of this process on purpose: a bench run IS the
-        # sandbox, and the seam (`app.providers.clients.getClient`) is resolved
-        # at call time by every caller, so patching it here reaches the real
-        # loop without the loop knowing it is being driven.
+        # The seam (`app.providers.clients.getClient`) is resolved at call time
+        # by every caller, so patching it here reaches the real loop without
+        # the loop knowing it is being driven.
         from app.bench.scripted_provider import arm_providers_store, install, load_script
+        from app.services import config_service
 
         try:
             scripted_client = load_script(opts.script_path)
         except (OSError, ValueError) as exc:
             print(f'august-bench: cannot read --script: {exc}', file=sys.stderr)
             return EXIT_INPUT
-        arm_providers_store()
-        install(scripted_client)
+        saved_providers_store = copy.deepcopy(config_service.getProvidersStore())
+        try:
+            arm_providers_store()
+            scripted_previous_client = install(scripted_client)
+        except Exception:
+            config_service.saveProvidersStore(saved_providers_store)
+            raise
         print(
             f'august-bench: scripted provider armed with {len(scripted_client.rounds)} round(s) '
             f'from {opts.script_path} — no request leaves this process',
@@ -350,6 +364,14 @@ async def run_bench(opts: BenchOptions) -> int:
         from app.bench.integrity import unregister_integrity_hook
 
         unregister_integrity_hook()
+        if scripted_previous_client is not None:
+            from app.bench.scripted_provider import uninstall
+
+            uninstall(scripted_previous_client)
+        if saved_providers_store is not None:
+            from app.services import config_service
+
+            config_service.saveProvidersStore(saved_providers_store)
     return exit_code
 
 
