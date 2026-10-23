@@ -4144,15 +4144,19 @@ def parse_expectations(deck_text: str) -> list[dict[str, object]]:
     """The `* expect` cards in a deck.
 
     Grammar: `* expect v(out) ~= 5.0 ±0.05`, `* expect i(v1) < 0.002`,
-    `* expect tran_max v(led) > 0.1`. The left side is a measure key exactly as
-    `circuit_simulate` reports it, so an expectation cannot pass against a
-    number the tool never returned.
+    `* expect tran_max v(led) > 0.1`. The FIRST token is the measure key
+    exactly as `circuit_simulate` reports it, so an expectation cannot pass
+    against a number the tool never returned; a second token is a descriptive
+    annotation (ngspice's `.meas` prints `tran_max = …`, never
+    `tran_max v(led) = …`). Reading the whole left side as the key made the
+    advertised two-token form fail with "the run reported no such measure"
+    against a run that had in fact returned `tran_max`.
     """
     out: list[dict[str, object]] = []
     for m in _EXPECT_RE.finditer(deck_text or ''):
         tol = m.group('tol')
         out.append({
-            'expr': m.group('expr'),
+            'expr': m.group('expr').split()[0],
             'op': m.group('op'),
             'value': float(m.group('value')),
             'tol': float(tol) if tol else None,
