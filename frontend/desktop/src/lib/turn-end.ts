@@ -23,9 +23,13 @@ export const TURN_END_PHRASE: Record<string, string> = {
  * in the exact command or click). */
 export const TURN_END_REMEDY: Record<string, string> = {
   length: 'the answer was cut off. Send another message to continue from here.',
-  cap: `the tool-round cap stopped this turn. Raise it in Settings → Turn Limits, or ask for a smaller step.`,
+  // The Turn Limits door was removed (`00f45306`); these keys live in the
+  // config file only, so a remedy that names a Settings section is a dead
+  // pointer. A new message starts a new turn with fresh limits, which is the
+  // action the reader can actually take from here.
+  cap: `the tool-round cap stopped this turn. Send another message to continue with a fresh cap, or ask for a smaller step.`,
   'stall-stop': `it repeated itself without making progress. Send "continue" to try a different approach, or narrow the task.`,
-  budget: `this turn hit a budget limit and was degraded. Raise the budget in Settings → Turn Limits, or split the task.`,
+  budget: `this turn hit a budget limit and was degraded. Send another message to continue with a fresh budget, or split the task.`,
   error: 'something failed while running this turn. Open the log for the failing tool, then retry.',
   interrupted: 'you stopped this turn. Send a message to pick it back up.',
   'awaiting-input': 'the model is waiting on your input before it can continue.',

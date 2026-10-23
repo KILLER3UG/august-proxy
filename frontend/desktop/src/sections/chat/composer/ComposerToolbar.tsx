@@ -382,7 +382,7 @@ export function ComposerToolbar({
                       : canSend
                         ? 'Send (Enter)'
                         : !selectedModel
-                          ? 'No model available — check Settings → AI Setup'
+                          ? 'No model available — add a provider in Settings → Model settings'
                           : !sessionId
                             ? 'Open a chat session first'
                             : 'Type a message to send'
