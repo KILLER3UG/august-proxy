@@ -14,9 +14,6 @@ export interface ModelItem {
   pinned?: boolean;
   supportsReasoning?: boolean;
   supportsThinking?: boolean;
-  /** True when the catalog advertises image input; the picker renders a
-   *  "Vision" pill only when this is present. */
-  vision?: boolean;
   /** USD per 1M tokens, resolved server-side by the same estimator the usage
    *  page bills with. Absent means "no price claim" (an alias row has no target
    *  model to price) — it does NOT mean $0. `0` is a price: a local host that

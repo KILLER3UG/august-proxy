@@ -130,14 +130,6 @@ function ApiBadge() {
   );
 }
 
-function VisionBadge() {
-  return (
-    <span className="shrink-0 rounded-[4px] bg-muted/70 px-1.5 py-[1px] text-[0.5625rem] leading-4 text-muted-foreground/80">
-      Vision
-    </span>
-  );
-}
-
 function ThinkingSwitch({
   checked,
   disabled,
@@ -414,7 +406,7 @@ export function ModelEffortMenu({
         tabIndex={0}
         data-testid="model-option"
         title={meta}
-        aria-label={`${m.id}${m.vision ? ', vision' : ''}${isSelected ? ', selected' : ''}`}
+        aria-label={`${m.id}${isSelected ? ', selected' : ''}`}
         className="group flex min-h-8 w-full cursor-pointer items-center gap-1.5 px-3 py-1.5 text-left text-[0.8125rem] text-foreground/90 transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
         onClick={() => {
           onSelect(m);
@@ -434,7 +426,6 @@ export function ModelEffortMenu({
             {m.provider}
           </span>
         ) : null}
-        {m.vision ? <VisionBadge /> : null}
         {isSelected ? <Check className="size-3.5 shrink-0 text-foreground/80" /> : null}
       </div>
     );
