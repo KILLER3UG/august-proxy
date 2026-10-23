@@ -45,6 +45,7 @@ __all__ = [
     'reconcile_tool_results',
     'synthetic_tool_result',
     'tool_result_failed',
+    'tool_result_stalled',
 ]
 
 # Prefix for a result the harness invented rather than a tool returning one.
@@ -196,6 +197,20 @@ def tool_result_failed(text: str) -> bool:
         or _exit_code_failure(marker)
         or _structured_failure(marker)
     )
+
+
+def tool_result_stalled(text: str) -> bool:
+    """A FAILED receipt whose cause names a timeout.
+
+    The transcript's `stalled` status is a distinction INSIDE failure, not a
+    second failure test: a successful read of a log whose contents happen to
+    contain "timed out after" must not become a failed ledger row (feb7c623
+    tested the substring alone, on every tool). Requiring the receipt's own
+    failure verdict keeps the status on calls that actually timed out.
+    """
+    if not text or not tool_result_failed(text):
+        return False
+    return ' timed out after ' in text.lower()
 
 
 def receipt_tone(text: str) -> str:

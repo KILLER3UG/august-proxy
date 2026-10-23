@@ -81,6 +81,9 @@ from app.services.workbench.tool_protocol import (
 from app.services.workbench.tool_protocol import (
     tool_result_failed as _toolResultFailed,
 )
+from app.services.workbench.tool_protocol import (
+    tool_result_stalled as _toolResultStalled,
+)
 from app.services.workbench.validator import validationErrorText
 
 logger = logging.getLogger('workbench')
@@ -5695,7 +5698,7 @@ async def _sendWorkbenchMessageStreamImpl(
             # failure at the START of its own text. Computed ONCE here from the
             # shared rule so the SSE frame and the durable transcript message
             # can never disagree (``tool_protocol.tool_result_failed``).
-            timedOut = ' timed out after ' in str(result).lower()
+            timedOut = _toolResultStalled(str(result))
             toolStatus = (
                 'stalled' if timedOut else ('error' if _toolResultFailed(str(result)) else 'done')
             )
