@@ -112,13 +112,14 @@ export function hullOf(mesh: Mesh, ink: string, gain = 1.045): Mesh {
   return hull;
 }
 
+/** `pins` are in world units, already relative to the part's centroid. */
 function leads(pins: PartPin[], palette: Palette): Mesh[] {
   const out: Mesh[] = [];
   for (const pin of pins.slice(0, 2)) {
     const geo = new CylinderGeometry(0.05, 0.05, 1.1, 8);
     const mesh = new Mesh(geo, material(palette['--cb3d-lead'], { metal: 0.55, rough: 0.35 }));
     mesh.rotation.z = Math.PI / 2;
-    mesh.position.set(pin[0] * WORLD_PER_UNIT, 0.12, pin[1] * WORLD_PER_UNIT);
+    mesh.position.set(pin[0], 0.12, pin[1]);
     out.push(mesh);
   }
   return out;
@@ -129,14 +130,14 @@ function leads(pins: PartPin[], palette: Palette): Mesh[] {
 function axialBody(pins: PartPin[], radius: number, color: string, height: number): Mesh {
   const a = pins[0];
   const b = pins[1] ?? pins[0];
-  const dx = (b[0] - a[0]) * WORLD_PER_UNIT;
-  const dy = (b[1] - a[1]) * WORLD_PER_UNIT;
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
   const len = Math.max(0.6, Math.hypot(dx, dy) - radius * 2);
   const geo = new CylinderGeometry(radius, radius, len, 18);
   const mesh = new Mesh(geo, material(color, { rough: 0.5 }));
   mesh.rotation.z = Math.PI / 2;
   mesh.rotation.y = -Math.atan2(dy, dx);
-  mesh.position.set(((a[0] + b[0]) / 2) * WORLD_PER_UNIT, height, ((a[1] + b[1]) / 2) * WORLD_PER_UNIT);
+  mesh.position.set((a[0] + b[0]) / 2, height, (a[1] + b[1]) / 2);
   return mesh;
 }
 
@@ -185,7 +186,26 @@ export function labelTexture(top: string, bottom: string, ink: string, base: str
   return tex;
 }
 
-/** Build one part's group at the origin: the caller places it from the graph. */
+/** Everything that changes a part's MESH, not just its position. The stage
+ *  uses this to rebuild a part whose value/kind/pins changed; rebuilding only
+ *  on a position change is how a resistor→LED edit stayed a resistor. */
+export function partGeometryKey(input: PartInput): string {
+  const pins = input.pins.map((p) => `${p[0].toFixed(3)},${p[1].toFixed(3)}`).join(';');
+  return `${input.kind}|${input.value}|${input.nodes.join(',')}|${pins}`;
+}
+
+/** Where the part's group belongs, in world units, BEFORE the caller's board
+ *  centring. The stage reads this for a move without rebuilding the mesh. */
+export function partCentroid(input: PartInput): { x: number; z: number } {
+  const pins = input.pins.length >= 2 ? input.pins : ([[0, 0], [20, 0]] as PartPin[]);
+  const n = pins.length;
+  return {
+    x: (pins.reduce((s, p) => s + p[0], 0) / n) * WORLD_PER_UNIT,
+    z: (pins.reduce((s, p) => s + p[1], 0) / n) * WORLD_PER_UNIT,
+  };
+}
+
+/** Build one part's group, placed at its pin centroid by `partCentroid`. */
 export function buildPart(input: PartInput, palette: Palette): Group {
   const group = new Group();
   group.name = input.ref;
@@ -196,26 +216,19 @@ export function buildPart(input: PartInput, palette: Palette): Group {
 
   const pins = input.pins.length >= 2 ? input.pins : [[0, 0], [20, 0]] as PartPin[];
   const local = pins.map((p) => [p[0] * WORLD_PER_UNIT, p[1] * WORLD_PER_UNIT] as PartPin);
-  const cx = local.reduce((s, p) => s + p[0], 0) / local.length;
-  const cz = local.reduce((s, p) => s + p[1], 0) / local.length;
-  const shifted = local.map((p) => [p[0] - cx, p[1] - cz] as PartPin);
-  // The children are built around the pin centroid, so the GROUP has to be
-  // placed at it — without this every part lands on the origin and the board
-  // renders as a stack. Caught by looking at the picture, not the types.
-  group.position.set(cx, 0, cz);
-  const rel = (mesh: Mesh): void => {
-    mesh.position.x -= cx;
-    mesh.position.z -= cz;
-  };
+  const centre = partCentroid(input);
+  const shifted = local.map((p) => [p[0] - centre.x, p[1] - centre.z] as PartPin);
+  // `local`, the centre and `shifted` are WORLD units. The group sits at the
+  // pin centroid and every child is built around zero; multiplying or centring
+  // a second time inside a child put every axial part at the board origin.
+  group.position.set(centre.x, 0, centre.z);
 
   const kind = input.kind;
   if (kind === 'resistor') {
     const body = axialBody(shifted, 0.22, palette['--cb3d-resistor'], 0.45);
-    rel(body);
-    group.add(body, ...bands(body, palette).map((b) => (rel(b), b)));
+    group.add(body, ...bands(body, palette));
   } else if (kind === 'capacitor') {
     const body = axialBody(shifted, 0.3, palette['--cb3d-cap'], 0.6);
-    rel(body);
     group.add(body);
   } else if (kind === 'isource' || kind === 'voltage') {
     // `voltage`, not `vsource`: the kind vocabulary is schematic._ELEMENT_KINDS
@@ -303,16 +316,36 @@ export function buildPart(input: PartInput, palette: Palette): Group {
       pin.position.set(p[0], 0.02, p[1]);
       group.add(pin);
     }
+  } else if (shifted.length >= 3) {
+    // A three-plus-terminal device (BJT, FET, coupled inductor): a box with a
+    // pin stub for EVERY net. The generic two-lead body drew three-terminal
+    // parts as resistors and left the third net landing nowhere.
+    const xs = shifted.map((p) => p[0]);
+    const ys = shifted.map((p) => p[1]);
+    const wide = Math.max(1.0, Math.max(...xs) - Math.min(...xs) + 0.5);
+    const deep = Math.max(0.8, Math.max(...ys) - Math.min(...ys) + 0.5);
+    const body = new Mesh(
+      new BoxGeometry(wide, 0.5, deep),
+      material(palette['--cb3d-ic'], { rough: 0.45 }),
+    );
+    body.position.set(0, 0.28, 0);
+    group.add(body);
+    for (const p of shifted) {
+      const pin = new Mesh(
+        new CylinderGeometry(0.045, 0.045, 0.5, 6),
+        material(palette['--cb3d-lead'], { metal: 0.6, rough: 0.3 }),
+      );
+      pin.position.set(p[0], 0.02, p[1]);
+      group.add(pin);
+    }
   } else {
     const body = axialBody(shifted, 0.24, palette['--cb3d-board-deep'], 0.5);
-    rel(body);
     group.add(body);
   }
 
   // Leads sit at the pin positions for the two-terminal families.
-  if (kind !== 'subckt' && kind !== 'switch') {
+  if (kind !== 'subckt' && kind !== 'switch' && shifted.length < 3) {
     for (const mesh of leads(shifted, palette)) {
-      rel(mesh);
       group.add(mesh);
     }
   }

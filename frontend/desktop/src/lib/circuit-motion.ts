@@ -48,8 +48,12 @@ export const TIMING = {
 /** World units (the stage is in mm-ish units, one grid cell = 10). */
 export const LIFT = { enter: 4.6, hover: 0.16, moveArc: 1.6 } as const;
 
-/** Multiplier applied to every tween when the OS asks for reduced motion. */
-export const TWEEN_SPEED_REDUCED = 0.05;
+/** Multiplier applied to every tween when the OS asks for reduced motion.
+ *  It must be ABOVE 1: the tween still reaches its final state, but in ~5% of
+ *  the normal time. The old 0.05 divided the rate, turning a 720 ms enter into
+ *  a 14-second animation — the opposite of reduced motion. The stage also
+ *  disables idle auto-rotation in this mode. */
+export const TWEEN_SPEED_REDUCED = 20;
 
 /** A tween in flight: progress is wall-clock, so a retarget restarts honestly. */
 export function tweenProgress(startMs: number, durationMs: number, nowMs: number, speed = 1): number {

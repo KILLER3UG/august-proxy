@@ -50,7 +50,15 @@ import {
  *  hands back `Mesh<any, any, any>`, so the scene graph is narrowed here, once,
  *  at the boundary with three rather than at every disposal call. */
 type AnyMesh = Mesh<BufferGeometry, Material | Material[]>;
-import { buildPart, buildSlab, readPalette, WORLD_PER_UNIT, type PartInput } from '@/lib/circuit-3d-parts';
+import {
+  buildPart,
+  buildSlab,
+  partCentroid,
+  partGeometryKey,
+  readPalette,
+  WORLD_PER_UNIT,
+  type PartInput,
+} from '@/lib/circuit-3d-parts';
 import { LIFT, TIMING, TWEEN_SPEED_REDUCED, prefersReducedMotion, tweenProgress } from '@/lib/circuit-motion';
 import type { SchematicGraph } from '@/api/circuit';
 
@@ -73,6 +81,15 @@ interface PartState {
   hoverFrom: number;
   hoverTo: number;
   hoverStart: number;
+  /** `partGeometryKey` at build time; a changed key rebuilds the mesh. */
+  signature: string;
+}
+
+function dropPartGroup(part: PartState): void {
+  part.group.parent?.remove(part.group);
+  part.group.traverse((o) => {
+    if (o instanceof Mesh) disposeDeep(o as AnyMesh);
+  });
 }
 
 interface Stage {
@@ -88,6 +105,8 @@ interface Stage {
   /** Wired up by the mount effect, which owns the camera and the knob. */
   setFit?: (extent: number) => void;
   applyPot?: () => void;
+  /** The slab is rebuilt when the board's extents change. */
+  slabKey?: string;
 }
 
 const SWEEP_DEG = 270;
@@ -172,7 +191,8 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
     let knobLastAngle = 0;
     let pot = 512;
     let hovered: PartState | null = null;
-    const speed = prefersReducedMotion() ? TWEEN_SPEED_REDUCED : 1;
+    const reduceMotion = prefersReducedMotion();
+    const speed = reduceMotion ? TWEEN_SPEED_REDUCED : 1;
     const ray = new Raycaster();
 
     const applyCamera = (): void => {
@@ -309,18 +329,35 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
     const onClick = (): void => {
       if (hovered && onSelectRef.current) onSelectRef.current(hovered.ref);
     };
+    // A 3D scene is inaccessible by nature; the schematic above is the real
+    // fallback, but the camera must still be reachable without a pointer.
+    const onKeyDown = (e: KeyboardEvent): void => {
+      const step = e.shiftKey ? 0.3 : 0.12;
+      let handled = true;
+      if (e.key === 'ArrowLeft') azimuth -= step;
+      else if (e.key === 'ArrowRight') azimuth += step;
+      else if (e.key === 'ArrowUp') elevation = Math.min(1.45, elevation + step * 0.7);
+      else if (e.key === 'ArrowDown') elevation = Math.max(0.06, elevation - step * 0.7);
+      else if (e.key === '+' || e.key === '=') zoom = Math.min(22, zoom * 1.08);
+      else if (e.key === '-' || e.key === '_') zoom = Math.max(3.2, zoom * 0.92);
+      else if (e.key === 'Home' || e.key === '0') {
+        azimuth = Math.PI / 5;
+        elevation = Math.PI / 4.2;
+        zoom = 8.4;
+      } else handled = false;
+      if (!handled) return;
+      targetAz = azimuth;
+      targetEl = elevation;
+      snapStart = 0;
+      idleSince = performance.now();
+      e.preventDefault();
+    };
     host.addEventListener('pointerdown', onPointerDown);
     host.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
     host.addEventListener('wheel', onWheel, { passive: false });
     host.addEventListener('click', onClick);
-
-    const dropPart = (p: PartState): void => {
-      p.group.parent?.remove(p.group);
-      p.group.traverse((o) => {
-        if (o instanceof Mesh) disposeDeep(o as AnyMesh);
-      });
-    };
+    host.addEventListener('keydown', onKeyDown);
 
     let raf = 0;
     const frame = (): void => {
@@ -359,7 +396,7 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
       for (const p of [...stage.parts.values()]) {
         stepPart(p, t);
         if (p.mode === 'exit' && t - p.startMs >= TIMING.exit.ms) {
-          dropPart(p);
+          dropPartGroup(p);
           stage.parts.delete(p.ref);
         }
       }
@@ -373,7 +410,7 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
         azimuth = snapFromAz + (targetAz - snapFromAz) * TIMING.camera.curve(k);
         elevation = snapFromEl + (targetEl - snapFromEl) * TIMING.camera.curve(k);
         if (k >= 1) snapStart = 0;
-      } else if (!dragging && !knobDrag && t - idleSince > TIMING.idleAutoRotateMs) {
+      } else if (!reduceMotion && !dragging && !knobDrag && t - idleSince > TIMING.idleAutoRotateMs) {
         azimuth += 0.0016;
         targetAz = azimuth;
       }
@@ -425,6 +462,7 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
       window.removeEventListener('pointerup', onPointerUp);
       host.removeEventListener('wheel', onWheel);
       host.removeEventListener('click', onClick);
+      host.removeEventListener('keydown', onKeyDown);
       scene.traverse((o) => {
         if (o instanceof Mesh) disposeDeep(o as AnyMesh);
       });
@@ -440,9 +478,20 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
     if (!stage) return;
     const components = graph?.components ?? [];
     setEmpty(components.length === 0);
-    if (components.length === 0) return;
     const palette = readPalette();
     const now = performance.now();
+
+    if (components.length === 0) {
+      for (const part of [...stage.parts.values()]) dropPartGroup(part);
+      stage.parts.clear();
+      for (const mesh of stage.wires) {
+        mesh.parent?.remove(mesh);
+        disposeDeep(mesh);
+      }
+      stage.wires = [];
+      stage.setReadout('');
+      return;
+    }
 
     let minX = Infinity;
     let maxX = -Infinity;
@@ -461,10 +510,19 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
     const cy = (minY + maxY) / 2;
     const width = Math.max(4, (maxX - minX) * WORLD_PER_UNIT + 2);
     const depth = Math.max(4, (maxY - minY) * WORLD_PER_UNIT + 2);
-    if (!stage.scene.getObjectByName('slab')) {
+    const slabKey = `${width}x${depth}`;
+    if (stage.slabKey !== slabKey) {
+      const old = stage.scene.getObjectByName('slab');
+      if (old) {
+        old.parent?.remove(old);
+        old.traverse((o) => {
+          if (o instanceof Mesh) disposeDeep(o as AnyMesh);
+        });
+      }
       const slab = buildSlab(width, depth, palette);
       slab.name = 'slab';
       stage.scene.add(slab);
+      stage.slabKey = slabKey;
     }
     stage.setFit?.(Math.max(width, depth) / 2 + 1.5);
 
@@ -479,27 +537,31 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
         nodes: c.nodes,
         pins: (c.pins ?? []).map((p) => [p[0] - cx, p[1] - cy] as [number, number]),
       };
+      const signature = partGeometryKey(input);
+      const centre = partCentroid(input);
+      const to = new Vector3(centre.x, 0, centre.z);
       const existing = stage.parts.get(c.ref);
-      if (existing && existing.mode !== 'exit') {
-        const to = existing.group.position.clone();
-        // buildPart centres its children on the pin centroid and places the
-        // group there, so a re-layout is re-derived rather than guessed at.
-        const rebuilt = buildPart(input, palette);
-        to.copy(rebuilt.position);
-        rebuilt.position.set(0, 0, 0);
-        if (!existing.group.position.equals(to)) {
-          existing.from.copy(existing.group.position);
-          existing.to.copy(to);
-          existing.mode = 'move';
-          existing.startMs = now;
+      if (existing) {
+        if (existing.mode !== 'exit' && existing.signature === signature) {
+          // Same mesh: animate only the position. A part the deck moved
+          // travels; one whose kind/value/pins changed is rebuilt below,
+          // because a resistor→LED edit must not stay a resistor.
+          if (!existing.group.position.equals(to) && existing.mode !== 'enter') {
+            existing.from.copy(existing.group.position);
+            existing.to.copy(to);
+            existing.mode = 'move';
+            existing.startMs = now;
+          } else {
+            existing.to.copy(to);
+          }
+          continue;
         }
-        rebuilt.traverse((o) => {
-          if (o instanceof Mesh) disposeDeep(o as AnyMesh);
-        });
-        continue;
+        // Exit in progress or a changed mesh: the old group must be removed
+        // before the map entry is replaced, or its objects render forever.
+        dropPartGroup(existing);
+        stage.parts.delete(c.ref);
       }
       const group = buildPart(input, palette);
-      const to = group.position.clone();
       group.traverse((o) => {
         if (o instanceof Mesh) o.castShadow = true;
       });
@@ -507,6 +569,7 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
       stage.parts.set(c.ref, {
         group,
         ref: c.ref,
+        signature,
         mode: 'enter',
         startMs: now + order * TIMING.enterStagger,
         from: new Vector3(to.x, to.y + LIFT.enter, to.z),
@@ -562,8 +625,6 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
       </p>
     );
   }
-  if (empty) return <></>;
-
   return (
     <div className={className} data-testid="circuit-3d-stage">
       <div className="mb-1 flex items-center justify-between gap-2 px-0.5">
@@ -578,13 +639,20 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
           </span>
         </span>
         <span className="shrink-0 text-2xs text-muted-foreground/70">
-          drag the knob · drag to turn · scroll to zoom
+          {empty ? 'waiting for parts' : 'drag the knob · drag to turn · scroll to zoom'}
         </span>
       </div>
       <div
         ref={hostRef}
-        className="relative h-64 w-full cursor-grab touch-none overflow-hidden rounded-lg border border-border/50 bg-card/40"
-        aria-label="Three-dimensional view of the circuit"
+        // The host must exist on the FIRST render: the renderer is created in
+        // a mount effect, and this component used to return early while the
+        // graph was still null, so the effect ran with no host and never ran
+        // again. That is the bug that made the whole stage invisible.
+        className="relative h-64 w-full cursor-grab touch-none overflow-hidden rounded-lg border border-border/50 bg-card/40 outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+        role="application"
+        tabIndex={0}
+        aria-label={`3D circuit board, ${graph?.components.length ?? 0} parts. Use the arrow keys to rotate the view, plus and minus to zoom.`}
+        title="Drag to rotate · scroll to zoom · arrow keys rotate · +/- zoom · Home resets"
       >
         <div
           ref={haloRef}
@@ -600,6 +668,14 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
         >
           {label}
         </div>
+        {empty ? (
+          <div
+            className="pointer-events-none absolute inset-0 grid place-items-center px-6 text-center text-2xs text-muted-foreground/70"
+            data-testid="circuit-3d-empty"
+          >
+            No parts in this deck yet. The stage fills in when the deck has components.
+          </div>
+        ) : null}
       </div>
     </div>
   );

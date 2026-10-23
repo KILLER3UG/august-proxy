@@ -5,11 +5,11 @@
  * dedicated drawer section. Images open in the file viewer; netlists and   *
  * bitstreams reveal in folder.                                             */
 
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import { FolderOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { FileIcon } from '@/components/ui/FileIcon';
-import { circuitApi, type SchematicGraph } from '@/api/circuit';
+import type { SchematicGraph } from '@/api/circuit';
 import {
   openRightDrawerFile,
 } from '@/components/shell/RightDrawerState';
@@ -26,7 +26,12 @@ import { useSessionStream } from '@/sections/chat/hooks/useSessionStream';
 import { CircuitInstruments } from '@/components/shell/CircuitInstruments';
 import { CircuitWaveformViewer } from '@/components/shell/CircuitWaveformViewer';
 import { CircuitSchematicEditor } from '@/components/shell/CircuitSchematicEditor';
-import { CircuitBreadboard3D } from '@/components/shell/CircuitBreadboard3D';
+
+// three.js is ~570 KB minified and this drawer is not open by default. A static
+// import put it in the initial chat chunk for a panel most sessions never use.
+const CircuitBreadboard3D = lazy(() =>
+  import('@/components/shell/CircuitBreadboard3D').then((m) => ({ default: m.CircuitBreadboard3D })),
+);
 
 /** Row subtitle. A tool name is not something to show a user; the artifact's
  *  own kind is. */
@@ -43,7 +48,8 @@ function describeArtifact(art: CircuitArtifact): string {
 
 export function RightDrawerCircuitSection({ sessionId }: { sessionId: string | null }) {
   const stream = useSessionStream(sessionId);
-  const messages = stream?.messages ?? [];
+  const streamMessages = stream?.messages;
+  const messages = useMemo(() => streamMessages ?? [], [streamMessages]);
   const artifacts = useMemo(() => artifactsForMessages(messages), [messages]);
   // The schematic editor edits ONE netlist at a time — the newest by
   // default, switchable from the picker.
@@ -57,29 +63,26 @@ export function RightDrawerCircuitSection({ sessionId }: { sessionId: string | n
   const activeNetlist =
     (netlists.find((n) => n.path === selectedNetlist) ?? netlists[netlists.length - 1])?.path ?? '';
 
-  // The 3D stage draws the SAME graph the schematic editor edits. Fetching it
-  // here rather than letting the stage read the editor's copy keeps one loader,
-  // and it is the deck's own data either way: no second model of the circuit.
+  // The 3D stage draws the SAME graph object the schematic editor owns. The
+  // editor is the one loader; a second fetch here used to be keyed only on the
+  // netlist PATH, so an in-place edit (or a re-run that rewrote the file) left
+  // the 3D view showing the previous deck.
   const [graph, setGraph] = useState<SchematicGraph | null>(null);
   const [selectedRef, setSelectedRef] = useState<string>('');
-  useEffect(() => {
-    let live = true;
-    if (!sessionId || !activeNetlist) {
-      setGraph(null);
-      return;
-    }
-    circuitApi
-      .readSchematic(sessionId, activeNetlist)
-      .then((g) => {
-        if (live) setGraph(g);
-      })
-      .catch(() => {
-        if (live) setGraph(null);
-      });
-    return () => {
-      live = false;
-    };
-  }, [sessionId, activeNetlist]);
+  // A circuit tool that starts or finishes is the moment the deck on disk may
+  // have changed. The editor reloads on this signature and reports the graph
+  // back up through onGraphChange.
+  const graphRevision = useMemo(
+    () =>
+      messages
+        .flatMap((m) => m.tools ?? [])
+        .map(
+          (t) =>
+            `${t.name ?? ''}:${t.startedAt ?? 0}:${t.status ?? ''}:${(t.result ?? '').length}`,
+        )
+        .join('|'),
+    [messages],
+  );
 
   const open = async (path: string) => {
     try {
@@ -120,14 +123,25 @@ export function RightDrawerCircuitSection({ sessionId }: { sessionId: string | n
             <CircuitSchematicEditor
               sessionId={sessionId}
               netlistPath={activeNetlist}
+              revision={graphRevision}
+              onGraphChange={setGraph}
               className="mb-3"
             />
-            <CircuitBreadboard3D
-              graph={graph}
-              selectedRef={selectedRef}
-              onSelect={setSelectedRef}
-              className="mb-3"
-            />
+            <Suspense
+              fallback={
+                <div
+                  className="mb-3 h-64 animate-pulse rounded-lg border border-border/50 bg-card/40"
+                  aria-label="Loading 3D board"
+                />
+              }
+            >
+              <CircuitBreadboard3D
+                graph={graph}
+                selectedRef={selectedRef}
+                onSelect={setSelectedRef}
+                className="mb-3"
+              />
+            </Suspense>
           </>
         ) : null}
         <CircuitInstruments messages={messages} />

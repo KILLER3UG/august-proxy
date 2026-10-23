@@ -422,10 +422,16 @@ function sourcePolarity(c: SchematicComponent): string {
 export function CircuitSchematicEditor({
   sessionId,
   netlistPath,
+  revision,
+  onGraphChange,
   className,
 }: {
   sessionId: string | null;
   netlistPath: string;
+  /** Changes whenever a tool may have rewritten the deck; reloads the graph. */
+  revision?: string;
+  /** The editor owns the fetch; the 3D stage renders the same graph object. */
+  onGraphChange?: (graph: SchematicGraph | null) => void;
   className?: string;
 }) {
   const [graph, setGraph] = useState<SchematicGraph | null>(null);
@@ -443,18 +449,22 @@ export function CircuitSchematicEditor({
     setLoading(true);
     setError(null);
     try {
-      setGraph(await circuitApi.readSchematic(sessionId, netlistPath));
+      const next = await circuitApi.readSchematic(sessionId, netlistPath);
+      setGraph(next);
+      onGraphChange?.(next);
       setDirty(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load schematic');
+      onGraphChange?.(null);
     } finally {
       setLoading(false);
     }
-  }, [sessionId, netlistPath]);
+  }, [sessionId, netlistPath, onGraphChange]);
 
   useEffect(() => {
     void load();
-  }, [load]);
+    // `revision` is not read by load; it is the external-change trigger.
+  }, [load, revision]);
 
   // Flow animation: one rAF tick while enabled. The dots are decorative —
   // speed tracks the trace-derived magnitude when one is supplied.
@@ -560,13 +570,14 @@ export function CircuitSchematicEditor({
         moves: graph.components.map((c) => ({ ref: c.ref, col: c.col, row: c.row, rot: c.rot })),
       });
       setGraph(updated);
+      onGraphChange?.(updated);
       setDirty(false);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not save layout');
     } finally {
       setSaving(false);
     }
-  }, [sessionId, netlistPath, graph]);
+  }, [sessionId, netlistPath, graph, onGraphChange]);
 
   const resetLayout = useCallback(async () => {
     if (!sessionId || !netlistPath) return;
@@ -574,6 +585,7 @@ export function CircuitSchematicEditor({
     try {
       const updated = await circuitApi.editSchematic(sessionId, { path: netlistPath, auto: true });
       setGraph(updated);
+      onGraphChange?.(updated);
       setDirty(false);
       toast.success('Layout reset');
     } catch (e) {
@@ -581,7 +593,7 @@ export function CircuitSchematicEditor({
     } finally {
       setSaving(false);
     }
-  }, [sessionId, netlistPath]);
+  }, [sessionId, netlistPath, onGraphChange]);
 
   if (!netlistPath) return null;
 
