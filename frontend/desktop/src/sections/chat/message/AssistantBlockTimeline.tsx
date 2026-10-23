@@ -14,7 +14,7 @@ import {
 } from '@/components/chat/ToolCallItem';
 import { PromptDisclosure } from '@/components/chat/PromptDisclosure';
 import { ThoughtStep } from '@/components/chat/ThoughtStep';
-import { isCollapseThinkingEnabled } from '@/lib/thinking-preference';
+import { useCollapseThinking } from '@/hooks/useThinkingPreference';
 import { ToolStepRow } from '@/components/chat/ToolStepRow';
 import { EditRailRow } from '@/components/chat/EditRailRow';
 import { MemoryEditRow } from '@/components/chat/MemoryEditRow';
@@ -375,6 +375,7 @@ export function AssistantBlockTimeline({
   /** Rendered on error blocks: dismiss the error bubble (removes the block). */
   onDismissError?: () => void;
 }) {
+  const collapseThinking = useCollapseThinking();
   const { sessionId: routeSessionId } = useParams<{ sessionId?: string }>();
   const liveSessionKey = resolveUiSessionId(routeSessionId || message.id);
   // /verbose: raw tool output renders inline for this
@@ -742,7 +743,7 @@ export function AssistantBlockTimeline({
               isGenerating={isGenerating}
               showFull={thoughtExpanded}
               onToggle={() => toggleExpand(thoughtId, !thoughtExpanded)}
-              collapsedDefault={isCollapseThinkingEnabled()}
+              collapsedDefault={collapseThinking}
             />
           ),
         });
@@ -1498,7 +1499,7 @@ export function AssistantBlockTimeline({
                   !isThoughtExpanded('pending_think'),
                 )
               }
-              collapsedDefault={isCollapseThinkingEnabled()}
+              collapsedDefault={collapseThinking}
             />
           )}
           {renderProcessBlocks(processBlocks)}

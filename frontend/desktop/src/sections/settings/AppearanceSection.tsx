@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Check, ChevronDown, Monitor, Moon, Sun } from 'lucide-react';
 import { useThemeStore, setThemeMode, setSurfaceFontSize } from '@/lib/theme';
 import type { SurfaceFontKey, ThemeMode } from '@/lib/theme';
+import { useCollapseThinking } from '@/hooks/useThinkingPreference';
+import { setCollapseThinkingEnabled } from '@/lib/thinking-preference';
 import { applyExternalCustomization, resetAppliedCustomization, THEME_PRESETS } from '@/lib/ui-customization';
 import { cn } from '@/lib/utils';
 import { UiDesignerSection } from './UiDesignerSection';
@@ -28,6 +30,8 @@ const FONT_ROWS: Array<{ key: SurfaceFontKey; label: string; values: number[] }>
 export function AppearanceSection({ active }: { active?: SettingsSection }) {
   const themeMode = useThemeStore((s) => s.mode);
   const fontSizes = useThemeStore((s) => s.surfaceFontSizes);
+  const collapseThinking = useCollapseThinking();
+  const showRawReasoning = !collapseThinking;
   const [designerOpen, setDesignerOpen] = useState(false);
   const [selectedThemeId, setSelectedThemeId] = useState(() => {
     try { return localStorage.getItem('august.appearanceTheme') ?? 'haze'; } catch { return 'haze'; }
@@ -113,6 +117,40 @@ export function AppearanceSection({ active }: { active?: SettingsSection }) {
                 <Icon className="size-3" />{label}
               </button>
             ))}
+          </div>
+        </section>
+
+        <section className="px-5 py-4" aria-labelledby="appearance-thinking-heading">
+          <h3 id="appearance-thinking-heading" className="text-sm font-semibold tracking-tight text-foreground">Thinking</h3>
+          <div className="mt-3 flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-sm">Show raw reasoning</div>
+              <p className="mt-1 text-2xs leading-relaxed text-muted-foreground">
+                Off by default: thinking cards show one distilled sentence per step. Turn this on to
+                read the model&rsquo;s full reasoning behind those lines.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={showRawReasoning}
+              aria-label="Show raw reasoning"
+              data-testid="appearance-show-raw-reasoning"
+              onClick={() => setCollapseThinkingEnabled(showRawReasoning)}
+              className={cn(
+                'relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors',
+                showRawReasoning
+                  ? 'border-primary/50 bg-primary/20'
+                  : 'border-border/70 bg-muted/50',
+              )}
+            >
+              <span
+                className={cn(
+                  'size-3.5 rounded-full bg-foreground/80 transition-transform',
+                  showRawReasoning ? 'translate-x-[18px]' : 'translate-x-[3px]',
+                )}
+              />
+            </button>
           </div>
         </section>
 

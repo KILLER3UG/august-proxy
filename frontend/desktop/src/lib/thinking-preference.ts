@@ -8,6 +8,15 @@
 const KEY = 'august.collapseThinking';
 
 let cached: boolean | null = null;
+type Listener = () => void;
+const listeners = new Set<Listener>();
+
+/** `useSyncExternalStore` contract: the switch and an already-mounted chat
+ *  must agree immediately, not only after a route change. */
+export function subscribeThinkingPreference(listener: Listener): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
 
 export function isCollapseThinkingEnabled(): boolean {
   if (cached === null && typeof window !== 'undefined') {
@@ -32,4 +41,5 @@ export function setCollapseThinkingEnabled(value: boolean): void {
       /* localStorage unavailable — preference is session-only */
     }
   }
+  for (const listener of listeners) listener();
 }
