@@ -365,6 +365,13 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
       const factor = Math.min(1.25, Math.max(0.8, Math.exp(-e.deltaY * unit * 0.0015)));
       const next = Math.min(22, Math.max(3.2, zoom * factor));
       if (next === zoom) return;
+      // The wheel event has its own position; the pointer vector can be stale
+      // if the user scrolled without moving over the canvas first.
+      const rect = host.getBoundingClientRect();
+      stage.pointer.set(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1,
+      );
       ray.setFromCamera(stage.pointer, camera);
       const anchor = new Vector3();
       const onGround = ray.ray.intersectPlane(groundPlane, anchor);
