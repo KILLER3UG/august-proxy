@@ -137,7 +137,6 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
     handleComposerPaste,
     handleFileUpload,
     attachFiles,
-    messages,
     streaming,
     send,
     stop,
@@ -624,13 +623,15 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
           August can make mistakes — double-check responses.
         </p>
         <div className="flex min-w-0 shrink-0 items-center gap-2">
-          {messages.length === 0 ? (
-            <ComposerWorkspaceChips
-              sessionId={sessionId}
-              workbenchSessionId={workbenchSession?.id || activeWorkbenchSessionId || null}
-              workspacePath={workspacePath}
-            />
-          ) : null}
+          {/* The folder chip belongs to the chat footer on every turn, not
+              only an empty one: the sidebar's "Projects" row opens this picker,
+              and hiding the component on a non-empty chat left that row doing
+              nothing. */}
+          <ComposerWorkspaceChips
+            sessionId={sessionId}
+            workbenchSessionId={workbenchSession?.id || activeWorkbenchSessionId || null}
+            workspacePath={workspacePath}
+          />
           <ModelEffortMenu
             visibleModels={visibleModels}
             selected={selectedModel}
