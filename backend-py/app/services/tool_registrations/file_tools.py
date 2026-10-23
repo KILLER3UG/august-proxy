@@ -1117,12 +1117,18 @@ async def _searchFiles(
         # the first `:digits:` sit INSIDE the path, so splitting on it asks the guard
         # about a prefix that exists nowhere — which passes, and returns the secret
         # path and the matching line. With NUL the frame is unambiguous.
-        rgArgs = ['rg', '-n', '--null', '--max-count', '5', '-i']
+        # `--no-config` because a host RIPGREP_CONFIG_PATH can add `--pre`, and a
+        # preprocessor runs once per matched file — the model never asked for that.
+        # `--` because `query` is model-authored text: without it a pattern that
+        # starts with a dash is parsed as a FLAG (`--pre=…` is one argv token),
+        # and the store-walk guard above only inspects the path, never what rg
+        # then decides to execute.
+        rgArgs = ['rg', '-n', '--null', '--no-config', '--max-count', '5', '-i']
         if glob:
             rgArgs += ['-g', str(glob)]
         if type:
             rgArgs += ['--type', str(type).lstrip('.')]
-        rgArgs += [query, str(searchPath)]
+        rgArgs += ['--', query, str(searchPath)]
         proc = await asyncio.create_subprocess_exec(
             *rgArgs,
             stdout=asyncio.subprocess.PIPE,

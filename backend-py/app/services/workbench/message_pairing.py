@@ -41,6 +41,34 @@ ORPHAN_RESULT_TEXT = (
     'ended before the result was persisted. Do not assume it ran — re-issue it '
     'if the effect is still needed.'
 )
+# The mutating arm. An orphan in PERSISTED history is not the same evidence as
+# an orphan in a live round: the turn ended after dispatch, so the write most
+# likely DID happen. Telling the model to re-issue a `write_file`/`run_command`
+# in that state invites the double-apply the two-armed receipt in
+# `tool_protocol.synthetic_tool_result` exists to prevent — this file just
+# never consulted it.
+ORPHAN_MUTATING_TEXT = (
+    '[August] This tool call has no recorded result: the turn that issued it '
+    'ended before the result was persisted. It may or may not have applied — do '
+    'NOT re-issue it. Check the effect first (read the file, list the state), '
+    'then act on what is actually there.'
+)
+
+
+def _orphan_text(name: str) -> str:
+    """Pick the arm for an unanswered call, by whether re-running it is safe.
+
+    A call with no readable name takes the mutating arm: "check the effect
+    first" is harmless advice for a read and the only safe advice for a write,
+    so the unresolvable case resolves away from a double apply.
+    """
+    if not (name or '').strip():
+        return ORPHAN_MUTATING_TEXT
+    from app.services.workbench.tool_protocol import call_is_mutating
+
+    if call_is_mutating(name):
+        return ORPHAN_MUTATING_TEXT
+    return ORPHAN_RESULT_TEXT
 
 
 def _call_ids(msg: dict[str, object]) -> list[tuple[str, str]]:
@@ -162,7 +190,7 @@ def repair_tool_pairing(messages: list[dict[str, object]]) -> tuple[list[dict[st
                 'tool_use_id': cid,
                 'tool_call_id': cid,
                 'name': name or 'tool',
-                'content': ORPHAN_RESULT_TEXT,
+                'content': _orphan_text(name),
                 'is_error': True,
             })
             answered.add(cid)

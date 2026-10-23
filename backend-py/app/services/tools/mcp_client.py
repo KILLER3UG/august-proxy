@@ -1424,13 +1424,33 @@ def getMcpToolDefinitions() -> list[dict[str, object]]:
         if not name:
             # One malformed tool must not blank the whole MCP tool surface.
             continue
+        schema = t.get('inputSchema')
+        if schema is None:
+            # ABSENT is legal in the MCP spec and usually means a real zero-arg
+            # tool, so it stays advertised — refusing it would hide a working
+            # tool, which is worse than the empty schema.
+            schema = {'type': 'object', 'properties': {}}
+        elif not isinstance(schema, dict) or (schema.get('type') or 'object') != 'object':
+            # PRESENT and wrong is the dangerous case: this dict is forwarded
+            # verbatim as the tool's parameter schema, so a string/array/non-object
+            # schema either 400s the provider request or advertises a tool the
+            # model cannot call. Say which server and tool dropped, and why.
+            logger.warning(
+                'mcp: skipping tool %r from server %r — inputSchema is not an object schema (%s)',
+                name,
+                t.get('_mcp_server_id', 'unknown'),
+                type(schema).__name__ if not isinstance(schema, dict) else f"type={schema.get('type')!r}",
+            )
+            continue
+        else:
+            schema = {**schema, 'type': 'object'}
         out.append(
             {
                 'type': 'function',
                 'function': {
                     'name': f'mcp__{t.get("_mcp_server_id", "unknown")}__{name}',
                     'description': t.get('description', ''),
-                    'parameters': t.get('inputSchema', {'type': 'object', 'properties': {}}),
+                    'parameters': schema,
                 },
             }
         )

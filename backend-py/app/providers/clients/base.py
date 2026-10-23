@@ -314,6 +314,21 @@ def formatTokenCount(n: int) -> str:
     return str(n)
 
 
+#: What one image costs, whatever wire built the block. Anthropic bills an image
+#: by pixel area (a flat stand-in is what this estimate is for); the number is
+#: the one the OpenAI `image_url` arm has always used, so the two formats cannot
+#: disagree about the same picture. `image` is the Anthropic-native block shape
+#: ({'source': {'type': 'base64', 'data': …}}) built by image_parts._loadImageBlock
+#: and by the OpenAI→Anthropic bridge. Without this arm it fell to
+#: `json.dumps(part)`, so a 1 MB PNG was priced as ~333k tokens of prose. That
+#: number is not only what /v1/messages/count_tokens answers with: this estimator
+#: is the `before` that loop/recovery.py::_compactionThreshold compares the window
+#: against (via `_tokens`), so one attached screenshot could trigger a context
+#: relief the transcript did not need — and on a 128k window the inflated count
+#: makes every later turn look like an overflow.
+_IMAGE_PART_TOKENS = 512
+
+
 def _estimateContentTokens(content: object) -> int:
     """Estimate tokens for various content formats."""
     if not content:
@@ -327,8 +342,8 @@ def _estimateContentTokens(content: object) -> int:
                 ptype = part.get('type', '')
                 if ptype == 'text':
                     total += estimateStringTokens(part.get('text', ''))
-                elif ptype in ('image_url', 'input_image'):
-                    total += 512
+                elif ptype in ('image_url', 'input_image', 'image'):
+                    total += _IMAGE_PART_TOKENS
                 elif ptype == 'tool_result':
                     c = part.get('content', '')
                     total += estimateStringTokens(c if isinstance(c, str) else json.dumps(c))

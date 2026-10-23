@@ -35,6 +35,10 @@ MAX_TOOL_RESULT_CHARS = 64 * 1024
 def normalizeGuardMode(mode: str) -> str:
     """Normalize guard mode to one of: plan, ask, edit, full."""
     lower = mode.strip().lower().replace('_', '-').replace(' ', '-')
+    if not lower:
+        # Unset is not a typo: the callers that create a session with an explicit
+        # 'full' (Bot DMs, rooms) mean it.
+        return 'full'
     aliases = {
         'plan': 'plan',
         'plan-only': 'plan',
@@ -50,7 +54,15 @@ def normalizeGuardMode(mode: str) -> str:
         'full-access': 'full',
         'make-changes': 'full',
     }
-    return aliases.get(lower, 'full')
+    normalized = aliases.get(lower)
+    if normalized is None:
+        # An unrecognised spelling used to mean FULL ACCESS — the most
+        # permissive answer to the least legible input, and silent. Clamp to the
+        # most restrictive mode and say what was refused; a guard the operator
+        # meant to engage cannot be inferred from a typo.
+        logger.warning('guardMode %r is not a known mode — treating it as plan', mode)
+        return 'plan'
+    return normalized
 
 
 # Per-model capability profiles (harness adaptation): a weak model gets a

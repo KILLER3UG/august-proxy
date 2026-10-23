@@ -327,22 +327,53 @@ def _make_handler(name: str, command: str, timeout_s: float, workspace_origin: s
             except Exception:
                 verdict = None
             if isinstance(verdict, dict):
-                action = str(verdict.get('action') or 'allow')
+                # The registry only fails closed on a raise or a timeout, so the
+                # verdict shape is the one place a hook's INTENT can be lost.
+                # An absent action stays allow (a hook with nothing to say must
+                # not gate the tool), but an unrecognised one used to wave the
+                # call through: `{"action":"block"}`, `{"action":"Deny"}` and a
+                # `modify` whose `args` were not an object all silently allowed
+                # the thing the hook was written to stop.
+                raw_action = verdict.get('action')
+                if raw_action is None:
+                    # `decision` is the spelling Claude Code's hooks use, so a
+                    # hook author copying that convention means it. Silently
+                    # allowing it was the fail-open the harness cannot see.
+                    raw_action = verdict.get('decision')
+                action = (str(raw_action).strip().lower() if raw_action else '') or 'allow'
+                # `block` is the same intent as `deny` in that vocabulary.
+                if action == 'block':
+                    action = 'deny'
                 message = str(verdict.get('message') or '')[:2000] or None
+                if action in ('allow', 'approve'):
+                    return HookResult(action='allow', message=message)
                 if action == 'deny':
                     return HookResult(action='deny', message=message or f'hook {name} denied')
                 if action == 'modify':
+                    if not isinstance(verdict.get('args'), dict):
+                        return HookResult(
+                            action='deny',
+                            message=(
+                                f'hook {name} asked to modify the call but returned no args '
+                                f'object (got {type(verdict.get("args")).__name__}); refusing '
+                                'to run the ORIGINAL arguments'
+                            ),
+                        )
                     return HookResult(
                         action='modify',
                         message=message,
-                        modified_args=verdict.get('args')
-                        if isinstance(verdict.get('args'), dict)
-                        else None,
+                        modified_args=verdict.get('args'),
                         modified_result=str(verdict['result'])[:20000]
                         if verdict.get('result') is not None
                         else None,
                     )
-                return HookResult(action='allow', message=message)
+                return HookResult(
+                    action='deny',
+                    message=(
+                        f'hook {name} returned an unrecognised action {raw_action!r}; '
+                        'expected allow, deny or modify — the call was not run'
+                    ),
+                )
         if proc.returncode == 2:
             reason = (proc.stderr or '').strip()[:2000] or f'hook {name} denied'
             return HookResult(action='deny', message=reason)

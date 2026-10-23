@@ -38,6 +38,7 @@ __all__ = [
     'RECEIPT_TONE',
     'SYNTHETIC_TOOL_RESULT_PREFIX',
     'ToolResultReconciliation',
+    'call_is_mutating',
     'canonical_tool_calls',
     'normalize_tool_result',
     'receipt_tone',
@@ -242,6 +243,25 @@ def _dump(value: object) -> str:
         return repr(value)
 
 
+def call_is_mutating(tool_name: str) -> bool:
+    """Would re-running this call apply an effect the model cannot unsee?
+
+    The single authority for the two recovery wordings — a read that never
+    landed is safe to re-issue, a write that may have landed is not. Args are
+    not always in hand at the sites that ask (a persisted orphan keeps only the
+    name), so the aggregate doors are mutating by construction: ``tool_call`` /
+    ``bulk`` decide their effect from a nested ``name`` / ``operation`` that a
+    name-only check cannot see.
+    """
+    name = (tool_name or '').strip()
+    try:
+        from app.services.harness_mode import is_mutating_tool
+
+        return name in _OPAQUE_AGGREGATE_TOOLS or is_mutating_tool(name, None)
+    except Exception:
+        return name in _OPAQUE_AGGREGATE_TOOLS
+
+
 def synthetic_tool_result(
     tool_use_id: str,
     tool_name: str = 'tool',
@@ -259,20 +279,7 @@ def synthetic_tool_result(
     # cancelled, and a duplicated write_file / run_command / mcp__* is a worse
     # outcome than an unknown one — so the mutating branch asks for a
     # verification read instead of a second application.
-    mutating = False
-    try:
-        from app.services.harness_mode import is_mutating_tool
-
-        name = (tool_name or '').strip()
-        # The two aggregate/alias doors are mutating BY CONSTRUCTION here: this
-        # helper has no arguments, and `is_mutating('tool_call')` / `is_mutating
-        # ('bulk')` are both False because their effect lives in a nested
-        # `name` / `operation` field. A cancelled `tool_call(name='write_file')`
-        # would otherwise still be told to re-issue it — the alias-and-aggregate
-        # hole AGENTS.md records for gate participation, one door over again.
-        mutating = name in _OPAQUE_AGGREGATE_TOOLS or is_mutating_tool(name, None)
-    except Exception:
-        mutating = False
+    mutating = call_is_mutating(label)
     recovery = (
         'The call may or may not have applied — do NOT re-issue it. Check the '
         'effect first (read the file, list the state, ask the user), then act on '
