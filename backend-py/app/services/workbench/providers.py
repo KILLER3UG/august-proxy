@@ -113,8 +113,19 @@ def make_review_llm_client(
             review_model = resolve_model(provider)
         _reviewModel = as_str(review_model, '') or as_str(provider.get('defaultModel', ''))
 
-        async def reviewLlm(prompt: list[dict[str, object]]) -> str:
-            """Call a cheap/fast model for background review."""
+        async def reviewLlm(
+            prompt: list[dict[str, object]],
+            max_tokens: int | None = None,
+        ) -> str:
+            """Call a cheap/fast model for background review.
+
+            A reply the model could not finish (``finish_reason: 'length'``)
+            returns '' like a failure: every caller treats the string as a
+            VERDICT — a compaction checkpoint, an approve/reject, a distilled
+            skill — and a half verdict that ends mid-sentence reads as a
+            complete one. Refusing it costs one retry next round; keeping it
+            filed a truncated note as the truth.
+            """
             try:
                 from app.services.model_service import get_max_output_tokens
 
@@ -123,7 +134,7 @@ def make_review_llm_client(
                 body = {
                     'model': _reviewModel,
                     'messages': prompt,
-                    'max_tokens': max(256, model_out // 32),
+                    'max_tokens': max_tokens or max(256, model_out // 32),
                 }
                 resp = await _client.chat_completions(body)
                 bodyJson = resp.body_json or {}
@@ -151,7 +162,15 @@ def make_review_llm_client(
                         sorted(bodyJson.keys()) if isinstance(bodyJson, dict) else type(bodyJson),
                     )
                     return ''
-                content = as_str(as_dict(as_dict(choices[0]).get('message', {})).get('content', ''))
+                choice = as_dict(choices[0])
+                if as_str(choice.get('finish_reason')) == 'length':
+                    logger.warning(
+                        'review llm hit its output cap before finishing (model=%s, max_tokens=%s) — refusing the truncated reply',
+                        _reviewModel,
+                        body['max_tokens'],
+                    )
+                    return ''
+                content = as_str(as_dict(choice.get('message', {})).get('content', ''))
                 if not content.strip():
                     logger.warning('review llm returned empty content (model=%s)', _reviewModel)
                 return content
@@ -166,6 +185,10 @@ def make_review_llm_client(
                 )
                 return ''
 
+        # The resolved model rides the client as an attribute: the compactor
+        # sizes its own output budget from it, and re-running the resolution
+        # here would duplicate the hint-splitting above for no second reader.
+        reviewLlm.review_model = _reviewModel  # type: ignore[attr-defined]
         return reviewLlm
     except Exception:
         return None
@@ -185,6 +208,20 @@ def make_compactor_llm_client(
         return None
 
     async def compactorLlm(middle: list[dict[str, object]]) -> str:
+        # The window is built from the NEWEST messages backwards, each kept
+        # whole: `json.dumps(middle)[:12000]` kept the OLDEST span and chopped
+        # mid-JSON — for a note whose job is carrying the live state forward,
+        # dropping the newest turns is exactly backwards, and a summary of a
+        # fragment the compactor is about to discard helped nobody.
+        window: list[str] = []
+        used = 0
+        for msg in reversed(middle):
+            piece = json.dumps(msg, default=str)
+            if used + len(piece) > 12000 and window:
+                break
+            window.append(piece)
+            used += len(piece)
+        window.reverse()
         prompt: list[dict[str, object]] = [
             {
                 'role': 'system',
@@ -196,11 +233,21 @@ def make_compactor_llm_client(
             },
             {
                 'role': 'user',
-                'content': json.dumps(middle, default=str)[:12000],
+                'content': '\n'.join(window),
             },
         ]
         try:
-            return await base(prompt)
+            from app.services.model_service import get_max_output_tokens
+
+            # A 12k-char span needs thousands of summary tokens; the review
+            # client's default slice (max(256, ceiling//32)) refused more
+            # summaries than it wrote — and each refusal fell back to the
+            # local summarizer without saying why.
+            model_out = get_max_output_tokens(getattr(base, 'review_model', ''), {})
+        except Exception:
+            model_out = 0
+        try:
+            return await base(prompt, max_tokens=max(1024, model_out // 8))
         except Exception:
             return ''
 

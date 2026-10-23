@@ -322,9 +322,11 @@ def formatTokenCount(n: int) -> str:
 #: and by the OpenAI→Anthropic bridge. Without this arm it fell to
 #: `json.dumps(part)`, so a 1 MB PNG was priced as ~333k tokens of prose. That
 #: number is not only what /v1/messages/count_tokens answers with: this estimator
-#: is the `before` that loop/recovery.py::_compactionThreshold compares the window
-#: against (via `_tokens`), so one attached screenshot could trigger a context
-#: relief the transcript did not need — and on a 128k window the inflated count
+#: is the `currentTokens` side of the trigger comparison in
+#: context_compressor.compressMessages (`currentTokens <= threshold`, where the
+#: threshold is loop/recovery.py::_compactionThreshold's share of the window), so
+#: one attached screenshot could push a transcript over the compaction threshold
+#: that its real content never crossed — and on a 128k window the inflated count
 #: makes every later turn look like an overflow.
 _IMAGE_PART_TOKENS = 512
 

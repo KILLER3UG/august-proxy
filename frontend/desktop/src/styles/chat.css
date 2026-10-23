@@ -1561,12 +1561,15 @@ details[open] > summary .disclosure-chevron {
 }
 /* Expanded summary shows MORE distilled lines (the raised cap), and they
    must wrap — the collapsed single-line clip would cut every sentence at
-   the rail edge instead. */
+   the rail edge instead. `overflow-wrap: anywhere` because a distilled
+   sentence can carry an unbreakable token (a path, a hash) wider than the
+   rail; without it that token paints past the column. */
 .thought-summary--expanded .thought-summary-text,
 .thought-summary-text--wrap {
   white-space: normal;
   overflow: visible;
   text-overflow: clip;
+  overflow-wrap: anywhere;
 }
 .thought-summary-toggle {
   flex-shrink: 0;

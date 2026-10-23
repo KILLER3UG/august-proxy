@@ -117,7 +117,7 @@ def _reductionIsWorthwhile(before: int, after: int) -> bool:
     return int(after) <= int(before) - floor
 
 
-def _compactionThreshold(before: int, context_window: int) -> int:
+def _compactionThreshold(context_window: int) -> int:
     """The one trigger threshold both compaction paths use.
 
     With a known window it is the share of the window the surface may occupy
@@ -204,7 +204,7 @@ async def _compactionCall(
         threshold=(
             int(thresholdOverride)
             if thresholdOverride is not None
-            else _compactionThreshold(_tokens(pruned), context_window)
+            else _compactionThreshold(context_window)
         ),
         head_count=reliefHeadCount(relief),
         tail_count=6,

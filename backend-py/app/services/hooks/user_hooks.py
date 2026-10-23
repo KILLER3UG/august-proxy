@@ -344,7 +344,10 @@ def _make_handler(name: str, command: str, timeout_s: float, workspace_origin: s
                 # `block` is the same intent as `deny` in that vocabulary.
                 if action == 'block':
                     action = 'deny'
-                message = str(verdict.get('message') or '')[:2000] or None
+                # `reason` is the field Claude Code's verdicts carry the why
+                # in (`{"decision": "block", "reason": "…"}`); dropping it
+                # left the model a bare "denied" with no what-next.
+                message = str(verdict.get('message') or verdict.get('reason') or '')[:2000] or None
                 if action in ('allow', 'approve'):
                     return HookResult(action='allow', message=message)
                 if action == 'deny':

@@ -259,7 +259,11 @@ def call_is_mutating(tool_name: str) -> bool:
 
         return name in _OPAQUE_AGGREGATE_TOOLS or is_mutating_tool(name, None)
     except Exception:
-        return name in _OPAQUE_AGGREGATE_TOOLS
+        # Unreachable short of a broken install (is_mutating_tool has its own
+        # fallback), but the direction matters: an unclassifiable call takes
+        # the mutating arm, because "check the effect first" is harmless
+        # advice for a read and the only safe advice for a write.
+        return True
 
 
 def synthetic_tool_result(

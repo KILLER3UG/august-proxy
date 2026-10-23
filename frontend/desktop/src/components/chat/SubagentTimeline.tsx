@@ -252,37 +252,9 @@ function SubagentInnerBlock({
   if (block.type === 'thinking') {
     // Claude-parity: the card carries the distilled "what the model is
     // doing" sentences, never the raw chain of thought — the same rule the
-    // main transcript's ThoughtStep renders by. A thought that distills to
-    // nothing (pure code/SPICE noise) keeps a placeholder so the disclosure
-    // never opens onto an empty body.
-    const raw = block.content || '';
-    const lines = distillThoughtLines(raw);
-    const shown = lines.slice(0, THOUGHT_SUMMARY_LINES_FULL);
-    const hidden = Math.max(0, lines.length - shown.length);
-    return (
-      <ThinkingDisclosure pending={false}>
-        <div className="pl-3 py-1 text-2xs" data-slot="subagent-thought-summary">
-          <span className="thought-summary-text thought-summary-text--wrap block">
-            {shown.length > 0
-              ? shown.map((line, i) => (
-                  <span key={i} className="thought-summary-line block">
-                    {line}
-                  </span>
-                ))
-              : (
-                  <span className="thought-summary-line block">
-                    {summarizeThoughtHeader('', false)}
-                  </span>
-                )}
-            {hidden > 0 ? (
-              <span className="thought-summary-line block opacity-60">
-                …and {hidden} more steps.
-              </span>
-            ) : null}
-          </span>
-        </div>
-      </ThinkingDisclosure>
-    );
+    // main transcript's ThoughtStep renders by. The distillation lives in
+    // its own component so the hook is unconditional there.
+    return <SubagentThoughtBlock content={block.content || ''} />;
   }
   if (block.type === 'system') {
     // Harness notice — muted inline row, never inside a Thought disclosure.
@@ -307,7 +279,6 @@ function SubagentInnerBlock({
   }
   if (block.type === 'toolCall' || block.type === 'command') {
     if (!block.tool) return null;
-
     const isSubagentCall = isSubagentToolName(block.tool.name);
     const promptEntries = isSubagentCall && block.tool.id && subPrompts
       ? Array.from(subPrompts.entries())
@@ -360,4 +331,42 @@ function SubagentInnerBlock({
     );
   }
   return null;
+}
+
+function SubagentThoughtBlock({ content }: { content: string }) {
+  // Claude-parity: the card carries the distilled "what the model is doing"
+  // sentences, never the raw chain of thought — the same rule the main
+  // transcript's ThoughtStep renders by. Memoized: the parent re-renders on
+  // every streaming flush while ThinkingDisclosure renders its children only
+  // when open, and a 200k-char thought must not re-pay split + distill
+  // through a gap nobody sees. A thought that distills to nothing (pure
+  // code/SPICE noise) keeps a placeholder so the disclosure never opens onto
+  // an empty body.
+  const lines = useMemo(() => distillThoughtLines(content), [content]);
+  const shown = lines.slice(0, THOUGHT_SUMMARY_LINES_FULL);
+  const hidden = Math.max(0, lines.length - shown.length);
+  return (
+    <ThinkingDisclosure pending={false}>
+      <div className="pl-3 py-1 text-2xs" data-slot="subagent-thought-summary">
+        <span className="thought-summary-text thought-summary-text--wrap block">
+          {shown.length > 0
+            ? shown.map((line, i) => (
+                <span key={i} className="thought-summary-line block">
+                  {line}
+                </span>
+              ))
+            : (
+                <span className="thought-summary-line block">
+                  {summarizeThoughtHeader('', false)}
+                </span>
+              )}
+          {hidden > 0 ? (
+            <span className="thought-summary-line block opacity-60">
+              …and {hidden} more steps.
+            </span>
+          ) : null}
+        </span>
+      </div>
+    </ThinkingDisclosure>
+  );
 }

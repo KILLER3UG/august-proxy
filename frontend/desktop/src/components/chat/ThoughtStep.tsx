@@ -200,12 +200,20 @@ export function ThoughtStep({
                   {line}
                 </span>
               ))}
+              {hiddenSummaryCount > 0 ? (
+                <span className="thought-summary-line block text-muted-foreground/50">
+                  …and {hiddenSummaryCount} more steps.
+                </span>
+              ) : null}
+              {/* A settled thought whose every sentence the distiller
+                  filtered (pure netlist/code noise) still owes the card a
+                  body — an empty summary div reads as a rendering bug. */}
+              {summaryLines.length === 0 && !isGenerating ? (
+                <span className="thought-summary-line block">
+                  {summarizeThoughtHeader('', false)}
+                </span>
+              ) : null}
             </span>
-            {hiddenSummaryCount > 0 ? (
-              <span className="thought-summary-line block text-muted-foreground/50">
-                …and {hiddenSummaryCount} more steps.
-              </span>
-            ) : null}
           </div>
         ) : (
           <div className={cn('thought-clamp', clamped && 'is-clamped')}>
