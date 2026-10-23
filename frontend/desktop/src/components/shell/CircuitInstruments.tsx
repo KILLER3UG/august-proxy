@@ -121,13 +121,49 @@ function useUPlot(
   return ref;
 }
 
-function fmtExp(v: number): string {
+/* formatSi — one SI scale-and-print for every instrument readout.
+ *
+ * SimulIDE's valToUnit (src/utils.h) decides prefix AND precision in one
+ * place: scale to the largest prefix keeping the magnitude under 1000, then
+ * pick decimals from the scaled magnitude. August had the reader as a full
+ * table and the printer as a second dialect — fmtExp emitted engineering
+ * notation (1.23e-9) on the Scope axis, the Bode axis and the Meter rows,
+ * where a student reads "1.2n" and "47µ" the way every datasheet writes it.
+ * The unit itself stays with the caller (the axis label carries it; the
+ * meter appends A/V), so the tick text is the scaled number plus its
+ * prefix: "1.2n" under a "V" label.
+ *
+ * Stated limits: the table stops at G and p — a Tera value prints as
+ * "1000G" and a femto as "0p", both far outside what a bench instrument
+ * here will be asked to show — and a value that ROUNDS up to 1000 in its
+ * prefix moves to the next one up rather than printing four digits.
+ */
+const SI_PREFIXES: [number, string][] = [
+  [9, 'G'], [6, 'M'], [3, 'k'], [0, ''], [-3, 'm'], [-6, 'µ'], [-9, 'n'], [-12, 'p'],
+];
+
+function formatSi(v: number): string {
   if (!Number.isFinite(v)) return '—';
   if (v === 0) return '0';
-  const exp = Math.floor(Math.log10(Math.abs(v)));
-  if (exp >= -2 && exp <= 3) return v.toPrecision(4).replace(/\.?0+$/, '');
-  const mant = v / 10 ** exp;
-  return `${mant.toPrecision(3)}e${exp}`;
+  const sign = v < 0 ? '-' : '';
+  const a = Math.abs(v);
+  const exp = Math.floor(Math.log10(a));
+  let chosen = SI_PREFIXES[SI_PREFIXES.length - 1];
+  for (const p of SI_PREFIXES) {
+    if (exp >= p[0]) {
+      chosen = p;
+      break;
+    }
+  }
+  let scaled = a / 10 ** chosen[0];
+  const next = SI_PREFIXES[SI_PREFIXES.indexOf(chosen) - 1];
+  if (next && scaled >= 999.5) {
+    chosen = next;
+    scaled = a / 10 ** chosen[0];
+  }
+  const decimals = scaled < 10 ? 3 : scaled < 100 ? 2 : 1;
+  const text = scaled.toFixed(decimals).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+  return `${sign}${text}${chosen[1]}`;
 }
 
 /* ── Scope view ────────────────────────────────────────────────────────── */
@@ -159,7 +195,7 @@ function ScopeView({ traces }: { traces: Record<string, TraceData> }) {
       ],
       axes: [
         { label: first.xunit || 's' },
-        { label: first.unit || 'V', values: (_: uPlot, v: number[]) => v.map(fmtExp) },
+        { label: first.unit || 'V', values: (_: uPlot, v: number[]) => v.map(formatSi) },
       ],
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -264,8 +300,8 @@ function MeterView({ rows }: { rows: MeterRow[] }) {
           <div key={r.label} className="contents">
             <span className="truncate font-mono text-2xs text-foreground/90">{r.label}</span>
             <span className="text-right font-mono text-2xs tabular-nums text-foreground">
-              {fmtExp(r.value)}
-              {r.label.startsWith('i(') ? ' A' : ' V'}
+              {formatSi(r.value)}
+              {r.label.startsWith('i(') ? 'A' : 'V'}
             </span>
           </div>
         ))}
