@@ -2071,10 +2071,12 @@ async def simulate_circuit(
     sampled instead — batch ngspice refuses to run a deck that asks for
     no output, so naming nothing used to mean simulating nothing.
     They come back as ``traces: {expr: {x, y, xunit, unit, points}}``
-    downsampled to fit the transcript cap, plus a ``tracesFile`` JSON in
-    the workspace at full resolution that ``render_chart`` accepts
-    directly — the sidecar and the inline-deck copy are both written only
-    while ``persist`` is on (the caller wants an artifact, not a probe).
+    downsampled to fit the transcript cap, plus a ``tracesFile`` JSON
+    sidecar in the workspace that ``render_chart`` accepts directly. The
+    sidecar keeps each bucket's min and max up to 20,000 points, not every
+    sample: ``storedPoints`` is what the file holds and ``points`` is the
+    run's own size. The sidecar and the inline-deck copy are both written
+    only while ``persist`` is on (the caller wants an artifact, not a probe).
 
     ``sweep`` (optional) is ``{param, from, to, steps}`` — the deck is
     re-run once per parameter value (LTspice-.step semantics via an
