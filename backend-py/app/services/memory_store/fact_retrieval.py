@@ -972,7 +972,9 @@ def build_memory_delta_block(
 
     ``session_started_at`` is the session's ISO creation stamp. Empty or
     unparseable is a REFUSAL, not "since the beginning of time": a bad stamp
-    must not dump the whole store into the tail.
+    must not dump the whole store into the tail. The comparison keeps
+    microseconds (see ``timeutil``), so a write in the session's opening
+    second is still newer than the opening.
     """
     since = _sqlite_utc(session_started_at)
     budget = max(0, int(budget_chars))
@@ -992,7 +994,9 @@ def build_memory_delta_block(
             "COALESCE(scope, 'global') AS scope, COALESCE(updated_at, '') AS updated_at FROM facts "
             "WHERE (expires_at IS NULL OR expires_at = '' OR julianday(expires_at) > julianday('now')) "
             "AND (status IS NULL OR status = 'active') "
-            "AND julianday(updated_at) > julianday(?) "
+            # Fixed-width UTC text sorts chronologically; string comparison
+            # keeps microseconds, which julianday() rounds to milliseconds.
+            "AND updated_at > ? "
             f"{scopeClause} "
             "ORDER BY updated_at DESC, id DESC LIMIT ?",
             (since, *scopeParams, _DELTA_MAX_FACTS),
@@ -1029,11 +1033,13 @@ def build_memory_delta_block(
 
 
 def _sqlite_utc(raw: str) -> str:
-    """Normalise an ISO-8601 stamp to SQLite's ``YYYY-MM-DD HH:MM:SS`` UTC.
+    """Normalise an ISO-8601 stamp to SQLite's UTC ``YYYY-MM-DD HH:MM:SS.ffffff``.
 
     Session stamps are ``datetime.now(timezone.utc).isoformat()...Z``; facts
-    store ``datetime('now')``. Both are UTC but their spellings differ, so a
-    lexical comparison would silently compare the wrong things.
+    store the fixed-width microsecond stamp from ``timeutil``. Both are UTC but
+    their spellings differ, so a lexical comparison would silently compare the
+    wrong things. The full six fractional digits are kept because a fact
+    written in the same microsecond as the session must still sort after it.
     """
     from datetime import datetime, timezone
 
@@ -1045,7 +1051,7 @@ def _sqlite_utc(raw: str) -> str:
         stamp = datetime.fromisoformat(normalized)
         if stamp.tzinfo is None:
             stamp = stamp.replace(tzinfo=timezone.utc)
-        return stamp.astimezone(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+        return stamp.astimezone(timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f')
     except (ValueError, TypeError):
         return ''
 

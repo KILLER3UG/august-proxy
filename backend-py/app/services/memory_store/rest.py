@@ -12,6 +12,7 @@ from app.services.hooks.secret_guard import scan_secrets
 from app.services.memory_conn import commit as brain_commit
 from app.services.memory_conn import conn as _conn
 from app.services.memory_conn import db_path as _db_path
+from app.services.memory_store.timeutil import utc_now_text
 from app.services.memory_store.wire import _json, _row_as_wire
 from app.type_aliases import FactDict, JsonValue, ProposalDict
 
@@ -162,7 +163,7 @@ def save_fact(
     conn.execute(
         """
         INSERT INTO facts (fact_key, fact_value, title, kind, description, category, source, confidence, expires_at, scope, verified_at, updated_at)
-        VALUES (?, ?, ?, COALESCE(NULLIF(?, ''), 'fact'), ?, ?, ?, ?, ?, ?, CASE WHEN ? THEN datetime('now') ELSE NULL END, datetime('now'))
+        VALUES (?, ?, ?, COALESCE(NULLIF(?, ''), 'fact'), ?, ?, ?, ?, ?, ?, CASE WHEN ? THEN datetime('now') ELSE NULL END, ?)
         -- The conflict target is the row's IDENTITY, scope + key, not the key
         -- alone. `fact_key` unique store-wide (pre-055) meant one key had one
         -- home in the whole install, which is why per-scope memory had to be
@@ -188,7 +189,7 @@ def save_fact(
             -- INSERT stamps it; a machine INSERT leaves it NULL — nothing
             -- has confirmed the fact yet.
             verified_at = CASE WHEN ? THEN datetime('now') ELSE facts.verified_at END,
-            updated_at = datetime('now')
+            updated_at = excluded.updated_at
         """,
         (
             factKey,
@@ -202,6 +203,7 @@ def save_fact(
             expires_at,
             normalize_scope(scope),
             1 if verified else 0,
+            utc_now_text(),
             1 if verified else 0,
         ),
     )
@@ -331,10 +333,11 @@ def list_facts(
     if category:
         rows = conn.execute(
             f'SELECT * FROM facts WHERE category = ? AND {vis} '
-            # `id DESC` is a tie-break, not a nicety: updated_at has SECOND
-            # resolution, so every fact written in one bulk pass shares a stamp
-            # and SQLite's order among them is unspecified — paging that set
-            # duplicated rows on one page and dropped them from the next.
+            # `id DESC` is a tie-break, not a nicety: legacy rows share
+            # second-resolution stamps (new writes carry microseconds, but a
+            # bulk import can still share one), so SQLite's order among equals
+            # is unspecified — paging that set duplicated rows on one page and
+            # dropped them from the next.
             'ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?',
             (category, *visParams, lim, off),
         ).fetchall()
@@ -424,7 +427,7 @@ def update_fact_value(
             title = CASE WHEN ? != '' THEN ? ELSE title END,
             category = CASE WHEN ? != '' THEN ? ELSE category END,
             verified_at = CASE WHEN ? THEN datetime('now') ELSE verified_at END,
-            updated_at = datetime('now')
+            updated_at = ?
         WHERE fact_key = ?
         """,
         (
@@ -434,6 +437,7 @@ def update_fact_value(
             category,
             category,
             1 if verified else 0,
+            utc_now_text(),
             factKey,
         ),
     )
@@ -497,12 +501,13 @@ def restore_superseded_losers(factKey: str) -> list[str]:
         return []
     restored: list[str] = []
     try:
+        now = utc_now_text()
         for key in losers:
             cur = conn.execute(
                 "UPDATE facts SET status = 'active', superseded_by = NULL, contradicts = NULL, "
-                "updated_at = datetime('now') "
+                "updated_at = ? "
                 "WHERE fact_key = ? AND (status IS NULL OR status IN ('superseded', 'contested', 'archived'))",
-                (key,),
+                (now, key),
             )
             if cur.rowcount:
                 restored.append(key)

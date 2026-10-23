@@ -26,6 +26,7 @@ from app.services.memory_conn import db_path as _db_path
 from app.services.memory_conn import poison
 from app.services.memory_quality import MERGE_SIMILARITY as _MERGE_SIMILARITY
 from app.services.memory_store.rest import PROFILE_FACT_KIND
+from app.services.memory_store.timeutil import utc_now_text
 
 logger = logging.getLogger('august.consolidation')
 
@@ -312,9 +313,9 @@ def _enforce_fact_budget() -> tuple[int, list[str]]:
     for _score, _age, rowId, key in scored[:excess]:
         try:
             cur = conn.execute(
-                "UPDATE facts SET status = 'archived', updated_at = datetime('now') WHERE id = ? "
+                "UPDATE facts SET status = 'archived', updated_at = ? WHERE id = ? "
                 "AND (status IS NULL OR status = 'active')",
-                (rowId,),
+                (utc_now_text(), rowId),
             )
             if cur.rowcount:
                 archived += 1
@@ -612,13 +613,13 @@ def apply_retire_decision(proposal_id: int, approve: bool, decidedBy: str = 'use
             ),
         ]
         cur = conn.execute(
-            "UPDATE facts SET status = 'retired', updated_at = datetime('now') "
+            "UPDATE facts SET status = 'retired', updated_at = ? "
             "WHERE fact_key = ? AND kind = ? AND (status IS NULL OR status = 'active') "
             'AND COALESCE(use_count, 0) = 0 '
             "AND julianday('now') - julianday(COALESCE(NULLIF(last_used_at, ''), "
             "NULLIF(updated_at, ''), created_at)) > ? "
             "AND (? = '' OR COALESCE(NULLIF(last_used_at, ''), NULLIF(updated_at, ''), created_at) = ?)",
-            (key, raw_kind, days, last_touch, last_touch),
+            (utc_now_text(), key, raw_kind, days, last_touch, last_touch),
         )
         if not cur.rowcount:
             # Evidence no longer holds. We own the claim, so correct it inside
@@ -822,8 +823,8 @@ def _merge_duplicates(modelSummarize: bool = False) -> tuple[int, list[str]]:
             if summary:
                 mergedValue = summary
         cur = conn.execute(
-            "UPDATE facts SET fact_value = ?, updated_at = datetime('now') WHERE fact_key = ?",
-            (mergedValue, newerKey),
+            "UPDATE facts SET fact_value = ?, updated_at = ? WHERE fact_key = ?",
+            (mergedValue, utc_now_text(), newerKey),
         )
         # Only retire the absorbed fact once the survivor actually took the
         # write. A rowcount of 0 means the survivor is gone, and deleting
@@ -987,13 +988,13 @@ def _supersede_contradictions() -> tuple[int, list[str]]:
             if contested:
                 conn.execute(
                     "UPDATE facts SET status = 'contested', superseded_by = ?, contradicts = ?, "
-                    "updated_at = datetime('now') WHERE fact_key = ?",
-                    (winnerKey, winnerKey, olderKey),
+                    "updated_at = ? WHERE fact_key = ?",
+                    (winnerKey, winnerKey, utc_now_text(), olderKey),
                 )
                 conn.execute(
-                    "UPDATE facts SET contradicts = ?, updated_at = datetime('now') "
+                    "UPDATE facts SET contradicts = ?, updated_at = ? "
                     'WHERE fact_key = ?',
-                    (olderKey, winnerKey),
+                    (olderKey, utc_now_text(), winnerKey),
                 )
                 notes.append(
                     f'contested {olderKey!r} against {winnerKey!r} '
@@ -1002,8 +1003,8 @@ def _supersede_contradictions() -> tuple[int, list[str]]:
             else:
                 conn.execute(
                     "UPDATE facts SET status = 'superseded', superseded_by = ?, "
-                    "updated_at = datetime('now') WHERE fact_key = ?",
-                    (winnerKey, olderKey),
+                    "updated_at = ? WHERE fact_key = ?",
+                    (winnerKey, utc_now_text(), olderKey),
                 )
                 notes.append(f'superseded {olderKey!r} (same title: {norm[:40]!r})')
             superseded += 1

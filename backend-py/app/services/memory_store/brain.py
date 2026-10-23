@@ -9,6 +9,7 @@ from app.json_narrowing import as_list, as_str
 from app.services.memory_conn import commit as brain_commit
 from app.services.memory_conn import conn as _conn
 from app.services.memory_store.kv import _fts_match_query
+from app.services.memory_store.timeutil import utc_now_text
 from app.services.memory_store.wire import _row_as_wire
 
 _BRAINStores: dict[str, dict[str, object]] = {
@@ -1008,7 +1009,8 @@ def brain_update_row(store: str, row_id: object, patch: dict[str, object]) -> di
         beforeWire = _row_as_wire(before)
         # Bump updated_at so edited entries re-sort to the top of recency views.
         if 'updated_at' in colNames and 'updated_at' not in {s.split(' = ')[0] for s in sets}:
-            sets.append("updated_at = datetime('now')")
+            sets.append('updated_at = ?')
+            params.append(utc_now_text())
         conn.execute(f"UPDATE {table} SET {', '.join(sets)} WHERE {idCol} = ?", (*params, row_id))
         brain_commit(conn)
         after = conn.execute(f'SELECT * FROM {table} WHERE {idCol} = ?', (row_id,)).fetchone()
