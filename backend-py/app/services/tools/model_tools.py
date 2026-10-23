@@ -122,7 +122,7 @@ def assembleToolDefs(
     preloadK: int = 10,
     skillIndex: list[dict] | None = None,
     autoPrimeJ: int = 2,
-    toolKeywordsByName: dict[str, list[str]] | None = None,
+    tool_keywords_by_name: dict[str, list[str]] | None = None,
 ) -> AssemblyResult:
     """Assemble the tool definitions the model will see.
 
@@ -153,7 +153,7 @@ def assembleToolDefs(
     if context_messages:
         query = buildQueryFromMessages(context_messages)
     if query:
-        catalog = buildToolCatalog(deferrableDefs, toolKeywordsByName)
+        catalog = buildToolCatalog(deferrableDefs, tool_keywords_by_name)
         preloadedNames = searchTools(catalog, query, k=preloadK)
     else:
         preloadedNames = [td.get('name', '') if isinstance(td, dict) else '' for td in deferrableDefs[:preloadK]]

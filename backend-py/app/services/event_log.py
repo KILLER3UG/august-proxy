@@ -111,12 +111,12 @@ class _SubscriberQueue(asyncio.Queue[dict[str, object]]):
         self.queuedBytes = 0
         self._eventSizes: deque[int] = deque()
 
-    def putEvent(self, event: dict[str, object], sizeBytes: int) -> None:
-        if self.full() or self.queuedBytes + sizeBytes > MAX_SUBSCRIBER_BACKLOG_BYTES:
+    def putEvent(self, event: dict[str, object], size_bytes: int) -> None:
+        if self.full() or self.queuedBytes + size_bytes > MAX_SUBSCRIBER_BACKLOG_BYTES:
             raise asyncio.QueueFull
         super().put_nowait(event)
-        self._eventSizes.append(sizeBytes)
-        self.queuedBytes += sizeBytes
+        self._eventSizes.append(size_bytes)
+        self.queuedBytes += size_bytes
 
     def put_nowait(self, event: dict[str, object]) -> None:
         self.putEvent(event, _eventSizeBytes(event))

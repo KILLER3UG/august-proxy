@@ -1390,8 +1390,8 @@ def _sessionToolDefsCacheKey(
     fmt: str,
     tools: list[dict[str, object]],
     session: WorkbenchSession,
-    contextWindow: int,
-    contextMsgs: list[dict[str, object]],
+    context_window: int,
+    context_msgs: list[dict[str, object]],
 ) -> str:
     """Fingerprint every input that can change the final provider tool array."""
     from app.services.harness_mode import is_orchestrator_mode
@@ -1404,8 +1404,8 @@ def _sessionToolDefsCacheKey(
         {
             'format': fmt,
             'base_tools': tools,
-            'query': buildQueryFromMessages(contextMsgs),
-            'context_window': contextWindow,
+            'query': buildQueryFromMessages(context_msgs),
+            'context_window': context_window,
             'keywords': _toolSearchKeywordsByName(),
             'core_tools': sorted(_coreToolNames()),
             'capability_profile': profile,
@@ -1498,7 +1498,7 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
             context_messages=contextMsgs,
             contextLength=contextWindow,
             coreToolNames=_coreToolNames(),
-            toolKeywordsByName=_toolSearchKeywordsByName(),
+            tool_keywords_by_name=_toolSearchKeywordsByName(),
         )
         if result.activated:
             session._tool_assembly = result
@@ -1621,7 +1621,7 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
             context_messages=contextMsgs,
             contextLength=contextWindow,
             coreToolNames=_coreToolNames(),
-            toolKeywordsByName=_toolSearchKeywordsByName(),
+            tool_keywords_by_name=_toolSearchKeywordsByName(),
         )
         if result.activated:
             session._tool_assembly = result
