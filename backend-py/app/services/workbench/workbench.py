@@ -1394,12 +1394,18 @@ def _sessionToolDefsCacheKey(
     tools: list[dict[str, object]],
     session: WorkbenchSession,
     context_window: int,
-    context_msgs: list[dict[str, object]],
 ) -> str:
-    """Fingerprint every input that can change the final provider tool array."""
+    """Fingerprint the session's tool SET and gates, not the current turn.
+
+    The BM25 query used to be part of this key, which made the "session" cache
+    a per-turn cache: every new message changed the query, the disclosed slice
+    was rebuilt, and the provider's tool-array prefix could move mid-session.
+    Membership is chosen on the first build from the current context and then
+    held for the session; a change to the underlying set, model profile or
+    gate still invalidates it.
+    """
     from app.services.harness_mode import is_orchestrator_mode
     from app.services.tools.circuit_tools import is_circuit_mode
-    from app.services.tools.retrieval import buildQueryFromMessages
     from app.services.workbench import tool_defs_cache
 
     profile = _modelCapabilityProfile(session)
@@ -1407,7 +1413,6 @@ def _sessionToolDefsCacheKey(
         {
             'format': fmt,
             'base_tools': tools,
-            'query': buildQueryFromMessages(context_msgs),
             'context_window': context_window,
             'keywords': _toolSearchKeywordsByName(),
             'core_tools': sorted(_coreToolNames()),
@@ -1487,7 +1492,7 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
             contextWindow = _resolveModelContextWindow(modelId, provider or None)
     except Exception:
         logger.debug('tool-defs context window resolve failed', exc_info=True)
-    cacheKey = _sessionToolDefsCacheKey('anthropic', tools, session, contextWindow, contextMsgs)
+    cacheKey = _sessionToolDefsCacheKey('anthropic', tools, session, contextWindow)
     cached = tool_defs_cache.get_session_cached(session, 'anthropic', cacheKey)
     if cached is not None:
         return cached
@@ -1587,7 +1592,7 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
             contextWindow = _resolveModelContextWindow(modelId, providerCfg or None)
     except Exception:
         logger.debug('tool-defs context window resolve failed', exc_info=True)
-    cacheKey = _sessionToolDefsCacheKey('openai', tools, session, contextWindow, contextMsgs)
+    cacheKey = _sessionToolDefsCacheKey('openai', tools, session, contextWindow)
     cached = tool_defs_cache.get_session_cached(session, 'openai', cacheKey)
     if cached is not None:
         return cached

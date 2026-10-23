@@ -1,9 +1,12 @@
 """Cache provider tool definitions at registry and session scope.
 
 The shared cache holds registry → provider-format conversion. Each session
-also holds its final disclosed and filtered array, keyed by all inputs that can
-change that surface. Disable with ``AUGUST_P1_TOOL_CACHE=0`` to rebuild both
-layers on every call (useful for A/B latency measurements).
+also holds its final disclosed and filtered array, keyed by the session's tool
+SET, model profile and gates. The per-turn BM25 query chooses membership on the
+first build but is deliberately not part of the key: including it made the
+"session" cache a per-turn cache and let the provider's tool-array prefix move
+mid-session. Disable with ``AUGUST_P1_TOOL_CACHE=0`` to rebuild both layers on
+every call (useful for A/B latency measurements).
 """
 
 from __future__ import annotations
