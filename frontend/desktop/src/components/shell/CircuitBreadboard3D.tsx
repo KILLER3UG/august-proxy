@@ -186,6 +186,12 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
     let dragging = false;
     let lastX = 0;
     let lastY = 0;
+    // A press that becomes a camera drag must not also select the part under
+    // the pointer. The reference gesture machine uses the same 4 px threshold.
+    let pressX = 0;
+    let pressY = 0;
+    let dragMoved = false;
+    const DRAG_THRESHOLD = 4;
     let knobDrag: PartState | null = null;
     let knobPivot = new Vector2();
     let knobLastAngle = 0;
@@ -262,6 +268,9 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
 
     const onPointerDown = (e: PointerEvent): void => {
       idleSince = performance.now();
+      pressX = e.clientX;
+      pressY = e.clientY;
+      dragMoved = false;
       const hit = hitAt(e.clientX, e.clientY);
       if (hit && hit.group.userData['draggable'] === 'pot') {
         // A knob owns the gesture. Without this the camera and the control
@@ -280,6 +289,13 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
     };
     const onPointerMove = (e: PointerEvent): void => {
       idleSince = performance.now();
+      if (
+        !dragMoved &&
+        (dragging || knobDrag) &&
+        Math.hypot(e.clientX - pressX, e.clientY - pressY) > DRAG_THRESHOLD
+      ) {
+        dragMoved = true;
+      }
       const rect = host.getBoundingClientRect();
       stage.pointer.set(
         ((e.clientX - rect.left) / rect.width) * 2 - 1,
@@ -327,6 +343,10 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
       zoom = Math.min(22, Math.max(3.2, zoom * (e.deltaY > 0 ? 0.92 : 1.08)));
     };
     const onClick = (): void => {
+      if (dragMoved) {
+        dragMoved = false;
+        return;
+      }
       if (hovered && onSelectRef.current) onSelectRef.current(hovered.ref);
     };
     // A 3D scene is inaccessible by nature; the schematic above is the real
