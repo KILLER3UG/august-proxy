@@ -16,6 +16,11 @@ import { ActivitySummary } from '@/components/chat/ActivitySummary';
 import { classifyTool } from '@/lib/tool-classify';
 import { getAgentRoleLabel } from '@/lib/tool-labels';
 import {
+  distillThoughtLines,
+  summarizeThoughtHeader,
+} from '@/lib/process-summary';
+import { THOUGHT_SUMMARY_LINES_FULL } from '@/lib/thought-presentation';
+import {
   isSubagentToolName,
   SUBAGENT_STATUS_LABEL,
   type SubagentPromptEntry,
@@ -245,10 +250,36 @@ function SubagentInnerBlock({
   onOpenAgent?: (jobId: string) => void;
 }): ReactNode {
   if (block.type === 'thinking') {
+    // Claude-parity: the card carries the distilled "what the model is
+    // doing" sentences, never the raw chain of thought — the same rule the
+    // main transcript's ThoughtStep renders by. A thought that distills to
+    // nothing (pure code/SPICE noise) keeps a placeholder so the disclosure
+    // never opens onto an empty body.
+    const raw = block.content || '';
+    const lines = distillThoughtLines(raw);
+    const shown = lines.slice(0, THOUGHT_SUMMARY_LINES_FULL);
+    const hidden = Math.max(0, lines.length - shown.length);
     return (
       <ThinkingDisclosure pending={false}>
-        <div className="pl-3 chat-rail py-1 chat-thought-text text-2xs">
-          <Markdown content={block.content || ''} />
+        <div className="pl-3 py-1 text-2xs" data-slot="subagent-thought-summary">
+          <span className="thought-summary-text thought-summary-text--wrap block">
+            {shown.length > 0
+              ? shown.map((line, i) => (
+                  <span key={i} className="thought-summary-line block">
+                    {line}
+                  </span>
+                ))
+              : (
+                  <span className="thought-summary-line block">
+                    {summarizeThoughtHeader('', false)}
+                  </span>
+                )}
+            {hidden > 0 ? (
+              <span className="thought-summary-line block opacity-60">
+                …and {hidden} more steps.
+              </span>
+            ) : null}
+          </span>
         </div>
       </ThinkingDisclosure>
     );

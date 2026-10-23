@@ -18,6 +18,24 @@ export function splitThinkingSentences(content: string): string[] {
     .filter(Boolean);
 }
 
+/**
+ * The distilled "what the model is doing" lines a thinking card renders —
+ * the ONE owner of summary-split → header-distill → noise-filter → dedupe.
+ * Two cards (the main rail and the subagent panel) both render this list;
+ * separate pipelines drifted the moment one of them filtered noise the
+ * other showed. Consecutive duplicates collapse: a thought made of several
+ * noise sentences distilled each to the same "Processing request."
+ * placeholder, and a card that repeats one line reads as broken.
+ */
+export function distillThoughtLines(content: string): string[] {
+  const out: string[] = [];
+  for (const line of splitThinkingSentences(content)) {
+    const distilled = summarizeThoughtHeader(line, false);
+    if (distilled && distilled !== out[out.length - 1]) out.push(distilled);
+  }
+  return out;
+}
+
 export function buildProcessSummaryLine(thinkingParts: string[]): string | null {
   const joined = thinkingParts
     .map((t) =>

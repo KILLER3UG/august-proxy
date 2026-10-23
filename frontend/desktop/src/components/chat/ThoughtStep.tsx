@@ -12,27 +12,31 @@
  * Show more/less control. The turn-level "Done" marker lives on the rail
  * (RailDoneRow), not on the thought.
  *
- * Claude-parity rendering (2026-09-22, revised 2026-10-22): with the
- * collapsed default on (the out-of-box behaviour), a thought renders as the
- * reference's card BODY — one distilled sentence per line, no header, no
- * reveal. The card's TITLE ("Thought for 49s") belongs to the activity line
- * above the pack, which already carries the elapsed time; a per-thought
- * header repeated that run duration on every block, and a "Show full
- * reasoning" affordance promised more than the reference shows. The raw
- * chain-of-thought remains available through the collapse-thinking opt-out
- * (the clamped-prose branch below).
+ * Claude-parity rendering (2026-09-22, revised 2026-10-22, summary-only
+ * 2026-10-23): with the collapsed default on (the out-of-box behaviour), a
+ * thought renders as the reference's card BODY — one distilled sentence per
+ * line, no header, no reveal. The card's TITLE ("Thought for 49s") belongs
+ * to the activity line above the pack, which already carries the elapsed
+ * time; a per-thought header repeated that run duration on every block. The
+ * reference NEVER shows the raw chain of thought — its opened card carries
+ * more of the summary, and so does ours: "Show more" raises the distilled
+ * line cap (THOUGHT_SUMMARY_LINES → _FULL). The raw prose branch below is
+ * reached only when the operator opts out of summary rendering
+ * (august.collapseThinking = '0').
  */
 
 import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Clock, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
-  splitThinkingSentences,
+  distillThoughtLines,
   summarizeThoughtHeader,
 } from '@/lib/process-summary';
 import {
   THOUGHT_CLAMP_LINES,
   THOUGHT_CLAMP_CHARS,
+  THOUGHT_SUMMARY_LINES,
+  THOUGHT_SUMMARY_LINES_FULL,
 } from '@/lib/thought-presentation';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 
@@ -103,21 +107,24 @@ export function ThoughtStep({
     return summarizeThoughtHeader(text, false);
   }, [text, isGenerating]);
 
-  // The reference's thinking card is a LIST of the model's sentences -
-  // "Fixing a schematic diagram for a 3-to-8 decoder." / "Designing the
-  // gate layout and wiring for the corrected circuit." / ... - one per
-  // line, not a single distilled line. The one-line summary is what a
-  // COLLAPSED card shows; the sentences are the card.
+  // The reference's thinking card is a LIST of the model's distilled
+  // sentences - "Fixing a schematic diagram for a 3-to-8 decoder." /
+  // "Designing the gate layout and wiring for the corrected circuit." - one
+  // per line. The FULL list is computed once; the visible slice depends on
+  // expansion (collapsed cap, or the raised expanded cap). Expansion never
+  // reveals raw reasoning — the reference's opened card carries more of the
+  // summary, and so does this one.
   //
   // A LIVE thought has no settled sentence list yet, so it keeps the one
   // rotating line until it settles.
-  const summaryLines = useMemo(() => {
+  const distilledLines = useMemo(() => {
     if (isGenerating) return summaryLine ? [summaryLine] : [];
-    return splitThinkingSentences(text)
-      .map((s) => summarizeThoughtHeader(s, false))
-      .filter((s) => s.length > 0)
-      .slice(0, 12);
+    return distillThoughtLines(text);
   }, [text, isGenerating, summaryLine]);
+
+  const summaryCap = showFull ? THOUGHT_SUMMARY_LINES_FULL : THOUGHT_SUMMARY_LINES;
+  const summaryLines = distilledLines.slice(0, summaryCap);
+  const hiddenSummaryCount = Math.max(0, distilledLines.length - summaryCap);
 
   if (!text && !isGenerating) return null;
 
@@ -130,16 +137,17 @@ export function ThoughtStep({
   const longThought = overflowing || text.length > THOUGHT_CLAMP_CHARS;
   const clamped = longThought && !showFull;
 
-  // Claude-style think row (2026-09-22): when the collapsed default is on,
-  // a thought renders ONLY as its one-line distilled "what the model is
-  // doing" header — the raw chain-of-thought prose stays behind the
-  // "Show full reasoning" expander. `showFull` (user expansion) reveals it.
-  const summaryCollapsed = collapsedDefault && !showFull;
-  // Every collapsed row is expandable — even a short settled thought is a
-  // summary row first, matching the reference UI where each step reads as
-  // "Comparing two lesser-known language models." until clicked open.
-  // The empty pending placeholder (no reasoning yet) has nothing to reveal.
-  const canReveal = !!text && typeof onToggle === 'function';
+  // Claude-style think row: when the collapsed default is on, a thought
+  // renders ONLY as its distilled "what the model is doing" sentences — the
+  // raw chain-of-thought is not part of either state. "Show more" raises the
+  // summary cap; the raw prose branch is the operator's opt-out only.
+  const summaryCollapsed = collapsedDefault;
+  // A summary row is expandable only when expansion actually reveals more:
+  // a thought with fewer distilled lines than the collapsed cap has nothing
+  // behind "Show more".
+  const canReveal = collapsedDefault
+    ? !isGenerating && distilledLines.length > THOUGHT_SUMMARY_LINES && typeof onToggle === 'function'
+    : !!text && typeof onToggle === 'function';
 
   const clockIcon = isGenerating ? (
     <Loader2 className="process-thought-clock animate-spin" aria-hidden />
@@ -152,7 +160,7 @@ export function ThoughtStep({
       className={cn('rail-row process-thought thought-enter', className)}
       data-slot="thought-step"
       data-generating={isGenerating ? 'true' : 'false'}
-      data-expanded={summaryCollapsed ? 'false' : showFull ? 'true' : 'false'}
+      data-expanded={showFull ? 'true' : 'false'}
       data-clamped={clamped ? 'true' : 'false'}
     >
       <span className="rail-line" aria-hidden />
@@ -165,76 +173,78 @@ export function ThoughtStep({
             "Thought for 49s" once — here that title is the activity line's
             job (it already carries the elapsed time while the turn is live),
             and repeating the run's duration on every thought block is how
-            three blocks each claimed "Thought for 6s". No "Show full
-            reasoning" either: the distilled sentences ARE the card's content,
-            the way the reference's are. */}
+            three blocks each claimed "Thought for 6s". */}
         {summaryCollapsed ? (
-          <>
-            <div
-              className={cn(
-                'thought-summary',
-                isGenerating && 'thought-summary--live',
-              )}
-              data-slot="thought-summary"
-            >
-              {/* One sentence per line, the way the reference's thinking
-                  card reads. The FIRST line is the header; the rest are the
-                  card's body. */}
-              <span className="thought-summary-text">
-                {summaryLines.map((line, i) => (
-                  <span
-                    key={i}
-                    className={cn(
-                      'thought-summary-line block',
-                      i === 0 && 'thought-summary-line--first',
-                    )}
-                  >
-                    {line}
-                  </span>
-                ))}
+          <div
+            id={panelId}
+            className={cn(
+              'thought-summary',
+              isGenerating && 'thought-summary--live',
+              showFull && 'thought-summary--expanded',
+            )}
+            data-slot="thought-summary"
+          >
+            {/* One sentence per line, the way the reference's thinking
+                card reads. The FIRST line is the header; the rest are the
+                card's body. Expansion shows more of the SAME list, never
+                the raw reasoning. */}
+            <span className="thought-summary-text">
+              {summaryLines.map((line, i) => (
+                <span
+                  key={i}
+                  className={cn(
+                    'thought-summary-line block',
+                    i === 0 && 'thought-summary-line--first',
+                  )}
+                >
+                  {line}
+                </span>
+              ))}
+            </span>
+            {hiddenSummaryCount > 0 ? (
+              <span className="thought-summary-line block text-muted-foreground/50">
+                …and {hiddenSummaryCount} more steps.
               </span>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className={cn('thought-clamp', clamped && 'is-clamped')}>
-              <div
-                ref={proseRef}
-                id={panelId}
-                className={cn(
-                  'process-thought-prose thought-content chat-thought-text',
-                  // The same one-shot fade the answer's live tail
-                  // uses, so streamed reasoning inks in instead of hard-popping.
-                  isGenerating && 'md-live-tail',
-                )}
-                aria-live={isGenerating ? 'polite' : undefined}
-              >
-                {text ? (
-                  <Markdown content={text} />
-                ) : (
-                  <div className="process-thought-pending">Thinking…</div>
-                )}
-              </div>
-              {clamped ? <div className="thought-fade" aria-hidden /> : null}
-            </div>
-
-            {canReveal ? (
-              <button
-                type="button"
-                className={cn('thought-toggle-btn', isGenerating && 'is-live')}
-                onClick={onToggle}
-                aria-expanded={showFull}
-                aria-controls={panelId}
-              >
-                <span>{showFull ? 'Show less' : 'Show more'}</span>
-                <ChevronDown
-                  className={cn('thought-toggle-chevron', showFull && 'is-open')}
-                  aria-hidden
-                />
-              </button>
             ) : null}
-          </>
+          </div>
+        ) : (
+          <div className={cn('thought-clamp', clamped && 'is-clamped')}>
+            <div
+              ref={proseRef}
+              id={panelId}
+              className={cn(
+                'process-thought-prose thought-content chat-thought-text',
+                // The same one-shot fade the answer's live tail
+                // uses, so streamed reasoning inks in instead of hard-popping.
+                isGenerating && 'md-live-tail',
+              )}
+              aria-live={isGenerating ? 'polite' : undefined}
+            >
+              {text ? (
+                <Markdown content={text} />
+              ) : (
+                <div className="process-thought-pending">Thinking…</div>
+              )}
+            </div>
+            {clamped ? <div className="thought-fade" aria-hidden /> : null}
+          </div>
         )}
+
+        {canReveal ? (
+          <button
+            type="button"
+            className={cn('thought-toggle-btn', isGenerating && 'is-live')}
+            onClick={onToggle}
+            aria-expanded={showFull}
+            aria-controls={panelId}
+          >
+            <span>{showFull ? 'Show less' : 'Show more'}</span>
+            <ChevronDown
+              className={cn('thought-toggle-chevron', showFull && 'is-open')}
+              aria-hidden
+            />
+          </button>
+        ) : null}
       </div>
     </div>
   );

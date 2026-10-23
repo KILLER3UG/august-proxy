@@ -22,6 +22,17 @@ export const THOUGHT_CLAMP_LINES = 6;
  *  at once, so a long thought must also truncate by length alone. */
 export const THOUGHT_CLAMP_CHARS = 480;
 
+/** Distilled summary lines a settled thought shows before expansion. The
+ *  reference thinking card carries a SHORT summary — a couple of "what the
+ *  model is doing" sentences under its "Thought for Xs" title — never the
+ *  raw chain of thought. */
+export const THOUGHT_SUMMARY_LINES = 12;
+
+/** Summary lines the expanded card shows. Still distilled sentences, not
+ *  raw reasoning: expansion reveals more of the summary, the way the
+ *  reference's opened card does. */
+export const THOUGHT_SUMMARY_LINES_FULL = 60;
+
 /** "1m 06s" / "6s" — the elapsed formatter both variants render. */
 export function formatThoughtDuration(ms: number): string {
   const total = Math.max(0, Math.round(ms / 1000));

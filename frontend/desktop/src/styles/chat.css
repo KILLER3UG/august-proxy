@@ -1559,6 +1559,15 @@ details[open] > summary .disclosure-chevron {
   color: color-mix(in srgb, var(--dt-muted-foreground) 82%, transparent);
   font-style: normal;
 }
+/* Expanded summary shows MORE distilled lines (the raised cap), and they
+   must wrap — the collapsed single-line clip would cut every sentence at
+   the rail edge instead. */
+.thought-summary--expanded .thought-summary-text,
+.thought-summary-text--wrap {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
 .thought-summary-toggle {
   flex-shrink: 0;
   display: inline-flex;
