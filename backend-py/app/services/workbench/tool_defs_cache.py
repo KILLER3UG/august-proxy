@@ -1,18 +1,16 @@
-"""Cache base workbench tool definitions (registry → provider format).
+"""Cache provider tool definitions at registry and session scope.
 
-Caches only the **stable** conversion of registered tools (+ MCP append),
-keyed by ``tool_registry.generation()`` and a light MCP signature.
-
-Progressive disclosure / session-message filtering still runs outside this
-cache (see ``toolDefinitions`` in workbench.py).
-
-Disable with env ``AUGUST_P1_TOOL_CACHE=0`` to force a rebuild every call
-(useful for A/B latency measurements).
+The shared cache holds registry → provider-format conversion. Each session
+also holds its final disclosed and filtered array, keyed by all inputs that can
+change that surface. Disable with ``AUGUST_P1_TOOL_CACHE=0`` to rebuild both
+layers on every call (useful for A/B latency measurements).
 """
 
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 import os
 import threading
 from typing import Any
@@ -22,6 +20,39 @@ _lock = threading.Lock()
 _cache: dict[str, tuple[int, str, list[dict[str, object]]]] = {}
 _hits = 0
 _misses = 0
+
+
+def session_key(payload: dict[str, object]) -> str:
+    """Stable identity for the complete, session-filtered provider tool array."""
+    encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(',', ':'), default=str)
+    return hashlib.sha256(encoded.encode('utf-8')).hexdigest()
+
+
+def get_session_cached(session: object, fmt: str, key: str) -> list[dict[str, object]] | None:
+    """Return a copy of the session's final provider tool array on an exact hit."""
+    if not enabled():
+        return None
+    cache = getattr(session, '_tool_defs_cache', None)
+    if not isinstance(cache, dict):
+        return None
+    entry = cache.get(fmt)
+    if not isinstance(entry, tuple) or len(entry) != 2 or entry[0] != key:
+        return None
+    tools = entry[1]
+    return copy.deepcopy(tools) if isinstance(tools, list) else None
+
+
+def store_session_cached(
+    session: object, fmt: str, key: str, tools: list[dict[str, object]]
+) -> None:
+    """Store a private copy of the fully filtered provider tool array on session."""
+    if not enabled():
+        return
+    cache = getattr(session, '_tool_defs_cache', None)
+    if not isinstance(cache, dict):
+        cache = {}
+        setattr(session, '_tool_defs_cache', cache)
+    cache[fmt] = (key, copy.deepcopy(tools))
 
 
 def enabled() -> bool:
@@ -49,17 +80,11 @@ def stats() -> dict[str, object]:
 
 def _mcp_signature() -> str:
     try:
-        from app.json_narrowing import as_dict
         from app.services.tools.mcp_client import getMcpToolDefinitionsSync
 
         defs = getMcpToolDefinitionsSync()
-        names: list[str] = []
-        for raw in defs:
-            if raw.get('type') == 'function':
-                names.append(str(as_dict(raw.get('function'), {}).get('name', '')))
-            else:
-                names.append(str(raw.get('name', '')))
-        return ','.join(sorted(n for n in names if n))
+        encoded = json.dumps(defs, sort_keys=True, ensure_ascii=False, separators=(',', ':'), default=str)
+        return hashlib.sha256(encoded.encode('utf-8')).hexdigest()
     except Exception:
         return ''
 

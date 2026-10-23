@@ -36,15 +36,10 @@ def policy_from_session(
     network = bool(sandbox_network) if sandbox_network is not None else False
     if mode == 'danger-full-access':
         network = True
-    roots: tuple[str, ...] = ()
-    ws = (workspace_path or '').strip()
-    if ws:
-        roots = (ws,)
     return SandboxPolicy(
         mode=mode,
-        workspace_root=ws,
+        workspace_root=(workspace_path or '').strip(),
         network=network,
-        writable_roots=roots,
         allow_unsandboxed=allow_unsandboxed or mode == 'danger-full-access',
     )
 

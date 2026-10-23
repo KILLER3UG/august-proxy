@@ -42,7 +42,7 @@ interface MeterRow {
  *  the full tool result text (never truncated, unlike `summary`). */
 interface MessageToolEntry {
   name: string;
-  status: 'running' | 'done' | 'error';
+  status: 'running' | 'done' | 'error' | 'stalled';
   startedAt?: number;
   result?: string;
 }

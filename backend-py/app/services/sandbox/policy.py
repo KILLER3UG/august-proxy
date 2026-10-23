@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Final, Literal
 
 SandboxMode = Literal['read-only', 'workspace-write', 'danger-full-access']
@@ -88,12 +88,19 @@ def normalize_sandbox_mode(mode: str | None) -> SandboxMode:
 
 @dataclass(frozen=True)
 class SandboxPolicy:
-    """Effective sandbox policy for one tool invocation."""
+    """Effective sandbox policy for one tool invocation.
+
+    There is one answer to "where may this command write": the workspace
+    root, which every enforcement backend resolves from ``workspace_root``
+    itself (falling back to the process cwd when it is empty). A
+    ``writable_roots`` list used to live here too — set by
+    ``policy_from_session``, read by nothing — and a field that looks like
+    the write authority but binds nothing is worse than no field.
+    """
 
     mode: SandboxMode = DEFAULT_SANDBOX_MODE
     workspace_root: str = ''
     network: bool = False
-    writable_roots: tuple[str, ...] = field(default_factory=tuple)
     allow_unsandboxed: bool = False
 
     @property

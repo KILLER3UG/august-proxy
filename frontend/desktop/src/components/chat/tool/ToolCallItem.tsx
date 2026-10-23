@@ -55,7 +55,7 @@ export const ToolCallItem = memo(function ToolCallItem({
   agentIdOverride?: string;
 }) {
   const [userOverride, setUserOverride] = useState<boolean | null>(null);
-  const open = userOverride ?? tool.status === 'error';
+  const open = userOverride ?? (tool.status === 'error' || tool.status === 'stalled');
 
   const [mountedAt] = useState(() => Date.now());
   const [now, setNow] = useState(() => Date.now());
@@ -119,6 +119,7 @@ export const ToolCallItem = memo(function ToolCallItem({
   // a click on it toggled the disclosure.
   const showStatus =
     (isRunning && !!liveBackend.label) ||
+    tool.status === 'stalled' ||
     toolStalled ||
     tool.status === 'done' ||
     tool.status === 'error' ||
@@ -177,7 +178,7 @@ export const ToolCallItem = memo(function ToolCallItem({
                   {liveBackend.active?.stage || 'backend'}
                 </span>
               )}
-              {toolStalled ? (
+              {toolStalled || tool.status === 'stalled' ? (
                 <span className="inline-flex items-center gap-1">
                   <AlertCircle className="size-3 text-warning" />
                   <span className="tool-row-meta text-warning">stalled</span>

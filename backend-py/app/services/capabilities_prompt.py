@@ -123,19 +123,28 @@ def group_tools_by_bucket(
 def format_tools_by_bucket(
     tool_names: Iterable[str] | None = None,
     include_empty: bool = False,
+    include_names: bool = True,
 ) -> str:
-    """Render the ``<tools>`` body (bucket index + bulk-tag note)."""
+    """Render tool-use guidance, optionally with a bucketed name index."""
+    if not include_names:
+        return '\n'.join(
+            [
+                'Tools are callable actions. Full schemas are provided separately in the tools array.',
+                'Choose from the declared tool schemas. Prefer read tools for investigation; use',
+                'destructive tools only when the user intent requires irreversible change.',
+                'A [bulk] tag does not override the caution level of a tool’s primary category.',
+                'The tool array is authoritative for which actions are available.',
+            ]
+        )
     grouped = group_tools_by_bucket(tool_names)
     lines: list[str] = [
         'Tools are callable actions. Full schemas are provided separately in the tools array.',
         'Use this index to pick the right tool. Prefer tool_read for investigation;',
         'use tool_destructive only when the user intent requires irreversible change.',
         '',
-        'Bulk note: tools tagged [bulk] (read_files, write_files, delete_sessions, kill_daemons,',
-        'load_skills, rename_sessions, web_fetch_many, and the meta `bulk` tool) keep the caution',
-        'level of their *primary* bucket below — tool_bulk is a tag layered on top, not an',
-        'alternate classification that overrides destructive-confirmation guidance.',
-        '',
+        'Bulk note: a [bulk] tag keeps the caution level of its primary bucket below —',
+        'tool_bulk is a tag layered on top, not an alternate classification that overrides',
+        'destructive-confirmation guidance.',
     ]
     for bucket in BUCKET_ORDER:
         names = grouped.get(bucket, [])
@@ -449,6 +458,7 @@ def build_capabilities_block(
     catalogue: list[dict[str, object]] | None = None,
     include_skills: bool = True,
     compact_skills: bool = False,
+    include_tool_names: bool = True,
 ) -> str:
     """Full ``<capabilities>`` XML block for main or subagent prompts.
 
@@ -460,7 +470,11 @@ def build_capabilities_block(
     parts = [
         '<capabilities>',
         '<tools>',
-        format_tools_by_bucket(tool_names),
+        format_tools_by_bucket(
+            tool_names,
+            include_empty=not include_tool_names,
+            include_names=include_tool_names,
+        ),
         '</tools>',
     ]
     if include_skills:

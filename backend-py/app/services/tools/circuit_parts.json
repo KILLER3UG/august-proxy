@@ -1,0 +1,264 @@
+{
+  "_COMPONENT_LIBRARY": {
+    "1n4148": {
+      "type": "signal diode",
+      "Vf": "0.7V @ 10mA",
+      "If_max": "200mA continuous",
+      "trr": "4ns"
+    },
+    "1n4007": {
+      "type": "rectifier diode",
+      "Vf": "0.7V",
+      "If_avg": "1A",
+      "Vrrm": "1000V"
+    },
+    "1n4733a": {
+      "type": "zener 5.1V",
+      "Vz": "5.1V @ 49mA",
+      "Pd": "1W"
+    },
+    "2n2222": {
+      "type": "NPN BJT",
+      "Ic_max": "800mA",
+      "hFE": "100–300",
+      "Vceo": "40V",
+      "ft": "300MHz"
+    },
+    "2n3904": {
+      "type": "NPN BJT",
+      "Ic_max": "200mA",
+      "hFE": "100–300",
+      "Vceo": "40V"
+    },
+    "2n3906": {
+      "type": "PNP BJT",
+      "Ic_max": "200mA",
+      "hFE": "100–300",
+      "Vceo": "40V"
+    },
+    "lm7805": {
+      "type": "linear regulator",
+      "Vout": "5V",
+      "Iout_max": "1.5A",
+      "Vin_range": "7–25V",
+      "dropout": "2V"
+    },
+    "lm7812": {
+      "type": "linear regulator",
+      "Vout": "12V",
+      "Iout_max": "1.5A",
+      "dropout": "2V"
+    },
+    "lm317": {
+      "type": "adjustable regulator",
+      "Vout": "1.25–37V",
+      "Iout_max": "1.5A",
+      "vref": "1.25V"
+    },
+    "lm358": {
+      "type": "dual op-amp",
+      "supply": "3–32V single / ±16V dual",
+      "gbw": "1MHz",
+      "input_offset": "2mV"
+    },
+    "lm741": {
+      "type": "op-amp",
+      "supply": "±15V typical",
+      "gbw": "1MHz",
+      "slew_rate": "0.5V/µs"
+    },
+    "ne555": {
+      "type": "timer",
+      "supply": "4.5–16V",
+      "frequency_range": "0.1Hz–500kHz",
+      "drive": "200mA"
+    },
+    "atmega328p": {
+      "type": "MCU",
+      "flash": "32KB",
+      "sram": "2KB",
+      "max_clock": "20MHz",
+      "package": "DIP-28/TQFP-32"
+    },
+    "esp32": {
+      "type": "MCU (WiFi/BLE)",
+      "cores": "2× Xtensa LX6 @240MHz",
+      "sram": "520KB"
+    },
+    "bc547": {
+      "type": "NPN BJT",
+      "Ic_max": "100mA",
+      "hFE": "110–800",
+      "Vceo": "45V"
+    },
+    "2n7000": {
+      "type": "N-ch MOSFET",
+      "Vds": "60V",
+      "Id": "200mA",
+      "Vgs_th": "0.8–3V",
+      "Rds_on": "~5Ω @ Vgs=10V"
+    },
+    "bs170": {
+      "type": "N-ch MOSFET",
+      "Vds": "60V",
+      "Id": "500mA",
+      "Vgs_th": "0.8–3V",
+      "Rds_on": "<5Ω @ Vgs=10V"
+    },
+    "irf540": {
+      "type": "N-ch power MOSFET",
+      "Vds": "100V",
+      "Id": "23A",
+      "Vgs_th": "2–4V",
+      "Rds_on": "77mΩ @ Vgs=10V"
+    },
+    "irf9540": {
+      "type": "P-ch power MOSFET",
+      "Vds": "100V",
+      "Id": "23A",
+      "Vgs_th": "-2…-4V",
+      "Rds_on": "117mΩ @ Vgs=-10V"
+    },
+    "tl072": {
+      "type": "dual JFET op-amp",
+      "supply": "±5–±18V",
+      "gbw": "3MHz",
+      "slew_rate": "13V/µs",
+      "ib": "30pA"
+    },
+    "op07": {
+      "type": "precision op-amp",
+      "supply": "±3–±22V",
+      "gbw": "0.6MHz",
+      "input_offset": "60µV",
+      "slew_rate": "0.3V/µs"
+    },
+    "lm324": {
+      "type": "quad op-amp",
+      "supply": "3–32V single / ±16V dual",
+      "gbw": "1MHz",
+      "input_offset": "2mV"
+    },
+    "lm7809": {
+      "type": "linear regulator",
+      "Vout": "9V",
+      "Iout_max": "1.5A",
+      "dropout": "2V"
+    },
+    "lm7833": {
+      "type": "linear regulator",
+      "Vout": "3.3V",
+      "Iout_max": "1.5A",
+      "dropout": "2V"
+    },
+    "lm337": {
+      "type": "negative adjustable regulator",
+      "Vout": "-1.25…-37V",
+      "Iout_max": "1.5A",
+      "vref": "-1.25V"
+    },
+    "lm7905": {
+      "type": "negative linear regulator",
+      "Vout": "-5V",
+      "Iout_max": "1A",
+      "dropout": "2V"
+    },
+    "1n4728a": {
+      "type": "zener 3.3V",
+      "Vz": "3.3V @ 76mA",
+      "Pd": "1W"
+    },
+    "1n4742a": {
+      "type": "zener 12V",
+      "Vz": "12V @ 21mA",
+      "Pd": "1W"
+    }
+  },
+  "_XSPICE_COMPONENT_LIBRARY": {
+    "7400": {
+      "type": "quad 2-input NAND gate",
+      "family": "74xx via XSPICE",
+      "gates": "4",
+      "pins": "14"
+    },
+    "7402": {
+      "type": "quad 2-input NOR gate",
+      "family": "74xx via XSPICE",
+      "gates": "4",
+      "pins": "14"
+    },
+    "7404": {
+      "type": "hex inverter",
+      "family": "74xx via XSPICE",
+      "gates": "6",
+      "pins": "14"
+    },
+    "7408": {
+      "type": "quad 2-input AND gate",
+      "family": "74xx via XSPICE",
+      "gates": "4",
+      "pins": "14"
+    },
+    "7432": {
+      "type": "quad 2-input OR gate",
+      "family": "74xx via XSPICE",
+      "gates": "4",
+      "pins": "14"
+    },
+    "7474": {
+      "type": "dual D flip-flop",
+      "family": "74xx via XSPICE",
+      "note": "active-low preset/clear modeled"
+    },
+    "7476": {
+      "type": "dual JK flip-flop",
+      "family": "74xx via XSPICE",
+      "note": "active-low preset/clear modeled"
+    },
+    "74161": {
+      "type": "4-bit synchronous binary counter",
+      "family": "74xx via XSPICE",
+      "note": "macro: ENP/ENT count enables + RCO; no parallel load/master clear"
+    },
+    "74595": {
+      "type": "8-bit shift register + storage latch",
+      "family": "74xx via XSPICE",
+      "note": "macro: SER/SRCLK/RCLK + QHS serial out; no shift clear"
+    }
+  },
+  "_COMPONENT_SIGNAL_SHAPES": {
+    "7400": "2 inputs to 1 output per NAND gate; four independent gates",
+    "7402": "2 inputs to 1 output per NOR gate; four independent gates",
+    "7404": "1 input to 1 output per inverter; six independent NOT gates",
+    "7408": "2 inputs to 1 output per AND gate; four independent gates",
+    "7432": "2 inputs to 1 output per OR gate; four independent gates",
+    "7474": "clocked 1-bit storage; data and clock inputs, Q and not-Q outputs",
+    "7476": "clocked 1-bit storage; J and K inputs, Q and not-Q outputs",
+    "74161": "clocked 4-bit counter; control inputs to four count outputs",
+    "74595": "clocked serial-to-parallel shift register; one serial data input to eight latched outputs, not a combinational splitter"
+  },
+  "_XSPICE_CARDS": {
+    "7400": "* 7400 — quad 2-input NAND (XSPICE, ideal logic; power pins omitted)\n.model u00_nand d_nand\n.subckt 7400 A1 B1 Y1 A2 B2 Y2 A3 B3 Y3 A4 B4 Y4\nAg1 [A1 B1] Y1 u00_nand\nAg2 [A2 B2] Y2 u00_nand\nAg3 [A3 B3] Y3 u00_nand\nAg4 [A4 B4] Y4 u00_nand\n.ends\n",
+    "7402": "* 7402 — quad 2-input NOR (XSPICE, ideal logic; power pins omitted)\n.model u02_nor d_nor\n.subckt 7402 A1 B1 Y1 A2 B2 Y2 A3 B3 Y3 A4 B4 Y4\nAg1 [A1 B1] Y1 u02_nor\nAg2 [A2 B2] Y2 u02_nor\nAg3 [A3 B3] Y3 u02_nor\nAg4 [A4 B4] Y4 u02_nor\n.ends\n",
+    "7404": "* 7404 — hex inverter (XSPICE, ideal logic; power pins omitted)\n.model u04_inv d_inverter\n.subckt 7404 A1 Y1 A2 Y2 A3 Y3 A4 Y4 A5 Y5 A6 Y6\nAg1 A1 Y1 u04_inv\nAg2 A2 Y2 u04_inv\nAg3 A3 Y3 u04_inv\nAg4 A4 Y4 u04_inv\nAg5 A5 Y5 u04_inv\nAg6 A6 Y6 u04_inv\n.ends\n",
+    "7408": "* 7408 — quad 2-input AND (XSPICE, ideal logic; power pins omitted)\n.model u08_and d_and\n.subckt 7408 A1 B1 Y1 A2 B2 Y2 A3 B3 Y3 A4 B4 Y4\nAg1 [A1 B1] Y1 u08_and\nAg2 [A2 B2] Y2 u08_and\nAg3 [A3 B3] Y3 u08_and\nAg4 [A4 B4] Y4 u08_and\n.ends\n",
+    "7432": "* 7432 — quad 2-input OR (XSPICE, ideal logic; power pins omitted)\n.model u32_or d_or\n.subckt 7432 A1 B1 Y1 A2 B2 Y2 A3 B3 Y3 A4 B4 Y4\nAg1 [A1 B1] Y1 u32_or\nAg2 [A2 B2] Y2 u32_or\nAg3 [A3 B3] Y3 u32_or\nAg4 [A4 B4] Y4 u32_or\n.ends\n",
+    "7474": "* 7474 — dual D flip-flop, active-low preset/clear (XSPICE macro)\n* d_dff async set/reset are active-high, so PRE/CLR go through inverters.\n* Ports: data clk set reset out Nout. Usage: X1 clk d pre clr q nq 7474\n.model u74_inv d_inverter\n.model u74_dff d_dff(ic=0)\n.subckt 7474 CLK1 D1 PRE1 CLR1 Q1 NQ1 CLK2 D2 PRE2 CLR2 Q2 NQ2\nAps1 PRE1 pset1 u74_inv\nAcl1 CLR1 prst1 u74_inv\nAff1 D1 CLK1 pset1 prst1 Q1 NQ1 u74_dff\nAps2 PRE2 pset2 u74_inv\nAcl2 CLR2 prst2 u74_inv\nAff2 D2 CLK2 pset2 prst2 Q2 NQ2 u74_dff\n.ends\n",
+    "7476": "* 7476 — dual JK flip-flop, active-low preset/clear (XSPICE macro)\n* Ports: j k clk set reset out Nout. Usage: X1 clk j k pre clr q nq 7476\n.model u76_inv d_inverter\n.model u76_jkff d_jkff(ic=0)\n.subckt 7476 CLK1 J1 K1 PRE1 CLR1 Q1 NQ1 CLK2 J2 K2 PRE2 CLR2 Q2 NQ2\nAps1 PRE1 pset1 u76_inv\nAcl1 CLR1 prst1 u76_inv\nAff1 J1 K1 CLK1 pset1 prst1 Q1 NQ1 u76_jkff\nAps2 PRE2 pset2 u76_inv\nAcl2 CLR2 prst2 u76_inv\nAff2 J2 K2 CLK2 pset2 prst2 Q2 NQ2 u76_jkff\n.ends\n",
+    "74161": "* 74161 — 4-bit synchronous binary counter (XSPICE macro)\n* Pins: CLK ENP ENT Q0 Q1 Q2 Q3 RCO. Count enable = ENP·ENT;\n* RCO = Q3·Q2·Q1·Q0·ENT. No parallel load, no master clear.\n* Usage: X1 clk enp ent q0 q1 q2 q3 rco 74161 (all digital nodes;\n* bridge analog clocks/signals with adc_bridge, outputs with dac_bridge).\n.model u161_and d_and\n.model u161_xor d_xor\n.model u161_dff d_dff(ic=0)\n.model u161_pd d_pulldown\n.subckt 74161 CLK ENP ENT Q0 Q1 Q2 Q3 RCO\nApd d0lt u161_pd\nAt0 [ENP ENT] t0 u161_and\nAd0 [Q0 t0] dd0 u161_xor\nAff0 dd0 CLK d0lt d0lt Q0 NQ0 u161_dff\nAt1 [Q0 t0] t1 u161_and\nAd1 [Q1 t1] dd1 u161_xor\nAff1 dd1 CLK d0lt d0lt Q1 NQ1 u161_dff\nAt2 [Q0 Q1 t0] t2 u161_and\nAd2 [Q2 t2] dd2 u161_xor\nAff2 dd2 CLK d0lt d0lt Q2 NQ2 u161_dff\nAt3 [Q0 Q1 Q2 t0] t3 u161_and\nAd3 [Q3 t3] dd3 u161_xor\nAff3 dd3 CLK d0lt d0lt Q3 NQ3 u161_dff\nArc [Q3 t3] RCO u161_and\n.ends\n",
+    "74595": "* 74595 — 8-bit shift register + storage latch (XSPICE macro)\n* Pins: SER SRCLK RCLK Q0..Q7 QHS (QH' serial out). No shift clear.\n* Usage: X1 ser srclk rclk q0 q1 q2 q3 q4 q5 q6 q7 qhs 74595\n.model u595_dff d_dff(ic=0)\n.model u595_pd d_pulldown\n.model u595_buf d_buffer\n.subckt 74595 SER SRCLK RCLK Q0 Q1 Q2 Q3 Q4 Q5 Q6 Q7 QHS\nApd d0lt u595_pd\nAs0 SER SRCLK d0lt d0lt s0 s0b u595_dff\nAs1 s0 SRCLK d0lt d0lt s1 s1b u595_dff\nAs2 s1 SRCLK d0lt d0lt s2 s2b u595_dff\nAs3 s2 SRCLK d0lt d0lt s3 s3b u595_dff\nAs4 s3 SRCLK d0lt d0lt s4 s4b u595_dff\nAs5 s4 SRCLK d0lt d0lt s5 s5b u595_dff\nAs6 s5 SRCLK d0lt d0lt s6 s6b u595_dff\nAs7 s6 SRCLK d0lt d0lt s7 s7b u595_dff\nAl0 s0 RCLK d0lt d0lt Q0 Q0b u595_dff\nAl1 s1 RCLK d0lt d0lt Q1 Q1b u595_dff\nAl2 s2 RCLK d0lt d0lt Q2 Q2b u595_dff\nAl3 s3 RCLK d0lt d0lt Q3 Q3b u595_dff\nAl4 s4 RCLK d0lt d0lt Q4 Q4b u595_dff\nAl5 s5 RCLK d0lt d0lt Q5 Q5b u595_dff\nAl6 s6 RCLK d0lt d0lt Q6 Q6b u595_dff\nAl7 s7 RCLK d0lt d0lt Q7 Q7b u595_dff\nAbuf s7 QHS u595_buf\n.ends\n",
+    "ne555": "* NE555 — functional macro via XSPICE (adc_bridge comparators, d_srff\n* latch, SW discharge transistor). Pins: GND TRIG OUT RESET CTRL THRES\n* DISCH VCC. GND must be node 0. Thresholds fixed for a 5 V supply\n* (2/3·5V and 1/3·5V); RESET/CTRL accepted but held inactive; OUT swings\n* 0..VCC. Ra/Rb/C timing parts stay external, as in a real 555 circuit.\n.model u555_sw SW(RON=10 ROFF=1e9 VT=0.5 VH=0.1)\n.model u555_phi adc_bridge(in_low=3.3283 in_high=3.3383)\n.model u555_lo adc_bridge(in_low=1.6617 in_high=1.6717)\n.model u555_pd d_pulldown\n.model u555_srff d_srff(ic=0)\n.model u555_inv d_inverter\n.model u555_qb dac_bridge\n.model u555_ob dac_bridge\n.subckt NE555 GND TRIG OUT RESET CTRL THRES DISCH VCC\nRreset RESET GND 1MEG\nRctrl CTRL GND 1MEG\nAcmp1 [THRES] [thr] u555_phi\nAcmp2 [TRIG] [trigd] u555_lo\nApd d0lt u555_pd\nAinv trigd trign u555_inv\nAlatch d0lt d0lt d0lt thr trign q nq u555_srff\nAdisch [q] [qana] u555_qb\nS1 DISCH GND qana GND u555_sw\nAout [nq] [outd] u555_ob\nBout OUT GND V=V(outd)*V(VCC)\n.ends\n"
+  },
+  "_XSPICE_USAGE": {
+    "7400": "X1 a1 b1 y1 a2 b2 y2 a3 b3 y3 a4 b4 y4 7400",
+    "7402": "X1 a1 b1 y1 a2 b2 y2 a3 b3 y3 a4 b4 y4 7402",
+    "7404": "X1 a1 y1 a2 y2 a3 y3 a4 y4 a5 y5 a6 y6 7404",
+    "7408": "X1 a1 b1 y1 a2 b2 y2 a3 b3 y3 a4 b4 y4 7408",
+    "7432": "X1 a1 b1 y1 a2 b2 y2 a3 b3 y3 a4 b4 y4 7432",
+    "7474": "X1 clk1 d1 pre1 clr1 q1 nq1 clk2 d2 pre2 clr2 q2 nq2 7474",
+    "7476": "X1 clk1 j1 k1 pre1 clr1 q1 nq1 clk2 j2 k2 pre2 clr2 q2 nq2 7476",
+    "74161": "X1 clk enp ent q0 q1 q2 q3 rco 74161",
+    "74595": "X1 ser srclk rclk q0 q1 q2 q3 q4 q5 q6 q7 qhs 74595",
+    "ne555": "X1 0 trig out reset ctrl thres disch vcc NE555 (GND pin must be node 0)"
+  }
+}

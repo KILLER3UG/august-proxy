@@ -1309,8 +1309,9 @@ def register() -> None:
     )
     tool_registry.register(
         'circuit_search_component',
-        'Look up a part (LM7805, NE555, 1N4007...): offline datasheet facts '
-        'plus live web datasheet links.',
+        'Look up a part by number or function (LM7805, NE555, inverter, '
+        'serial-to-parallel): offline facts, signal-topology suggestions, '
+        'and live web datasheet links.',
         _searchComponent,
         {
             'type': 'object',

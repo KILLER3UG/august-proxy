@@ -1184,18 +1184,9 @@ def firmware_stimulus(
 #: ``pro.menu.cpu.8MHzatmega328=ATmega328P (3.3V, 8 MHz)``), and the PWL rail a
 #: stimulus is stepped at is one of those facts. ``_board_row`` resolves the
 #: exact string first and falls back to the three-segment board.
-_BOARD_PINS: dict[str, dict[str, object]] = {
-    'arduino:avr:uno': {'digital': 14, 'analog': 6, 'led': 13, 'logic': '5'},
-    'arduino:avr:nano': {'digital': 14, 'analog': 8, 'led': 13, 'logic': '5'},
-    'arduino:avr:mega': {'digital': 54, 'analog': 16, 'led': 13, 'logic': '5'},
-    'arduino:avr:leonardo': {'digital': 20, 'analog': 12, 'led': 13, 'logic': '5'},
-    'arduino:avr:micro': {'digital': 20, 'analog': 12, 'led': 13, 'logic': '5'},
-    'arduino:avr:pro': {'digital': 14, 'analog': 8, 'led': 13, 'logic': '5'},
-    'arduino:avr:pro:cpu=8MHzatmega328': {
-        'digital': 14, 'analog': 8, 'led': 13, 'logic': '3.3',
-    },
-    'arduino:renesas_uno:unor4': {'digital': 14, 'analog': 6, 'led': 13, 'logic': '3.3'},
-}
+_BOARD_PINS: dict[str, dict[str, object]] = json.loads(
+    Path(__file__).with_name('firmware_board_pins.json').read_text(encoding='utf-8')
+)
 
 
 def _board_row(board: str) -> dict[str, object]:

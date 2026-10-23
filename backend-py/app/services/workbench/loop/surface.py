@@ -238,6 +238,20 @@ def _applySessionStableOrder(
     names = [_toolDefName(t) for t in tools]
     prev = getattr(session, '_wireToolOrder', None)
     prevOrder = prev if isinstance(prev, list) else []
+    if prev is not None:
+        previousNames = {str(name) for name in prevOrder}
+        currentNames = set(names)
+        added = sorted(currentNames - previousNames)
+        removed = sorted(previousNames - currentNames)
+        if added or removed:
+            pending = getattr(session, '_pendingToolSurfaceChanges', None)
+            pending = pending if isinstance(pending, list) else []
+            pending.extend(
+                change
+                for change in ({'added': added} if added else {}, {'removed': removed} if removed else {})
+                if change
+            )
+            session._pendingToolSurfaceChanges = pending  # type: ignore[attr-defined]
     rank = {str(n): i for i, n in enumerate(prevOrder)}
 
     def sortKey(pair: tuple[int, str]) -> tuple[int, int, int, str]:

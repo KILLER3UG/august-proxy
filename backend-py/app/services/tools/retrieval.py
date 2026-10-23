@@ -95,11 +95,14 @@ class BM25:
         return scored[:top_k]
 
 
-def buildToolCatalog(tool_defs: list[dict[str, object]]) -> list[CatalogEntry]:
+def buildToolCatalog(
+    tool_defs: list[dict[str, object]],
+    keywords_by_name: dict[str, list[str]] | None = None,
+) -> list[CatalogEntry]:
     """Build a pre-tokenized tool catalog for BM25.
 
     Each entry's search text includes: tool name (underscores→words), description,
-    parameter names, and optional keywords.
+    parameter names and descriptions, enum values, and optional registration keywords.
 
     Accepts BOTH shapes — raw ``{"name","description","input_schema"}`` and
     OpenAI-wrapped ``{"type":"function","function":{...}}`` (what
@@ -117,13 +120,25 @@ def buildToolCatalog(tool_defs: list[dict[str, object]]) -> list[CatalogEntry]:
             desc = str(src.get('description', '') or '')
             schema = src.get('parameters', src.get('input_schema', {}))
             params = schema if isinstance(schema, dict) else {}
-        paramNames = list(params.get('properties', {}).keys()) if isinstance(params, dict) else []
         searchParts = [name.replace('_', ' '), desc]
-        searchParts.extend((p.replace('_', ' ') for p in paramNames))
+        properties = params.get('properties', {}) if isinstance(params, dict) else {}
+        if isinstance(properties, dict):
+            for propName, propSchema in properties.items():
+                searchParts.append(str(propName).replace('_', ' '))
+                if not isinstance(propSchema, dict):
+                    continue
+                propDescription = propSchema.get('description')
+                if isinstance(propDescription, str):
+                    searchParts.append(propDescription)
+                enumValues = propSchema.get('enum')
+                if isinstance(enumValues, list):
+                    searchParts.extend(str(value) for value in enumValues)
         if isinstance(tool, dict):
             kw = tool.get('keywords', [])
+            if (not isinstance(kw, list) or not kw) and keywords_by_name is not None:
+                kw = keywords_by_name.get(name, [])
             if isinstance(kw, list):
-                searchParts.extend(kw)
+                searchParts.extend(str(keyword) for keyword in kw)
         text = ' '.join(searchParts)
         tokens = _tokenize(text)
         catalog.append(CatalogEntry(name, tokens, {'name': name, 'description': desc}))

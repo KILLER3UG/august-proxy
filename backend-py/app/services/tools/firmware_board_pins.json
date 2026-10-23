@@ -1,0 +1,10 @@
+{
+  "arduino:avr:uno": {"digital": 14, "analog": 6, "led": 13, "logic": "5"},
+  "arduino:avr:nano": {"digital": 14, "analog": 8, "led": 13, "logic": "5"},
+  "arduino:avr:mega": {"digital": 54, "analog": 16, "led": 13, "logic": "5"},
+  "arduino:avr:leonardo": {"digital": 20, "analog": 12, "led": 13, "logic": "5"},
+  "arduino:avr:micro": {"digital": 20, "analog": 12, "led": 13, "logic": "5"},
+  "arduino:avr:pro": {"digital": 14, "analog": 8, "led": 13, "logic": "5"},
+  "arduino:avr:pro:cpu=8MHzatmega328": {"digital": 14, "analog": 8, "led": 13, "logic": "3.3"},
+  "arduino:renesas_uno:unor4": {"digital": 14, "analog": 6, "led": 13, "logic": "3.3"}
+}

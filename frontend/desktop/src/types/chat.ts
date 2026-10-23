@@ -116,7 +116,7 @@ export interface MessageBlockToolCall {
   preview?: string;
   summary?: string;
   error?: string;
-  status: 'running' | 'done' | 'error';
+  status: 'running' | 'done' | 'error' | 'stalled';
   /** How loud this settled receipt is, decided by the backend from the
    *  receipt's own marker (`tool_protocol.RECEIPT_TONE`): 'failure' red,
    *  'denial' muted. Absent means unknown — rows stored before this field
@@ -237,7 +237,7 @@ export interface ChatMessage {
   tool?: {
     name: string;
     args?: string;
-    status: 'running' | 'done' | 'error';
+    status: 'running' | 'done' | 'error' | 'stalled';
     duration?: number;
     result?: string;
   };
@@ -256,7 +256,7 @@ export interface ChatMessage {
     name: string;
     context?: string;
     id: string;
-    status: 'running' | 'done' | 'error';
+    status: 'running' | 'done' | 'error' | 'stalled';
     summary?: string;
     error?: string;
     preview?: string;
@@ -422,7 +422,7 @@ export interface AppendBlockEvent {
   preview?: string;
   summary?: string;
   error?: string;
-  status?: 'running' | 'done' | 'error';
+  status?: 'running' | 'done' | 'error' | 'stalled';
   duration?: number;
   isRevisedPlan?: boolean;
   /** For web_search results: structured search hits to render as linked list */

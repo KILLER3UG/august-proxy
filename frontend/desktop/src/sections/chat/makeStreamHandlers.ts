@@ -548,7 +548,9 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
           detail: parsedResult.detail as string | undefined,
           confirmationToken: parsedResult.confirmationToken as string | undefined,
         } : undefined,
-        status: toolFailed && parsedResult?.type !== 'mutation_pending_confirmation' ? 'error' : 'done',
+        status: status === 'stalled'
+          ? 'stalled'
+          : toolFailed && parsedResult?.type !== 'mutation_pending_confirmation' ? 'error' : 'done',
         result: resultText,
         summary: summaryText,
         // The live preview is redundant once `result` lands; dropping it here
@@ -576,7 +578,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       streamBlocks = appendBlockEvent(streamBlocks, {
         type: 'toolResult',
         id,
-        status: blockFailed ? 'error' : 'done',
+        status: status === 'stalled' ? 'stalled' : blockFailed ? 'error' : 'done',
         summary: summaryText,
         error: blockErrorText,
         duration: toolResults.find(t => t.id === id)?.duration,

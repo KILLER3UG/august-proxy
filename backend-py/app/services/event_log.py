@@ -61,6 +61,11 @@ _QUEUE_MAX = 10000
 # reason a stalled consumer looked identical to a healthy one. Past this many
 # unread events the stream is failed by name, not silently absorbed.
 MAX_SUBSCRIBER_BACKLOG = 512
+# An event-count limit alone does not bound a subscriber that is behind on a
+# handful of unusually large tool-result frames. Keep the per-client inbox
+# bounded by bytes as well; overflow closes the stream and replay recovers from
+# the first event the client did not receive.
+MAX_SUBSCRIBER_BACKLOG_BYTES = 8 * 1024 * 1024
 
 _SAFE_NAME_RE = re.compile(r'[^A-Za-z0-9_.-]')
 
@@ -92,6 +97,34 @@ def _keepaliveFrame(entry: '_SessionLog') -> dict[str, object]:
         payload['lastEventAt'] = entry.lastEventAtMs
         payload['idleSec'] = round(max(0.0, idleSec), 1)
     return {'type': 'keepalive', 'seq': 0, 'payload': payload}
+
+
+def _eventSizeBytes(event: dict[str, object]) -> int:
+    return len(json.dumps(event, separators=(',', ':')).encode('utf-8'))
+
+
+class _SubscriberQueue(asyncio.Queue[dict[str, object]]):
+    """Event-count and byte-bounded queue for one SSE subscriber."""
+
+    def __init__(self) -> None:
+        super().__init__(maxsize=MAX_SUBSCRIBER_BACKLOG)
+        self.queuedBytes = 0
+        self._eventSizes: deque[int] = deque()
+
+    def putEvent(self, event: dict[str, object], sizeBytes: int) -> None:
+        if self.full() or self.queuedBytes + sizeBytes > MAX_SUBSCRIBER_BACKLOG_BYTES:
+            raise asyncio.QueueFull
+        super().put_nowait(event)
+        self._eventSizes.append(sizeBytes)
+        self.queuedBytes += sizeBytes
+
+    def put_nowait(self, event: dict[str, object]) -> None:
+        self.putEvent(event, _eventSizeBytes(event))
+
+    def get_nowait(self) -> dict[str, object]:
+        event = super().get_nowait()
+        self.queuedBytes -= self._eventSizes.popleft()
+        return event
 
 
 def _log_path(sessionId: str) -> Path:
@@ -131,13 +164,15 @@ class EventLog:
                 self._trim(entry)
         else:
             self._enqueueWrite(entry, event)
-        overflowed: list[asyncio.Queue] = []
-        for q in entry.subscribers:
-            try:
-                q.put_nowait(event)
-                continue
-            except asyncio.QueueFull:
-                overflowed.append(q)
+        overflowed: list[_SubscriberQueue] = []
+        if entry.subscribers:
+            eventSizeBytes = _eventSizeBytes(event)
+            for q in entry.subscribers:
+                try:
+                    q.putEvent(event, eventSizeBytes)
+                    continue
+                except asyncio.QueueFull:
+                    overflowed.append(q)
         for q in overflowed:
             # Fail the slow stream BY NAME, and with the cursor the recovery
             # needs. `error` was the obvious type and it is the wrong one: the
@@ -151,25 +186,31 @@ class EventLog:
             entry.subscribers.discard(q)
             entry.overflowed.add(q)
             lostSeq = seq
+            while not q.empty():
+                try:
+                    dropped = q.get_nowait()
+                    droppedSeq = dropped.get('seq')
+                    if isinstance(droppedSeq, int):
+                        lostSeq = min(lostSeq, droppedSeq)
+                except asyncio.QueueEmpty:
+                    break
+            resumeSeq = max(0, lostSeq - 1)
+            overflowFrame: dict[str, object] = {
+                'seq': resumeSeq,
+                'type': 'info',
+                'payload': {
+                    'message': (
+                        f'stream overflow: this client exceeded the subscriber backlog '
+                        f'limit ({MAX_SUBSCRIBER_BACKLOG} events or '
+                        f'{MAX_SUBSCRIBER_BACKLOG_BYTES} bytes); the stream is closing '
+                        f'so it can re-open from seq {resumeSeq} and replay the ring.'
+                    ),
+                    'code': 'stream_overflow',
+                },
+                'at': int(time.time() * 1000),
+            }
             try:
-                dropped = q.get_nowait()
-                lostSeq = int(dropped.get('seq') or seq)  # type: ignore[call-overload]
-            except asyncio.QueueEmpty:
-                pass
-            try:
-                q.put_nowait({
-                    'seq': max(0, lostSeq - 1),
-                    'type': 'info',
-                    'payload': {
-                        'message': (
-                            f'stream overflow: this client fell more than {MAX_SUBSCRIBER_BACKLOG} '
-                            f'events behind; the stream is closing so it can re-open from seq '
-                            f'{max(0, lostSeq - 1)} and replay the ring.'
-                        ),
-                        'code': 'stream_overflow',
-                    },
-                    'at': int(time.time() * 1000),
-                })
+                q.put_nowait(overflowFrame)
             except asyncio.QueueFull:
                 pass
         return seq
@@ -246,7 +287,7 @@ class EventLog:
     async def subscribe(self, sessionId: str, sinceSeq: int = 0) -> AsyncIterator[dict[str, object]]:
         """Yield events for a session, starting from since_seq."""
         entry = self._getOrCreate(sessionId)
-        q: asyncio.Queue = asyncio.Queue(maxsize=MAX_SUBSCRIBER_BACKLOG)
+        q = _SubscriberQueue()
         entry.subscribers.add(q)
         try:
             replayed: set[int] = set()
@@ -256,9 +297,12 @@ class EventLog:
                     yield ev
             while not q.empty():
                 ev = q.get_nowait()
-                if ev['seq'] in replayed or ev['seq'] <= sinceSeq:
+                seq = ev.get('seq')
+                if not isinstance(seq, int):
                     continue
-                replayed.add(ev['seq'])
+                if seq in replayed or seq <= sinceSeq:
+                    continue
+                replayed.add(seq)
                 yield ev
             while True:
                 if q in entry.overflowed and q.empty():
@@ -348,7 +392,7 @@ class _SessionLog:
         self.path = _log_path(sessionId)
         self.nextSeq: int = 1
         self.events: deque[dict] = deque(maxlen=MAX_IN_MEMORY)
-        self.subscribers: set[asyncio.Queue] = set()
+        self.subscribers: set[_SubscriberQueue] = set()
         # Subscribers that were failed for backlog overflow. The generator
         # checks this set so the client sees the `error` frame and THEN the
         # stream ends, instead of sitting on a connection that stopped.

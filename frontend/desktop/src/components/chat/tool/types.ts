@@ -9,7 +9,7 @@ export interface ToolEntry {
   summary?: string;
   error?: string;
   inlineDiff?: string;
-  status: 'running' | 'done' | 'error';
+  status: 'running' | 'done' | 'error' | 'stalled';
   /** How loud this settled receipt is, decided by the backend from the
    *  receipt's own marker (`tool_protocol.RECEIPT_TONE`): 'failure' red,
    *  'denial' muted. Absent means unknown — rows stored before this field

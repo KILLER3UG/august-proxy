@@ -175,6 +175,15 @@ already exists (`4d457356`) and the bench harness already measures
    that must stay cache-stable must be asserted as stable."* Assert the
    request header is byte-identical across twelve turns.
 
+**Shipped (2026-10-23), in part.** The discovery catalog now retains the
+registration keywords that provider-format conversion had dropped, and ranks
+against schema property descriptions and enum values as well as names. This
+improves finding a deferred capability by what it accepts and does. Session
+tool ordering is append-stable (`_applySessionStableOrder`), so a new tool
+does not re-sort existing names; a runtime-only tail now names additions and
+removals on the next turn. The main prompt's duplicate tool-name index is gone;
+the `<capabilities>` block keeps category/safety guidance and the skill index.
+
 ---
 
 # 2. Injected content must reach the model verbatim; the caller owns the framing
@@ -348,14 +357,17 @@ produce a heartbeat sequence that says *"no new output"* rather than
 transcript. A tool that produces output every 5 s must not. Both are
 observable in the bench harness with the scripted provider.
 
-**Shipped (2026-10-23), in part.** The heartbeats now carry `elapsedSec`, and
-the command path also `idleSec`; the live status line appends "no output for
-Ns" (or "Ns elapsed" where no output flow exists) once the evidence passes
-20 s. The pure composition helper was probed against six assembled
-sentences, including the precedence rule (idle beats elapsed). Still open:
-the byte-bounded inbox with a named overflow, and the keepalive carrying the
-last-change timestamp — neither is needed for the user to see the truth in
-8 s, which the status line now does.
+**Shipped (2026-10-23), in part.** The heartbeats carry `elapsedSec`, and the
+command path also `idleSec`; the live status line appends "no output for Ns"
+(or "Ns elapsed" where no output flow exists) once the evidence passes the
+stall hint. The SSE keepalive carries `lastEventAt`, `lastSeq` and `idleSec`,
+so a live but quiet session is distinguishable from one that has not changed.
+Each subscriber inbox is bounded by both event count and encoded bytes; on
+overflow the server sends a named `stream_overflow` notice, closes that stream,
+and gives the client the cursor from which to replay. The hard tool-timeout path
+now emits `status: stalled` on its tool result; the transcript preserves that
+status and opens the tool row with a warning label. The failure receipt remains
+an error for the model and durable tool-result accounting.
 
 ---
 

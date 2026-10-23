@@ -99,6 +99,9 @@ class WorkbenchSession:
     queuedUserMessages: list[dict[str, object]] = field(default_factory=list)
     # Dynamically-set instance attrs (declared so mypy can track them)
     _tool_assembly: object | None = None
+    # Fully disclosed provider tool arrays; keyed by a fingerprint of the
+    # registry definitions, query, model profile and session gates. RAM-only.
+    _tool_defs_cache: dict[str, tuple[str, list[dict[str, object]]]] = field(default_factory=dict)
     _failure_feedback: object | None = None
     _failure_feedback_age: int | None = None
     _last_compaction_turn: int | None = None

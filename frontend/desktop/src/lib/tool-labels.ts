@@ -337,7 +337,7 @@ function derivePastTense(running: string): string {
  */
 export function getToolLabel(
   toolName: string,
-  context?: { agentId?: string; filename?: string; command?: string; status?: 'running' | 'done' | 'error' },
+  context?: { agentId?: string; filename?: string; command?: string; status?: 'running' | 'done' | 'error' | 'stalled' },
 ): string {
   const clean = normalizeToolName(toolName);
   const status = context?.status ?? 'running';

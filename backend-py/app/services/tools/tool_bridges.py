@@ -41,11 +41,17 @@ def _toolDefName(t: object) -> str:
 
 async def handleToolSearch(query: str, limit: int = 5) -> str:
     """Search across ALL deferred tools using BM25."""
-    from app.services.tool_registry import listTools
+    from app.services.tool_registry import listRaw, listTools
     from app.services.tools.retrieval import buildToolCatalog, searchTools
 
     allTools = listTools()
-    catalog = buildToolCatalog(allTools)
+    keywordsByName: dict[str, list[str]] = {}
+    for raw in listRaw():
+        name = raw.get('name')
+        keywords = raw.get('keywords')
+        if isinstance(name, str) and isinstance(keywords, list):
+            keywordsByName[name] = [str(keyword) for keyword in keywords]
+    catalog = buildToolCatalog(allTools, keywordsByName)
     results = searchTools(catalog, query, k=limit)
     if not results:
         return 'No matching tools found.'

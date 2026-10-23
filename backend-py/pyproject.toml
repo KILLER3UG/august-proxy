@@ -91,6 +91,9 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["app"]
 
+[tool.setuptools.package-data]
+"services.tools" = ["circuit_parts.json", "firmware_board_pins.json"]
+
 # There is no pytest configuration because there is no test suite: the backend
 # tests were deleted on 2026-10-17 along with the CI job that ran them (see
 # AGENTS.md). The pytest-* dev dependencies below stay because `uv.lock` is

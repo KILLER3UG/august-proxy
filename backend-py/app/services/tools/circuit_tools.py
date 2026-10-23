@@ -3786,60 +3786,14 @@ async def integrate_component(query: str) -> dict[str, object]:
         result['error'] = 'No matches. Try a part number or a board name (e.g. ESP32-C6, LM358).'
     return result
 
-# Curated datasheet facts for the classics — instant, offline, and the
-# values the model most often needs (Proteus-style part libraries).
-_COMPONENT_LIBRARY: dict[str, dict[str, str]] = {
-    '1n4148': {'type': 'signal diode', 'Vf': '0.7V @ 10mA', 'If_max': '200mA continuous', 'trr': '4ns'},
-    '1n4007': {'type': 'rectifier diode', 'Vf': '0.7V', 'If_avg': '1A', 'Vrrm': '1000V'},
-    '1n4733a': {'type': 'zener 5.1V', 'Vz': '5.1V @ 49mA', 'Pd': '1W'},
-    '2n2222': {'type': 'NPN BJT', 'Ic_max': '800mA', 'hFE': '100–300', 'Vceo': '40V', 'ft': '300MHz'},
-    '2n3904': {'type': 'NPN BJT', 'Ic_max': '200mA', 'hFE': '100–300', 'Vceo': '40V'},
-    '2n3906': {'type': 'PNP BJT', 'Ic_max': '200mA', 'hFE': '100–300', 'Vceo': '40V'},
-    'lm7805': {'type': 'linear regulator', 'Vout': '5V', 'Iout_max': '1.5A', 'Vin_range': '7–25V', 'dropout': '2V'},
-    'lm7812': {'type': 'linear regulator', 'Vout': '12V', 'Iout_max': '1.5A', 'dropout': '2V'},
-    'lm317': {'type': 'adjustable regulator', 'Vout': '1.25–37V', 'Iout_max': '1.5A', 'vref': '1.25V'},
-    'lm358': {'type': 'dual op-amp', 'supply': '3–32V single / ±16V dual', 'gbw': '1MHz', 'input_offset': '2mV'},
-    'lm741': {'type': 'op-amp', 'supply': '±15V typical', 'gbw': '1MHz', 'slew_rate': '0.5V/µs'},
-    'ne555': {'type': 'timer', 'supply': '4.5–16V', 'frequency_range': '0.1Hz–500kHz', 'drive': '200mA'},
-    'atmega328p': {'type': 'MCU', 'flash': '32KB', 'sram': '2KB', 'max_clock': '20MHz', 'package': 'DIP-28/TQFP-32'},
-    'esp32': {'type': 'MCU (WiFi/BLE)', 'cores': '2× Xtensa LX6 @240MHz', 'sram': '520KB'},
-    'bc547': {'type': 'NPN BJT', 'Ic_max': '100mA', 'hFE': '110–800', 'Vceo': '45V'},
-    # ── MOSFETs (P1.6) ──
-    '2n7000': {'type': 'N-ch MOSFET', 'Vds': '60V', 'Id': '200mA', 'Vgs_th': '0.8–3V', 'Rds_on': '~5Ω @ Vgs=10V'},
-    'bs170': {'type': 'N-ch MOSFET', 'Vds': '60V', 'Id': '500mA', 'Vgs_th': '0.8–3V', 'Rds_on': '<5Ω @ Vgs=10V'},
-    'irf540': {'type': 'N-ch power MOSFET', 'Vds': '100V', 'Id': '23A', 'Vgs_th': '2–4V', 'Rds_on': '77mΩ @ Vgs=10V'},
-    'irf9540': {'type': 'P-ch power MOSFET', 'Vds': '100V', 'Id': '23A', 'Vgs_th': '-2…-4V', 'Rds_on': '117mΩ @ Vgs=-10V'},
-    # ── Op-amps (P1.6) ──
-    'tl072': {'type': 'dual JFET op-amp', 'supply': '±5–±18V', 'gbw': '3MHz', 'slew_rate': '13V/µs', 'ib': '30pA'},
-    'op07': {'type': 'precision op-amp', 'supply': '±3–±22V', 'gbw': '0.6MHz', 'input_offset': '60µV', 'slew_rate': '0.3V/µs'},
-    'lm324': {'type': 'quad op-amp', 'supply': '3–32V single / ±16V dual', 'gbw': '1MHz', 'input_offset': '2mV'},
-    # ── Regulators (P1.6) ──
-    'lm7809': {'type': 'linear regulator', 'Vout': '9V', 'Iout_max': '1.5A', 'dropout': '2V'},
-    'lm7833': {'type': 'linear regulator', 'Vout': '3.3V', 'Iout_max': '1.5A', 'dropout': '2V'},
-    'lm337': {'type': 'negative adjustable regulator', 'Vout': '-1.25…-37V', 'Iout_max': '1.5A', 'vref': '-1.25V'},
-    'lm7905': {'type': 'negative linear regulator', 'Vout': '-5V', 'Iout_max': '1A', 'dropout': '2V'},
-    # ── Zeners (P1.6) ──
-    '1n4728a': {'type': 'zener 3.3V', 'Vz': '3.3V @ 76mA', 'Pd': '1W'},
-    '1n4742a': {'type': 'zener 12V', 'Vz': '12V @ 21mA', 'Pd': '1W'},
-}
-
-# 74xx digital logic via ngspice XSPICE code models — advertised only when
-# the env doctor's inverter probe says the build ships code models
-# (xspice_available() is not False). Keys match after normalizing family
-# letters: 74hc00 / 74ls161 / 74hct74 all resolve to their base number.
-_XSPICE_COMPONENT_LIBRARY: dict[str, dict[str, str]] = {
-    '7400': {'type': 'quad 2-input NAND gate', 'family': '74xx via XSPICE', 'gates': '4', 'pins': '14'},
-    '7402': {'type': 'quad 2-input NOR gate', 'family': '74xx via XSPICE', 'gates': '4', 'pins': '14'},
-    '7404': {'type': 'hex inverter', 'family': '74xx via XSPICE', 'gates': '6', 'pins': '14'},
-    '7408': {'type': 'quad 2-input AND gate', 'family': '74xx via XSPICE', 'gates': '4', 'pins': '14'},
-    '7432': {'type': 'quad 2-input OR gate', 'family': '74xx via XSPICE', 'gates': '4', 'pins': '14'},
-    '7474': {'type': 'dual D flip-flop', 'family': '74xx via XSPICE', 'note': 'active-low preset/clear modeled'},
-    '7476': {'type': 'dual JK flip-flop', 'family': '74xx via XSPICE', 'note': 'active-low preset/clear modeled'},
-    '74161': {'type': '4-bit synchronous binary counter', 'family': '74xx via XSPICE',
-              'note': 'macro: ENP/ENT count enables + RCO; no parallel load/master clear'},
-    '74595': {'type': '8-bit shift register + storage latch', 'family': '74xx via XSPICE',
-              'note': 'macro: SER/SRCLK/RCLK + QHS serial out; no shift clear'},
-}
+# Curated part metadata, signal shapes and paste-ready XSPICE cards live in
+# this adjacent data resource so the catalog can grow without expanding code.
+_COMPONENT_DATA = json.loads(Path(__file__).with_name('circuit_parts.json').read_text(encoding='utf-8'))
+_COMPONENT_LIBRARY: dict[str, dict[str, str]] = _COMPONENT_DATA['_COMPONENT_LIBRARY']
+_XSPICE_COMPONENT_LIBRARY: dict[str, dict[str, str]] = _COMPONENT_DATA['_XSPICE_COMPONENT_LIBRARY']
+_COMPONENT_SIGNAL_SHAPES: dict[str, str] = _COMPONENT_DATA['_COMPONENT_SIGNAL_SHAPES']
+_XSPICE_CARDS: dict[str, str] = _COMPONENT_DATA['_XSPICE_CARDS']
+_XSPICE_USAGE: dict[str, str] = _COMPONENT_DATA['_XSPICE_USAGE']
 
 _FAMILY_RE = re.compile(r'74(?:hc|hct|ls|als|as|f|s|a)(\d{2,3})')
 
@@ -3849,184 +3803,34 @@ def _normalize_74xx(q: str) -> str:
     return _FAMILY_RE.sub(r'74\1', q)
 
 
-# Paste-ready XSPICE subcircuit cards. Port syntax verified against the
-# installed ngspice code models (gates: [in...] out arrays; d_dff port
-# order data clk set reset out Nout with active-high async set/reset;
-# d_pulldown ties unused set/reset ports to digital 0). Power pins are
-# omitted — XSPICE logic is ideal 0/1; bridge analog signals with
-# adc_bridge/dac_bridge. Every card was simulated end-to-end before
-# shipping (see tests/test_circuit_golden.py).
-_XSPICE_CARDS: dict[str, str] = {
-    '7400': """* 7400 — quad 2-input NAND (XSPICE, ideal logic; power pins omitted)
-.model u00_nand d_nand
-.subckt 7400 A1 B1 Y1 A2 B2 Y2 A3 B3 Y3 A4 B4 Y4
-Ag1 [A1 B1] Y1 u00_nand
-Ag2 [A2 B2] Y2 u00_nand
-Ag3 [A3 B3] Y3 u00_nand
-Ag4 [A4 B4] Y4 u00_nand
-.ends
-""",
-    '7402': """* 7402 — quad 2-input NOR (XSPICE, ideal logic; power pins omitted)
-.model u02_nor d_nor
-.subckt 7402 A1 B1 Y1 A2 B2 Y2 A3 B3 Y3 A4 B4 Y4
-Ag1 [A1 B1] Y1 u02_nor
-Ag2 [A2 B2] Y2 u02_nor
-Ag3 [A3 B3] Y3 u02_nor
-Ag4 [A4 B4] Y4 u02_nor
-.ends
-""",
-    '7404': """* 7404 — hex inverter (XSPICE, ideal logic; power pins omitted)
-.model u04_inv d_inverter
-.subckt 7404 A1 Y1 A2 Y2 A3 Y3 A4 Y4 A5 Y5 A6 Y6
-Ag1 A1 Y1 u04_inv
-Ag2 A2 Y2 u04_inv
-Ag3 A3 Y3 u04_inv
-Ag4 A4 Y4 u04_inv
-Ag5 A5 Y5 u04_inv
-Ag6 A6 Y6 u04_inv
-.ends
-""",
-    '7408': """* 7408 — quad 2-input AND (XSPICE, ideal logic; power pins omitted)
-.model u08_and d_and
-.subckt 7408 A1 B1 Y1 A2 B2 Y2 A3 B3 Y3 A4 B4 Y4
-Ag1 [A1 B1] Y1 u08_and
-Ag2 [A2 B2] Y2 u08_and
-Ag3 [A3 B3] Y3 u08_and
-Ag4 [A4 B4] Y4 u08_and
-.ends
-""",
-    '7432': """* 7432 — quad 2-input OR (XSPICE, ideal logic; power pins omitted)
-.model u32_or d_or
-.subckt 7432 A1 B1 Y1 A2 B2 Y2 A3 B3 Y3 A4 B4 Y4
-Ag1 [A1 B1] Y1 u32_or
-Ag2 [A2 B2] Y2 u32_or
-Ag3 [A3 B3] Y3 u32_or
-Ag4 [A4 B4] Y4 u32_or
-.ends
-""",
-    '7474': """* 7474 — dual D flip-flop, active-low preset/clear (XSPICE macro)
-* d_dff async set/reset are active-high, so PRE/CLR go through inverters.
-* Ports: data clk set reset out Nout. Usage: X1 clk d pre clr q nq 7474
-.model u74_inv d_inverter
-.model u74_dff d_dff(ic=0)
-.subckt 7474 CLK1 D1 PRE1 CLR1 Q1 NQ1 CLK2 D2 PRE2 CLR2 Q2 NQ2
-Aps1 PRE1 pset1 u74_inv
-Acl1 CLR1 prst1 u74_inv
-Aff1 D1 CLK1 pset1 prst1 Q1 NQ1 u74_dff
-Aps2 PRE2 pset2 u74_inv
-Acl2 CLR2 prst2 u74_inv
-Aff2 D2 CLK2 pset2 prst2 Q2 NQ2 u74_dff
-.ends
-""",
-    '7476': """* 7476 — dual JK flip-flop, active-low preset/clear (XSPICE macro)
-* Ports: j k clk set reset out Nout. Usage: X1 clk j k pre clr q nq 7476
-.model u76_inv d_inverter
-.model u76_jkff d_jkff(ic=0)
-.subckt 7476 CLK1 J1 K1 PRE1 CLR1 Q1 NQ1 CLK2 J2 K2 PRE2 CLR2 Q2 NQ2
-Aps1 PRE1 pset1 u76_inv
-Acl1 CLR1 prst1 u76_inv
-Aff1 J1 K1 CLK1 pset1 prst1 Q1 NQ1 u76_jkff
-Aps2 PRE2 pset2 u76_inv
-Acl2 CLR2 prst2 u76_inv
-Aff2 J2 K2 CLK2 pset2 prst2 Q2 NQ2 u76_jkff
-.ends
-""",
-    '74161': """* 74161 — 4-bit synchronous binary counter (XSPICE macro)
-* Pins: CLK ENP ENT Q0 Q1 Q2 Q3 RCO. Count enable = ENP·ENT;
-* RCO = Q3·Q2·Q1·Q0·ENT. No parallel load, no master clear.
-* Usage: X1 clk enp ent q0 q1 q2 q3 rco 74161 (all digital nodes;
-* bridge analog clocks/signals with adc_bridge, outputs with dac_bridge).
-.model u161_and d_and
-.model u161_xor d_xor
-.model u161_dff d_dff(ic=0)
-.model u161_pd d_pulldown
-.subckt 74161 CLK ENP ENT Q0 Q1 Q2 Q3 RCO
-Apd d0lt u161_pd
-At0 [ENP ENT] t0 u161_and
-Ad0 [Q0 t0] dd0 u161_xor
-Aff0 dd0 CLK d0lt d0lt Q0 NQ0 u161_dff
-At1 [Q0 t0] t1 u161_and
-Ad1 [Q1 t1] dd1 u161_xor
-Aff1 dd1 CLK d0lt d0lt Q1 NQ1 u161_dff
-At2 [Q0 Q1 t0] t2 u161_and
-Ad2 [Q2 t2] dd2 u161_xor
-Aff2 dd2 CLK d0lt d0lt Q2 NQ2 u161_dff
-At3 [Q0 Q1 Q2 t0] t3 u161_and
-Ad3 [Q3 t3] dd3 u161_xor
-Aff3 dd3 CLK d0lt d0lt Q3 NQ3 u161_dff
-Arc [Q3 t3] RCO u161_and
-.ends
-""",
-    '74595': """* 74595 — 8-bit shift register + storage latch (XSPICE macro)
-* Pins: SER SRCLK RCLK Q0..Q7 QHS (QH' serial out). No shift clear.
-* Usage: X1 ser srclk rclk q0 q1 q2 q3 q4 q5 q6 q7 qhs 74595
-.model u595_dff d_dff(ic=0)
-.model u595_pd d_pulldown
-.model u595_buf d_buffer
-.subckt 74595 SER SRCLK RCLK Q0 Q1 Q2 Q3 Q4 Q5 Q6 Q7 QHS
-Apd d0lt u595_pd
-As0 SER SRCLK d0lt d0lt s0 s0b u595_dff
-As1 s0 SRCLK d0lt d0lt s1 s1b u595_dff
-As2 s1 SRCLK d0lt d0lt s2 s2b u595_dff
-As3 s2 SRCLK d0lt d0lt s3 s3b u595_dff
-As4 s3 SRCLK d0lt d0lt s4 s4b u595_dff
-As5 s4 SRCLK d0lt d0lt s5 s5b u595_dff
-As6 s5 SRCLK d0lt d0lt s6 s6b u595_dff
-As7 s6 SRCLK d0lt d0lt s7 s7b u595_dff
-Al0 s0 RCLK d0lt d0lt Q0 Q0b u595_dff
-Al1 s1 RCLK d0lt d0lt Q1 Q1b u595_dff
-Al2 s2 RCLK d0lt d0lt Q2 Q2b u595_dff
-Al3 s3 RCLK d0lt d0lt Q3 Q3b u595_dff
-Al4 s4 RCLK d0lt d0lt Q4 Q4b u595_dff
-Al5 s5 RCLK d0lt d0lt Q5 Q5b u595_dff
-Al6 s6 RCLK d0lt d0lt Q6 Q6b u595_dff
-Al7 s7 RCLK d0lt d0lt Q7 Q7b u595_dff
-Abuf s7 QHS u595_buf
-.ends
-""",
-    'ne555': """* NE555 — functional macro via XSPICE (adc_bridge comparators, d_srff
-* latch, SW discharge transistor). Pins: GND TRIG OUT RESET CTRL THRES
-* DISCH VCC. GND must be node 0. Thresholds fixed for a 5 V supply
-* (2/3·5V and 1/3·5V); RESET/CTRL accepted but held inactive; OUT swings
-* 0..VCC. Ra/Rb/C timing parts stay external, as in a real 555 circuit.
-.model u555_sw SW(RON=10 ROFF=1e9 VT=0.5 VH=0.1)
-.model u555_phi adc_bridge(in_low=3.3283 in_high=3.3383)
-.model u555_lo adc_bridge(in_low=1.6617 in_high=1.6717)
-.model u555_pd d_pulldown
-.model u555_srff d_srff(ic=0)
-.model u555_inv d_inverter
-.model u555_qb dac_bridge
-.model u555_ob dac_bridge
-.subckt NE555 GND TRIG OUT RESET CTRL THRES DISCH VCC
-Rreset RESET GND 1MEG
-Rctrl CTRL GND 1MEG
-Acmp1 [THRES] [thr] u555_phi
-Acmp2 [TRIG] [trigd] u555_lo
-Apd d0lt u555_pd
-Ainv trigd trign u555_inv
-Alatch d0lt d0lt d0lt thr trign q nq u555_srff
-Adisch [q] [qana] u555_qb
-S1 DISCH GND qana GND u555_sw
-Aout [nq] [outd] u555_ob
-Bout OUT GND V=V(outd)*V(VCC)
-.ends
-""",
-}
+def _search_component_suggestions(query: str, limit: int = 3) -> list[dict[str, object]]:
+    """Find curated parts by function and signal topology, not only part ID."""
+    from app.services.tools.retrieval import BM25, _tokenize
 
-# Instantiation lines paired with each XSPICE card (port order must match
-# the .subckt header exactly).
-_XSPICE_USAGE: dict[str, str] = {
-    '7400': 'X1 a1 b1 y1 a2 b2 y2 a3 b3 y3 a4 b4 y4 7400',
-    '7402': 'X1 a1 b1 y1 a2 b2 y2 a3 b3 y3 a4 b4 y4 7402',
-    '7404': 'X1 a1 y1 a2 y2 a3 y3 a4 y4 a5 y5 a6 y6 7404',
-    '7408': 'X1 a1 b1 y1 a2 b2 y2 a3 b3 y3 a4 b4 y4 7408',
-    '7432': 'X1 a1 b1 y1 a2 b2 y2 a3 b3 y3 a4 b4 y4 7432',
-    '7474': 'X1 clk1 d1 pre1 clr1 q1 nq1 clk2 d2 pre2 clr2 q2 nq2 7474',
-    '7476': 'X1 clk1 j1 k1 pre1 clr1 q1 nq1 clk2 j2 k2 pre2 clr2 q2 nq2 7476',
-    '74161': 'X1 clk enp ent q0 q1 q2 q3 rco 74161',
-    '74595': 'X1 ser srclk rclk q0 q1 q2 q3 q4 q5 q6 q7 qhs 74595',
-    'ne555': 'X1 0 trig out reset ctrl thres disch vcc NE555 (GND pin must be node 0)',
-}
+    parts: list[tuple[str, dict[str, str]]] = []
+    for library in (_COMPONENT_LIBRARY, _XSPICE_COMPONENT_LIBRARY):
+        parts.extend(library.items())
+    corpus = [
+        _tokenize(' '.join((part, *spec.values(), _COMPONENT_SIGNAL_SHAPES.get(part, ''))))
+        for part, spec in parts
+    ]
+    ranked = BM25(corpus).search(query, top_k=limit)
+    suggestions: list[dict[str, object]] = []
+    for index, _score in ranked:
+        part, spec = parts[index]
+        suggestion: dict[str, object] = {'part': part.upper(), **spec}
+        shape = _COMPONENT_SIGNAL_SHAPES.get(part)
+        if shape:
+            suggestion['signalShape'] = shape
+        if part in _XSPICE_COMPONENT_LIBRARY:
+            suggestion['requiresXspice'] = True
+        suggestions.append(suggestion)
+    return suggestions
+
+
+# XSPICE cards and matching instantiation examples are stored in
+# circuit_parts.json. Their port conventions were checked against the
+# installed ngspice code models; analog/digital signals use bridge models.
 
 _XSPICE_BRIDGE_NOTE = (
     ' All pins are digital nodes (0/1): drive them from analog sources '
@@ -4109,6 +3913,12 @@ async def search_component(query: str) -> dict[str, object]:
                     'XSPICE not verified yet — run circuit_env before '
                     'designing with this part.'
                 )
+    if lib_hit is not None:
+        shape = _COMPONENT_SIGNAL_SHAPES.get(str(lib_hit.get('part', '')).lower())
+        if shape:
+            lib_hit['signalShape'] = shape
+
+    suggestions = _search_component_suggestions(q) if lib_hit is None else []
 
     def _web() -> list[dict[str, str]]:
         hits: list[dict[str, str]] = []
@@ -4128,9 +3938,12 @@ async def search_component(query: str) -> dict[str, object]:
         return hits
 
     web_hits = await asyncio.to_thread(_web)
-    if lib_hit is None and not web_hits:
+    if lib_hit is None and not web_hits and not suggestions:
         return {'query': query, 'error': 'No matches. Try a part number (e.g. NE555).'}
-    return {'query': query, 'library': lib_hit, 'datasheets': web_hits}
+    result: dict[str, object] = {'query': query, 'library': lib_hit, 'datasheets': web_hits}
+    if suggestions:
+        result['suggestions'] = suggestions
+    return result
 
 
 # ── 3D board view ─────────────────────────────────────────────────────────

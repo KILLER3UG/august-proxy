@@ -358,3 +358,15 @@ strike ledger** — pi's arm is cheaper, deterministic, and needs no strike coun
 - SimulIDE's released `data/` tree (`.mcu`, `.sim1/.sim2`, `diodes.model`,
   `logic_families.model`) — not in the repo, so the data-driven part formats are
   inferred from the parsers.
+
+## Follow-up (2026-10-23)
+
+The signal-shape palette idea was adapted to August's tool-driven circuit
+surface: `circuit_search_component` now searches the curated logic parts by
+function and signal topology, and labels clocked/serial-to-parallel parts so
+they are not mistaken for combinational splitters. August has no visual part
+palette to reorganize. The curated component metadata, signal shapes and
+paste-ready XSPICE cards now live in `app/services/tools/circuit_parts.json`,
+loaded beside the circuit tools and included in the desktop backend payload.
+This is August's own data format; the broader SimulIDE reference formats remain
+unverified because its released `data/` tree was not present in the source.

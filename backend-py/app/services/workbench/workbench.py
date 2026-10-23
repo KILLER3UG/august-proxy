@@ -1023,15 +1023,6 @@ def buildSystemPrompt(
         intake.append('\n'.join(memParts))
     if skillsLine:
         intake.append(f'- Skills: {skillsLine}. Bodies load on demand via load_skill.')
-    if tool_names:
-        # The pointer said "details in <capabilities>", and the block itself
-        # opens by saying the opposite: it is a NAME INDEX, and the full
-        # schemas are in the tools array. A model told to look for details in
-        # a place that holds none spends a round discovering that.
-        intake.append(
-            f'- Tools: {len(tool_names)} registered this turn '
-            '(name index in <capabilities>; schemas are in the tools array).'
-        )
     intake.append('</intake>')
     parts.append('\n'.join(intake))
     if hookTrustNotice:
@@ -1129,6 +1120,7 @@ def buildSystemPrompt(
                         workspacePath or None, agent_id=_ss_caps.bot_agent_id(_capsScope)
                     ),
                     compact_skills=True,
+                    include_tool_names=False,
                 )
             except Exception:
                 logger.debug('prompt: capabilities block failed', exc_info=True)
@@ -1381,6 +1373,53 @@ def _canRetrieveSpill(
     )
 
 
+def _toolSearchKeywordsByName() -> dict[str, list[str]]:
+    """Keep registry search aliases available after wire conversion drops them."""
+    from app.services.tool_registry import listRaw
+
+    keywordsByName: dict[str, list[str]] = {}
+    for tool in listRaw():
+        name = tool.get('name')
+        keywords = tool.get('keywords')
+        if isinstance(name, str) and isinstance(keywords, list):
+            keywordsByName[name] = [str(keyword) for keyword in keywords]
+    return keywordsByName
+
+
+def _sessionToolDefsCacheKey(
+    fmt: str,
+    tools: list[dict[str, object]],
+    session: WorkbenchSession,
+    contextWindow: int,
+    contextMsgs: list[dict[str, object]],
+) -> str:
+    """Fingerprint every input that can change the final provider tool array."""
+    from app.services.harness_mode import is_orchestrator_mode
+    from app.services.tools.circuit_tools import is_circuit_mode
+    from app.services.tools.retrieval import buildQueryFromMessages
+    from app.services.workbench import tool_defs_cache
+
+    profile = _modelCapabilityProfile(session)
+    return tool_defs_cache.session_key(
+        {
+            'format': fmt,
+            'base_tools': tools,
+            'query': buildQueryFromMessages(contextMsgs),
+            'context_window': contextWindow,
+            'keywords': _toolSearchKeywordsByName(),
+            'core_tools': sorted(_coreToolNames()),
+            'capability_profile': profile,
+            'guard_mode': normalizeGuardMode(getattr(session, 'guardMode', None) or 'full'),
+            'agent_mode': getattr(session, 'agent_mode', ''),
+            'agent_id': getattr(session, 'agentId', ''),
+            'headless': getattr(session, 'headless', False),
+            'canonical_bot_chat': as_str(as_dict(getattr(session, 'metadata', {})).get('canonicalBotChat')),
+            'circuit_mode': is_circuit_mode(session),
+            'orchestrator_mode': is_orchestrator_mode(session),
+        }
+    )
+
+
 def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
     """Return tool definitions in Anthropic format for a session.
 
@@ -1435,26 +1474,31 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
         return tools
 
     tools = tool_defs_cache.get_or_build('anthropic', _build_base)
+    messages = getattr(session, 'messages', None) or []
+    contextMsgs = list(messages) if isinstance(messages, list) else []
+    contextWindow = DEFAULT_CONTEXT_WINDOW
+    try:
+        modelId = as_str(getattr(session, 'model', ''), '')
+        provider = as_dict(getattr(session, 'provider', None), {})
+        if modelId:
+            contextWindow = _resolveModelContextWindow(modelId, provider or None)
+    except Exception:
+        logger.debug('tool-defs context window resolve failed', exc_info=True)
+    cacheKey = _sessionToolDefsCacheKey('anthropic', tools, session, contextWindow, contextMsgs)
+    cached = tool_defs_cache.get_session_cached(session, 'anthropic', cacheKey)
+    if cached is not None:
+        return cached
     try:
         from app.services.tools.model_tools import assembleToolDefs
 
-        messages = getattr(session, 'messages', None) or []
-        contextMsgs = list(messages) if isinstance(messages, list) else []
         # Budget the tool set against the session model's REAL window — a
         # 32k model must not be offered the same tool budget as a 200k one.
-        contextWindow = DEFAULT_CONTEXT_WINDOW
-        try:
-            modelId = as_str(getattr(session, 'model', ''), '')
-            provider = as_dict(getattr(session, 'provider', None), {})
-            if modelId:
-                contextWindow = _resolveModelContextWindow(modelId, provider or None)
-        except Exception:
-            logger.debug('tool-defs context window resolve failed', exc_info=True)
         result = assembleToolDefs(
             all_tool_defs=tools,
             context_messages=contextMsgs,
             contextLength=contextWindow,
             coreToolNames=_coreToolNames(),
+            toolKeywordsByName=_toolSearchKeywordsByName(),
         )
         if result.activated:
             session._tool_assembly = result
@@ -1486,7 +1530,9 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
         tools = filter_dm_tools(tools, session)
     except Exception:
         pass
-    return _finalize_session_tools(session, tools)
+    tools = _finalize_session_tools(session, tools)
+    tool_defs_cache.store_session_cached(session, 'anthropic', cacheKey, tools)
+    return tools
 
 
 
@@ -1528,6 +1574,20 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
         return tools
 
     tools = tool_defs_cache.get_or_build('openai', _build_base)
+    messages = getattr(session, 'messages', None) or []
+    contextMsgs = list(messages) if isinstance(messages, list) else []
+    contextWindow = DEFAULT_CONTEXT_WINDOW
+    try:
+        modelId = as_str(getattr(session, 'model', ''), '')
+        providerCfg = as_dict(getattr(session, 'provider', None), {})
+        if modelId:
+            contextWindow = _resolveModelContextWindow(modelId, providerCfg or None)
+    except Exception:
+        logger.debug('tool-defs context window resolve failed', exc_info=True)
+    cacheKey = _sessionToolDefsCacheKey('openai', tools, session, contextWindow, contextMsgs)
+    cached = tool_defs_cache.get_session_cached(session, 'openai', cacheKey)
+    if cached is not None:
+        return cached
     # Run the same BM25-budgeted progressive disclosure as the
     # Anthropic builder. The OpenAI path previously shipped the full registry
     # (~80 KB JSON, ≈20k tokens) to every model without a capability profile —
@@ -1536,18 +1596,8 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
     try:
         from app.services.tools.model_tools import assembleToolDefs
 
-        messages = getattr(session, 'messages', None) or []
-        contextMsgs = list(messages) if isinstance(messages, list) else []
         # Budget against the session model's REAL window (same as the
         # Anthropic builder) — a 32k model must not be offered a 200k budget.
-        contextWindow = DEFAULT_CONTEXT_WINDOW
-        try:
-            modelId = as_str(getattr(session, 'model', ''), '')
-            providerCfg = as_dict(getattr(session, 'provider', None), {})
-            if modelId:
-                contextWindow = _resolveModelContextWindow(modelId, providerCfg or None)
-        except Exception:
-            logger.debug('tool-defs context window resolve failed', exc_info=True)
         # assembleToolDefs ranks by top-level `name` (Anthropic shape) — shim
         # the OpenAI defs into that shape for ranking, then map the selected
         # names back onto the original OpenAI-format definitions.
@@ -1571,6 +1621,7 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
             context_messages=contextMsgs,
             contextLength=contextWindow,
             coreToolNames=_coreToolNames(),
+            toolKeywordsByName=_toolSearchKeywordsByName(),
         )
         if result.activated:
             session._tool_assembly = result
@@ -1620,7 +1671,9 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
         tools = filter_dm_tools(tools, session)
     except Exception:
         pass
-    return _finalize_session_tools(session, tools)
+    tools = _finalize_session_tools(session, tools)
+    tool_defs_cache.store_session_cached(session, 'openai', cacheKey, tools)
+    return tools
 
 
 
@@ -3270,9 +3323,36 @@ async def _sendWorkbenchMessageStreamImpl(
             # Per-turn <session_state> carries the volatile
             # session fields purged from the (now byte-stable) system prompt.
             _stateBlock = _sessionStateBlock(session)
+            _toolSurfaceBlock = ''
+            _pendingToolSurfaceChanges = getattr(session, '_pendingToolSurfaceChanges', None)
+            if isinstance(_pendingToolSurfaceChanges, list) and _pendingToolSurfaceChanges:
+                _changeLines: list[str] = []
+                for _change in _pendingToolSurfaceChanges:
+                    if not isinstance(_change, dict):
+                        continue
+                    _added = _change.get('added')
+                    _removed = _change.get('removed')
+                    if isinstance(_added, list) and _added:
+                        _changeLines.append('added: ' + ', '.join(str(n) for n in _added[:20]))
+                    if isinstance(_removed, list) and _removed:
+                        _changeLines.append('removed: ' + ', '.join(str(n) for n in _removed[:20]))
+                if _changeLines:
+                    _toolSurfaceBlock = (
+                        '[Proxy Runtime] The available tool surface changed ('
+                        + '; '.join(_changeLines)
+                        + '). Use the currently declared tools; use tool_search to find deferred schemas.'
+                    )
+                    session._pendingToolSurfaceChanges = []  # type: ignore[attr-defined]
             _tailBlocks = '\n\n'.join(
                 b
-                for b in (_memoryBlock, _skillsBlock, _mapBlock, _stateBlock, _nudgeBlock)
+                for b in (
+                    _memoryBlock,
+                    _skillsBlock,
+                    _mapBlock,
+                    _stateBlock,
+                    _nudgeBlock,
+                    _toolSurfaceBlock,
+                )
                 if b
             )
             _contextSections = tailSectionSizes(
@@ -5606,7 +5686,10 @@ async def _sendWorkbenchMessageStreamImpl(
             # failure at the START of its own text. Computed ONCE here from the
             # shared rule so the SSE frame and the durable transcript message
             # can never disagree (``tool_protocol.tool_result_failed``).
-            toolStatus = 'error' if _toolResultFailed(str(result)) else 'done'
+            timedOut = ' timed out after ' in str(result).lower()
+            toolStatus = (
+                'stalled' if timedOut else ('error' if _toolResultFailed(str(result)) else 'done')
+            )
             if emit:
                 providerSetup = None
                 integrationSetup = None
@@ -5725,7 +5808,7 @@ async def _sendWorkbenchMessageStreamImpl(
                 # The same verdict the UI was just told, now durable: this is
                 # the message ``normalize_tool_result`` will carry into the
                 # transcript, and the only thing episode mining reads.
-                'is_error': toolStatus == 'error',
+                'is_error': toolStatus in ('error', 'stalled'),
             }
 
         try:
