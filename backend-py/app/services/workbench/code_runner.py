@@ -240,7 +240,10 @@ def write_file(path, content):
     if _reason:
         raise PermissionError(_reason)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(str(content), encoding='utf-8')
+    # newline='' matches the write_file tool: Windows text mode rewrote every
+    # \n to \r\n here, so the same model-authored string had two byte shapes
+    # depending on which door wrote it.
+    p.write_text(str(content), encoding='utf-8', newline='')
     return 'ok'
 
 

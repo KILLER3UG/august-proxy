@@ -631,7 +631,9 @@ async def _writeFile(path: str, content: str, **_extra: object) -> str:
                 _cache_clear()
         except Exception:
             pass
-        return f'Successfully wrote {len(content)} bytes to {path}'
+        # Bytes on disk, not characters: `len('héllo→\n')` is 7 while the file
+        # is 10 bytes, and the receipt is the only size the model can read.
+        return f'Successfully wrote {len(content.encode("utf-8"))} bytes to {path}'
     except Exception as exc:
         return f'Error writing file: {exc}'
 
