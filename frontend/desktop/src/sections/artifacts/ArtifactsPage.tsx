@@ -27,6 +27,9 @@ import { collectArtifacts, type SessionArtifact } from '@/lib/artifacts';
 import { loadMessagesForSession } from '@/sections/chat/chat-stream-manager';
 import { useSessionsStore } from '@/store/sessions';
 import { SectionHeader } from '@/components/SectionHeader';
+import { openRightDrawer, openRightDrawerFile } from '@/components/shell/RightDrawerState';
+import { openExternal } from '@/lib/tauri-shell';
+import { openFileInDrawer } from '@/lib/file-kind';
 import { cn } from '@/lib/utils';
 
 /** How many recent chats the page derives artifacts from. A desktop profile
@@ -110,9 +113,32 @@ export function ArtifactsPage() {
 
   const openInChat = (sessionId: string) => {
     void navigate(`/c/${sessionId}`);
-    // The drawer derives its list from the now-active session, so opening it
-    // after the navigation lands the user on the artifact they clicked.
-    window.dispatchEvent(new CustomEvent('august:open-right-sidebar'));
+    // Group-header verb: open that chat's artifact list, not one file.
+    openRightDrawer('artifacts');
+  };
+
+  /** Card verb: the artifact itself, through the same door the drawer uses.
+   *  Navigating alone opened the chat and its artifact LIST, so the clicked
+   *  card was not the thing on screen. */
+  const openArtifact = async (row: ArtifactRow) => {
+    void navigate(`/c/${row.sessionId}`);
+    if (row.origin === 'link') {
+      await openExternal(row.href);
+      return;
+    }
+    if (row.kind === 'image' && row.href.startsWith('data:')) {
+      openRightDrawerFile({
+        name: row.label,
+        size: '',
+        path: row.href,
+        dataUrl: row.href,
+        thumbnailUrl: row.thumbnailUrl,
+        type: 'image',
+        status: 'ready',
+      } as never);
+      return;
+    }
+    await openFileInDrawer(row.href, row.sessionId);
   };
 
   return (
@@ -188,9 +214,9 @@ export function ArtifactsPage() {
                   <button
                     key={r.id}
                     type="button"
-                    onClick={() => openInChat(r.sessionId)}
+                    onClick={() => void openArtifact(r)}
                     className="group cursor-pointer overflow-hidden rounded-xl border border-border/60 bg-card/50 text-left transition-colors hover:border-border hover:bg-card"
-                    title={`Made in "${r.sessionTitle}" — click to open that chat`}
+                    title={`Made in "${r.sessionTitle}" — click to open the artifact`}
                   >
                     <div className="flex h-24 items-center justify-center overflow-hidden border-b border-border/40 bg-muted/20">
                       {r.thumbnailUrl ? (
