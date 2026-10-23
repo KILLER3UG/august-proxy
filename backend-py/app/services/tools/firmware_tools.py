@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 import shutil
@@ -24,6 +25,8 @@ from pathlib import Path
 
 from app.json_narrowing import as_dict
 from app.services.sandbox.paths import bind_path
+
+logger = logging.getLogger(__name__)
 
 
 def _bind(path: str, workspace: str, for_write: bool):
@@ -268,10 +271,25 @@ async def _spawn(
     except asyncio.TimeoutError:
         timed_out = True
         reader.cancel()
+        try:
+            await reader
+        except asyncio.CancelledError:
+            pass
         proc.kill()
     # Await the child even after the kill: the previous path returned without
     # reaping, which left the process holding the COM port it was monitoring.
     await proc.wait()
+    if timed_out and proc.stdout is not None:
+        # `readline()` returns a partial line only at EOF; cancelling it while
+        # the child is killed discards whatever was buffered without a newline.
+        # That is exactly `Serial.print()` — the board's last message has no
+        # terminator — so drain the remaining bytes now that the pipe is closed.
+        try:
+            tail = await asyncio.wait_for(proc.stdout.read(), timeout=2.0)
+            if tail:
+                chunks.append(tail)
+        except (asyncio.TimeoutError, OSError, ValueError):
+            logger.debug('firmware spawn: final partial-line drain failed', exc_info=True)
 
     text = b''.join(chunks).decode('utf-8', errors='replace')
     if timed_out:
