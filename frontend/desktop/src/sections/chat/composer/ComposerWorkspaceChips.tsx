@@ -161,14 +161,18 @@ export function ComposerWorkspaceChips({
         .sessions.find((s) => s.id === sessionId || s.workbenchSessionId === sessionId);
       const id = row?.id ?? sessionId;
       const wbId = row?.workbenchSessionId || workbenchSessionId || '';
-      updateSessionWorkspace(id, null);
-      moveSessionToFolder(id, null);
+      // Tell the backend FIRST. Clearing the local row before a POST that can
+      // fail made the chip read "No workspace" while the prompt and tool root
+      // stayed on the old folder; the next send then re-synced only when the
+      // UI path was truthy, so nothing repaired it.
       if (wbId) {
         await api.post('/api/workbench/sandbox-mode', {
           sessionId: wbId,
           workspacePath: '',
         });
       }
+      updateSessionWorkspace(id, null);
+      moveSessionToFolder(id, null);
       void queryClient.invalidateQueries({ queryKey: ['git'] });
       setOpen(false);
       toast.success('No workspace — commands run without a project folder');
