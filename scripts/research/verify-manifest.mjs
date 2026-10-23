@@ -7,7 +7,16 @@
 // and a read with no note, and exits non-zero on any of them.
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+// Derive the checkout root; the old absolute C:/Dev/august-proxy path made the
+// gate runnable on exactly one machine.
+const ROOT = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../..',
+  'docs/research',
+);
 const CLONE_BASE =
   process.env.AUGUST_RESEARCH_CLONES || 'C:/Users/rober/AppData/Local/Temp/harness-research';
 const CLONES = {
@@ -22,7 +31,7 @@ for (const [repo, dir] of Object.entries(CLONES)) {
     .split('\n').filter(Boolean);
   const trackedSet = new Set(tracked);
 
-  const tsv = readFileSync(`C:/Dev/august-proxy/docs/research/${repo}/manifest.tsv`, 'utf8');
+  const tsv = readFileSync(path.join(ROOT, repo, 'manifest.tsv'), 'utf8');
   const lines = tsv.split('\n').filter(Boolean);
   const header = lines[0].split('\t');
   const rows = lines.slice(1).map((l) => {

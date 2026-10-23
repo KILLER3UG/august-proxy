@@ -91,10 +91,10 @@ mentioned in its report. **3 154 citations, 0 bad.**
 > whose basename is ambiguous or absent from the manifest: roughly 3 700
 > occurrences (≈475 pi, ≈259 SimulIDE, ≈2 998 DeepSeek harness), over half of
 > that repo's citations. It scans `shards/*.md` and the manifest's owner-shard
-> ledger only, not `STATUS.md`, `IDEAS.md` or `AUGUST-IMPROVEMENTS.md`, so it
-> verifies no August claim at all; it needs the `%TEMP%` clones and is not wired
-> into `package.json` or CI. "0 bad" means "0 citations pointed past the end of
-> a file".
+> ledger only, not `STATUS.md` or `AUGUST-IMPROVEMENTS.md`, so it verifies no
+> August claim at all. It needs the `%TEMP%` clones; it is wired locally as
+> `npm run research:citations`, not into CI. "0 bad" means "0 citations pointed
+> past the end of a file".
 
 Beyond the automated check, four claims were re-read **by hand** at their
 cited lines and confirmed true:
@@ -198,7 +198,6 @@ several places that matter:
 |---|---|
 | `docs/research/august-baseline.md` | What August actually does today, with every claim checked |
 | `docs/research/AUGUST-IMPROVEMENTS.md` | **The proposals** — nine, with the ranked top-5 and the rejected list |
-| `docs/research/IDEAS.md` | Every "ideas worth stealing" from every shard, consolidated |
 | `docs/research/STATUS.md` | This file |
 | `docs/research/<repo>/ARCHITECTURE.md` | How each system fits together, plus its coverage summary |
 | `docs/research/<repo>/manifest.tsv` | The coverage ledger: one row per tracked file — status, note and owner shard |
@@ -213,8 +212,6 @@ column.
 
 ## Tooling
 
-- `scripts/research/build-ledger.mjs` — rebuilds the manifest and the shard
-  partition from `git ls-files` + `stat` only. Never executes repository code.
 - `scripts/research/verify-manifest.mjs` — **the ledger gate.** Reconciles each
   manifest against `git ls-files`, reports shard balance, and exits non-zero on
   a missing/extra/duplicate path, an unresolved status, a skip without a reason
@@ -222,5 +219,8 @@ column.
 - `scripts/research/check-citations.mjs` — reopens every `path:line` a report
   cites and confirms the line exists; separately confirms every file in the
   manifest's owner-shard ledger is mentioned in that shard's report.
-- `scripts/research/synthesize-ideas.mjs` — extracts the consolidated
-  "ideas worth stealing".
+
+The one-shot builders (`build-ledger.mjs`, `shard-list.mjs`) and the
+`synthesize-ideas.mjs` aggregation were removed after the corpus was frozen;
+the manifest and shard reports are the record, not a generated duplicate. This
+directory is documentation of a completed research pass, not a live pipeline.

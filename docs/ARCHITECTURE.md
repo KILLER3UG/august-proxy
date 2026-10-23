@@ -347,7 +347,8 @@ Model-managed memory is a **tool set, not an API**: `remember`, `list_facts` and
 `forget` are core tools (in `AUGUST_CORE_TOOLS` and `_BARE_TOOL_ALLOW`), so they
 survive progressive disclosure and a downgraded model can still correct what it
 remembers. Sub-agents read and recall but never write; the parent turn is the
-single memory write door.
+only model-facing memory write door (internal/UI routes also call
+`save_fact`).
 
 Desktop **Settings → Memory** (`memory-knowledge`, with `memory-facts` as a hidden
 child) renders one flat chronological list across kinds with filter chips — not

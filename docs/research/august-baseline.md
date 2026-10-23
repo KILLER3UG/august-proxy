@@ -189,7 +189,8 @@ What exists instead — **one SQLite file with seven surfaces**:
   for the next launch** (`apply_pending_restore()` in `main.py`), never in
   place. **REAL.**
 - **`AGENTS.md`/`docs/ARCHITECTURE.md` say "the parent turn is the single memory
-  write door" — THAT IS FALSE.** `save_fact(` has **8 call sites**
+  write door." Read as the MODEL door, that is true — sub-agents cannot write.
+  It is not the only code path: `save_fact(` has **9 call sites**
   (`routers/august.py:629,804`; `harness_promote.py:370`;
   `skill_distiller.py:1220`; `rollback_store.py:283,296,305`;
   `turn_outcomes.py:1100`; `session_tools.py:631`).

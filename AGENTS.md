@@ -692,7 +692,8 @@ answers even for `"gpu"`. The boot memory index is **frozen per session** to
 protect the provider prefix cache, so `<memory_policy>` tells the model to
 re-read `list_facts` after writing rather than trusting that index — keep the
 prompt text and that behaviour in step if either changes. Sub-agents read and
-recall but never write; the parent turn is the single memory write door.
+recall but never write; the parent turn is the only MODEL-facing memory write
+door (internal/UI routes also call `save_fact`).
 
 **That read is now enforced, and the read is now complete.** `remember` refuses
 its first write in a turn until `list_facts` (or `brain_query` over a memory

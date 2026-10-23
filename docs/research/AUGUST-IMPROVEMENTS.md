@@ -17,8 +17,9 @@ changed and what remains open.
 Every proposal below was checked against **`docs/research/august-baseline.md`**
 first, so that nothing August already does is proposed back, and so that a
 knob which is *declared but off* is described as off rather than as present.
-The consolidated raw material is `docs/research/IDEAS.md` (every "ideas worth
-stealing" extracted from every shard report, with its `file:line`).
+The raw material is the 115 shard reports under `docs/research/<repo>/shards/`
+plus the manifests' owner-shard ledger; the generated `IDEAS.md` aggregation
+was retired as a duplicate of those reports.
 
 **Verdict vocabulary.** **ADOPT** — do it, as described. **ADAPT** — do it, but
 the shape has to change to fit August. **SKIP** — do not do it; the reason is
