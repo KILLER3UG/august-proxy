@@ -7,6 +7,7 @@ import { Markdown } from '../ChatMarkdown';
 import { useSessionStream } from '../hooks/useSessionStream';
 import { chatRuntime } from '../chat-runtime';
 import { formatTokenCount } from '../message/token-display';
+import { distillThoughtLines } from '@/lib/process-summary';
 import type { ChatMessage, MessageBlock } from '@/types/chat';
 import type { ArenaRunLane } from './arena-store';
 
@@ -15,6 +16,12 @@ function LaneBlocks({ message }: { message: ChatMessage }) {
   const blocks = message.blocks ?? [];
 
   const thinking = blocks.filter((b) => b.type === 'thinking' && b.content?.trim());
+  // Arena is a card like any other: it carries the distilled steps, never the
+  // raw chain of thought. Only the main ThoughtStep's explicit opt-out may
+  // render raw prose.
+  const distilledThinking = distillThoughtLines(
+    thinking.map((b) => b.content ?? '').join('\n\n'),
+  );
   const finalBlock = [...blocks].reverse().find(
     (b): b is MessageBlock & { content: string } =>
       b.type === 'finalOutput' && !!b.content?.trim(),
@@ -54,7 +61,9 @@ function LaneBlocks({ message }: { message: ChatMessage }) {
           </button>
           {thinkingOpen ? (
             <div className="px-3 pb-2 text-2xs text-muted-foreground whitespace-pre-wrap max-h-48 overflow-y-auto">
-              {thinking.map((b) => b.content).join('\n\n')}
+              {distilledThinking.length > 0
+                ? distilledThinking.join('\n')
+                : 'No distilled summary for this thought.'}
             </div>
           ) : null}
         </div>
