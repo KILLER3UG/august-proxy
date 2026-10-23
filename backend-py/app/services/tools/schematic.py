@@ -16,8 +16,10 @@ The model is deliberately tiny:
   refdes / kind / nodes / value plus the layout ``{col, row}`` and a
   per-component ``rot`` (0 = horizontal body, 1 = vertical rung);
 * **wires** — orthogonal (Manhattan) polylines between component pins,
-  derived from the layout by :func:`derive_wires` unless the sidecar
-  overrides a route explicitly (wire-drawing tools may do that).
+  derived inline in :func:`build_graph` (there is no separate
+  ``derive_wires`` function) unless the sidecar overrides a route
+  explicitly (wire-drawing tools may do that, and a move of a net's part
+  drops the override — see ``edit_schematic``).
 
 Everything renders to a plain SVG with real schematic symbols (resistor
 zig-zag, capacitor plates, inductor arcs, V/I sources, ground) — no GPL

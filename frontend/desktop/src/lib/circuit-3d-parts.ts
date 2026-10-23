@@ -217,7 +217,12 @@ export function buildPart(input: PartInput, palette: Palette): Group {
     const body = axialBody(shifted, 0.3, palette['--cb3d-cap'], 0.6);
     rel(body);
     group.add(body);
-  } else if (kind === 'isource' || kind === 'vsource') {
+  } else if (kind === 'isource' || kind === 'voltage') {
+    // `voltage`, not `vsource`: the kind vocabulary is schematic._ELEMENT_KINDS
+    // and the board graph is `schematic.build_graph` output — a test against
+    // 'vsource' matched nothing, so the draggable bench-knob this branch draws
+    // only ever appeared on a current source, and every V card fell through to
+    // the generic axial body below.
     // The deck's own adjustable input, drawn as the thing it is on a bench: a
     // rotary knob. Its dimensions are the reference stage's, scaled from mm to
     // world units — a 6.1/6.4 radius barrel, a knurled cap and a pointer that
@@ -258,7 +263,11 @@ export function buildPart(input: PartInput, palette: Palette): Group {
       pin.position.set(offset, -0.12, i === 1 ? -0.2 : 0.2);
       group.add(pin);
     }
-  } else if (kind === 'led') {
+  } else if (kind === 'diode' && /led/i.test(input.value)) {
+    // An LED is a diode whose model names it (`D1 a 0 LED`): the branch keyed
+    // on a literal `led` kind that no deck letter produces — schematic emits
+    // 'diode' for D — so the sphere was unreachable and every diode, LED or
+    // rectifier, rendered as the generic body.
     const geo = new SphereGeometry(0.3, 18, 12);
     const colour = /r/i.test(input.value) || input.nodes.length === 0
       ? palette['--cb3d-led-r']

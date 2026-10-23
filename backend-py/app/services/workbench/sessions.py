@@ -1466,6 +1466,18 @@ def truncate_session(
                 'message': 'Nothing to remove — index is past the end of the conversation.',
             }
     removed = len(msgs) - cut
+    # Archive before the projection drops them: undo/truncate is a deletion
+    # the user asked for, not a rewrite the harness can reconstruct, and every
+    # other path that reshapes history (compaction, the stuck-request ladder)
+    # snapshots through transcript_archive first. Without this, a revert was
+    # the ONE way turns left the record permanently.
+    if removed > 0:
+        try:
+            from app.services.transcript_archive import archive_messages
+
+            archive_messages(session_id, msgs[cut:], reason='truncate')
+        except Exception:
+            logger.debug('transcript archive failed', exc_info=True)
     session.messages = msgs[:cut]
     session.messageCount = len(session.messages)
     session.updatedAt = _now()

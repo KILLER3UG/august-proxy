@@ -752,6 +752,30 @@ def edit_schematic(
             comps[ref] = cur
         layout['components'] = comps
         layout.pop('auto', None)
+        # A move re-anchors everything EXCEPT an explicit wire route: the
+        # stored points are absolute, so after dragging a part the hand-routed
+        # net kept its old coordinates and the wire stopped in empty air beside
+        # the pin it used to reach — exactly the dangling-wire shape the
+        # derivation in build_graph refuses to produce. A move to a ref
+        # therefore drops the explicit routes of every net that ref sits on,
+        # letting build_graph re-derive them against the pin's NEW position;
+        # routes supplied in this same call are applied below, after the drop,
+        # so a redraw-your-wire request still wins.
+        moved = {str(mv.get('ref', '')).upper() for mv in moves or []}
+        if moved:
+            affected = {
+                node
+                for el in elements
+                if el.ref in moved
+                for node in el.nodes
+            }
+            routes = layout.get('wireRoutes')
+            if isinstance(routes, dict) and affected:
+                stale = [n for n in routes if n in affected]
+                for n in stale:
+                    del routes[n]
+                if stale:
+                    layout['wireRoutes'] = routes
         if wire_routes:
             routes = dict(layout.get('wireRoutes') or {})
             for node, pts in wire_routes.items():
@@ -3007,22 +3031,22 @@ def circuit_lint_diagram(diagram: object) -> dict[str, object]:
 
 _ELEMENT_LINE_RE = re.compile(r'^([A-Za-z])(\w*)\s+(.+)$')
 
-# Component letter → human category for the diagram legend.
-_ELEMENT_KINDS = {
-    'R': 'resistor', 'C': 'capacitor', 'L': 'inductor', 'V': 'source',
-    'I': 'isource', 'D': 'diode', 'Q': 'transistor', 'M': 'mosfet',
-    'X': 'subckt', 'S': 'switch', 'W': 'cswitch', 'K': 'coupled',
-}
-
 
 @dataclass
 class _DeckElement:
-    """One element line of a deck, as drawn on the overlay."""
+    """One element line of a deck, as drawn on the overlay.
+
+    Carries only what the overlay draws: ref, nets and value. A `kind` label
+    lived here once — a second copy of schematic._ELEMENT_KINDS that had
+    drifted three ways from it and was read by nothing (`_svg_overlay` and
+    the trace-expr builder use only `nodes`) — and a label that looks like
+    the vocabulary the 3D board renders by, while binding nothing, is how
+    the drift hid.
+    """
 
     ref: str
     nodes: list[str]
     value: str
-    kind: str
 
 
 def _parse_components(deck_text: str) -> list[_DeckElement]:
@@ -3055,7 +3079,6 @@ def _parse_components(deck_text: str) -> list[_DeckElement]:
         # exist as terminals.
         if not _sch.is_element_card(letter):
             continue
-        kind = _ELEMENT_KINDS.get(letter.upper(), 'part')
         node_count = _sch.node_count(letter, toks)
         nodes = [t.strip('[]') for t in toks[:node_count]]
         # The shared rule again: this is the live overview's value, and its own
@@ -3063,9 +3086,7 @@ def _parse_components(deck_text: str) -> list[_DeckElement]:
         # value while the listing beside it printed the model.
         value = _nt_card_value([letter.upper() + ref_suffix] + toks, node_count)
         out.append(
-            _DeckElement(
-                ref=letter.upper() + ref_suffix, nodes=nodes, value=value, kind=kind
-            )
+            _DeckElement(ref=letter.upper() + ref_suffix, nodes=nodes, value=value)
         )
     return out
 
