@@ -3671,7 +3671,11 @@ async def _sendWorkbenchMessageStreamImpl(
             )
             logger.warning('workbench %s', msg)
             systemText = f'{systemText}{_ROUND_CAP_FINAL_DIRECTIVE.format(cap=managedToolLoopCap)}'
-            _emitRecovery(emit, 'budget', 1, 'stopped', True)
+            # Its own kind, not 'budget': the recovery line is user-facing, and
+            # "hit its cost budget" about a tool-round ceiling is a false
+            # statement the transcript then repeats. The reason vocabulary and
+            # the ledger already distinguish the two.
+            _emitRecovery(emit, 'cap', 1, 'stopped', True)
             if emit:
                 emit({'type': 'warning', 'message': msg})
         # Turn budget ladder, rung by rung (audit P1#12). Checked once per
@@ -4098,14 +4102,19 @@ async def _sendWorkbenchMessageStreamImpl(
                     # Chat/code mode never executes tools, so the
                     # full tool array rode upstream for zero benefit — the
                     # dominant 500-aggravator on weak gateways. Ship none.
-                    # The budget ladder's final rung is the same situation:
-                    # that round is a text-only answer, so advertising tools
-                    # would only invite calls the turn will not run.
+                    # The budget ladder's final rung and the round cap's final
+                    # round are the same situation: that round is a text-only
+                    # answer, so advertising tools would only invite calls the
+                    # turn will not run. `_roundCapFinalFired` was absent here,
+                    # so the cap's own warning ("this round answers in text
+                    # only") was false and a model could end the turn on a tool
+                    # call whose result it never saw.
                     _wireTools = tools
                     _wireOpenaiTools = openaiTools
                     if (
                         as_str(getattr(session, 'agent_mode', '') or '') in ('chat', 'code')
                         or _budgetFinalFired
+                        or _roundCapFinalFired
                     ):
                         _wireTools = []
                         _wireOpenaiTools = []

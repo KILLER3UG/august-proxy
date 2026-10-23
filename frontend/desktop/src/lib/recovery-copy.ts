@@ -31,6 +31,9 @@ const BY_KIND: Record<string, Record<string, string>> = {
     nudged: 'The turn was not changing anything, so the agent was nudged.',
     stopped: 'The turn was not changing anything, so it was stopped.',
   },
+  cap: {
+    stopped: 'The turn reached its tool-round ceiling, so it was wrapped up in text.',
+  },
   'context-reduction': {
     reduced: 'The conversation was too large, so older turns were reduced to make room.',
     failed: 'The conversation was too large and could not be reduced automatically.',
@@ -55,6 +58,7 @@ const BY_KIND: Record<string, Record<string, string>> = {
 const BY_KIND_FALLBACK: Record<string, string> = {
   budget: 'The turn hit its cost budget and was adjusted to keep going.',
   runaway: 'The turn was not making progress and was adjusted.',
+  cap: 'The turn reached its tool-round ceiling and was wrapped up in text.',
   'context-reduction': 'The conversation was too large and was reduced to make room.',
   'auto-compact': 'The conversation was compacted before this turn.',
   'length-continuation': 'The answer hit the length limit and was continued.',
