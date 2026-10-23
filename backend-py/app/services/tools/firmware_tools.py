@@ -1367,12 +1367,15 @@ async def board_list() -> dict[str, object]:
         }
 
     boards: list[dict[str, object]] = []
+    parsed = True
     try:
         payload = json.loads(out or '{}')
     except (ValueError, TypeError):
         payload = {}
+        parsed = False
     if not isinstance(payload, dict):
         payload = {}
+        parsed = False
     entries, shape = _port_entries(payload)
     for raw_entry in entries:
         if not isinstance(raw_entry, dict):
@@ -1419,12 +1422,16 @@ async def board_list() -> dict[str, object]:
         'count': len(boards),
         'cores': cores,
     }
-    if shape is None and payload:
+    if not parsed or (shape is None and payload):
         # Zero boards because the payload was a shape this reader does not know,
         # which is NOT the same claim as zero boards. Name it, and hand back the
         # keys, so the next CLI rename is one glance instead of a code audit.
+        # An UNPARSEABLE answer is the same condition: it used to become `{}`,
+        # report count 0 and look like "nothing is plugged in".
         result['unknownShape'] = True
         result['payloadKeys'] = sorted(str(k) for k in payload)[:20]
+        if not parsed:
+            result['logTail'] = '\n'.join((out or '').splitlines()[-20:])
     return result
 
 
