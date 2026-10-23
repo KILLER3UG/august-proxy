@@ -1,8 +1,9 @@
 /* ── Session list nav — brand, new chat, and the reference's destinations ── */
 
 import { motion } from "framer-motion";
-import { Archive, FolderOpen, PanelLeft, Plus, Settings } from "lucide-react";
+import { Archive, FolderOpen, PanelLeft, Plus, Search, Settings } from "lucide-react";
 import { t } from "@/lib/motion";
+import { toggleCommandPalette } from "@/store/command-palette";
 
 export interface SessionListNavProps {
   onNew: () => void;
@@ -87,6 +88,20 @@ export function SessionListNav({
             <Plus className="size-3.5" />
           </motion.span>
           <span>New</span>
+        </motion.button>
+        <motion.button
+          type="button"
+          onClick={() => toggleCommandPalette()}
+          className="mt-0.5 w-full flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors text-sidebar-foreground/85 hover:text-sidebar-foreground hover:bg-sidebar-accent/40"
+          initial="rest"
+          whileHover="hover"
+          whileTap="tap"
+          variants={rowMotion}
+          title="Search or run a command (Ctrl+K)"
+          aria-keyshortcuts="Control+K"
+        >
+          <Search className="size-3.5 shrink-0 opacity-80" />
+          <span>Search</span>
         </motion.button>
       </div>
 
