@@ -162,3 +162,6 @@ ${repo}: ${grandShards} shard reports, ${grandChecked} citations checked, ` +
     `${grandBad} bad, ${grandSkipped} uncheckable (ambiguous/absent basename) — ` +
     'line NUMBERS only; content is never compared',
 );
+// A verifier that prints FAIL and exits 0 cannot gate anything: the wrapper
+// treats the run as green and a regression in the corpus ships unread.
+if (grandBad > 0) process.exitCode = 1;
