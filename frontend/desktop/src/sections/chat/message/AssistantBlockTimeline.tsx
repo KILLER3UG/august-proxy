@@ -43,6 +43,13 @@ import { getToolLabel } from '@/lib/tool-labels';
 import { useVerboseMode } from '@/lib/verbose-mode';
 import { resolveUiSessionId } from '../stream/session-id-map';
 
+/** A stalled tool is a failed tool: the backend emits `stalled` when a call
+ *  timed out, and every run-level summary must treat it the same as `error`
+ *  or a run containing only timeouts looks healthy. */
+function isToolFailure(status: string | undefined): boolean {
+  return status === 'error' || status === 'stalled';
+}
+
 type DisplayBlock = MessageBlock;
 
 /** Completed thinking sentences kept in the live feed per thinking block —
@@ -511,7 +518,7 @@ export function AssistantBlockTimeline({
         searchesCount += 1;
       }
       if (block.type === 'command' || bucket === 'run') commandsCount += 1;
-      if (tool.status === 'error') errorsCount += 1;
+      if (isToolFailure(tool.status)) errorsCount += 1;
       if (tool.status === 'running') anyToolRunning = true;
       if (tool.startedAt) {
         seqStart = Math.min(seqStart, tool.startedAt);
@@ -625,7 +632,7 @@ export function AssistantBlockTimeline({
         const kind: LiveActivityKind =
           bucket === 'view' || bucket === 'edit' || bucket === 'run' ? bucket : 'tool';
         const toolStatus =
-          block.tool.status === 'error'
+          isToolFailure(block.tool.status)
             ? ('error' as const)
             : block.tool.status === 'running'
               ? ('running' as const)
@@ -647,7 +654,7 @@ export function AssistantBlockTimeline({
           label,
           detail,
           status:
-            block.tool.status === 'error'
+            isToolFailure(block.tool.status)
               ? 'error'
               : block.tool.status === 'running'
                 ? 'running'
@@ -851,7 +858,7 @@ export function AssistantBlockTimeline({
                   agentId={ctx.agentId || 'general'}
                   task={ctx.task}
                   status={
-                    tool.status === 'error'
+                    isToolFailure(tool.status)
                       ? 'failed'
                       : tool.status === 'running'
                         ? 'running'
@@ -908,7 +915,7 @@ export function AssistantBlockTimeline({
           // failure at all, because a failure behind a collapsed line is
           // one nobody sees; opening the group answers that, so the
           // failure is grouped AND visible without a click.
-          const hasFailure = runTools.some((t) => t.status === 'error');
+          const hasFailure = runTools.some((t) => isToolFailure(t.status));
           const elapsedMs = runTools.reduce(
             (sum, t) => sum + (typeof t.duration === 'number' ? t.duration : 0),
             0,
@@ -959,7 +966,7 @@ export function AssistantBlockTimeline({
                       expanded={
                         rtId in expandOverrides
                           ? expandOverrides[rtId]
-                          : rt.status === 'error'
+                          : isToolFailure(rt.status)
                       }
                       verbose={verbose}
                       onToggle={(next) => toggleExpand(rtId, next)}
