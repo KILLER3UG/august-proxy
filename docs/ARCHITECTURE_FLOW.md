@@ -1,6 +1,6 @@
 # How August really flows (code map)
 
-Five diagrams, one per flow that decides what the app does at runtime. **Every box
+Six diagrams: five runtime flows plus the current app surface. **Every box
 names a real file and symbol** — nothing here is a sketch of an intended
 architecture. The chains were read out of the tree (path and function
 confirmed), and the SVG snapshot is committed beside this file as
@@ -18,6 +18,7 @@ Diagrams:
 3. Tool calls and the gates that stand in front of them
 4. Memory: what the model sees, writes, and what survives
 5. Provider routing and wire formats
+6. App surfaces and navigation (the current shell)
 
 ---
 
@@ -89,7 +90,8 @@ flowchart TB
     TASK["routers/workbench.py:_startTurnTask<br/>background turn task"]
     ENG["services/workbench/workbench.py<br/>sendWorkbenchMessageStream"]
     LOOP["_sendWorkbenchMessageStreamImpl<br/>the model-round loop"]
-    CALL["services/workbench/providers.py<br/>call_openai_workbench"]
+    SURF["workbench.py:toolDefinitions :1431<br/>assembleToolDefs + tool_defs_cache<br/>keyed by the session SET/model/gates"]
+  CALL["services/workbench/providers.py<br/>call_openai_workbench"]
     TR["services/workbench/stream_translate.py<br/>AnthropicWorkbenchStreamAggregator.on_event<br/>upstream SSE chunks to August frames"]
     ROOM["routers/workbench.py:streamChat<br/>GET /chat/stream replays the event log<br/>from sinceSeq"]
   end
@@ -102,7 +104,7 @@ flowchart TB
 
   SEND --> START --> POSTF --> PATCH --> ROUTE
   ROUTE -->|"sinceSeq"| TASK
-  TASK --> ENG --> LOOP --> CALL --> BASE --> HOST
+  TASK --> ENG --> LOOP --> SURF --> CALL --> BASE --> HOST
   HOST -.->|"SSE chunks"| TR
   TR -->|"frames appended"| ROOM
   START -->|"then opens"| OPEN --> ROOM
@@ -131,6 +133,13 @@ flowchart TB
   (migration 046), where NULL means unrecorded, not zero. `stall-stop` is the
   runaway backstop's reason, reused deliberately so the badge, the ledger and
   the docs read one vocabulary.
+- The provider tool array is a **session** value, not a per-turn one:
+  `_sessionToolDefsCacheKey` (`workbench.py:1392`) keys the final disclosed and
+  filtered array on the base set, model profile, context window and session
+  gates. The BM25 query chooses membership on the first build and is
+  deliberately not part of the key; `_applySessionStableOrder`
+  (`loop/surface.py:224`) keeps a name's slot when the set changes. A changed
+  set or gate still misses and rebuilds.
 
 ---
 
@@ -236,18 +245,20 @@ flowchart TB
     GATE{"brain_config memoryAutoInject<br/>app/services/brain_config_service.py:220<br/>DEFAULT OFF"}
     BM["fact_retrieval.py:build_memory_block :667<br/>BM25 over facts — only when invoked"]
     PROF["build_profile_block — ALWAYS-ON lane<br/>rendered even with auto-inject off"]
-    MERGE["merge: profile lane first, then recalled facts"]
+    DELTA["fact_retrieval.py:build_memory_delta_block :958<br/>facts updated after session.createdAt<br/>fixed-width microseconds, live projection"]
+    MERGE["merge: profile lane first, then recalled facts, then delta"]
     PART["_omitted_receipt — names what budget dropped<br/>recall partial"]
     INJ["workbench.py:3062 / 3085<br/>tail patched into the user message<br/>_injected_facts"]
   end
 
   GATE -->|"on"| BM --> MERGE
   PROF --> MERGE
+  DELTA --> MERGE
   MERGE --> PART --> INJ
 
   subgraph crud["Model-facing memory CRUD — core tools"]
     direction TB
-    REM["remember — tool_registrations/session_tools.py:_remember<br/>writes facts via memory_store/rest.py:save_fact"]
+    REM["remember — tool_registrations/session_tools.py:_remember<br/>writes facts via memory_store/rest.py:save_fact<br/>updated_at = timeutil.utc_now_text() microseconds"]
     LST["list_facts — _list_facts<br/>modelMemoryRead-gated read"]
     FGT["forget — _forget<br/>retire by exact key"]
     BQ["brain_query — _brainQuery<br/>memory_store/brain.py:_BRAINStores<br/>reads facts AND memory_store KV<br/>store enum omits memory; dispatch does not enforce it"]
@@ -287,7 +298,15 @@ flowchart TB
   rendered on every turn regardless. That is what makes August remember *who
   you are* without a keyword coincidence.
 - Recalled facts are attached to the **user message** at
-  `workbench.py:3062/3085` (`_injected_facts`), not to the system prompt.
+  `workbench.py:3188`/`:3283` (`_injected_facts`), not to the system prompt.
+- The delta lane (`build_memory_delta_block`, `fact_retrieval.py:958`) is a
+  live projection over `facts.updated_at`, not a cursor: an UPDATE is
+  delivered like a new write, a retired row is excluded, and keys the recall
+  lane already showed are skipped. It used to compare a second-resolution
+  `updated_at` against a microsecond session stamp, which hid writes made in
+  the session's opening second. Fact writers now stamp
+  `timeutil.utc_now_text()` (fixed-width UTC microseconds) and the lane
+  compares those strings directly, so same-second writes are visible.
 - A fact value is **stored JSON-encoded**; every read door decodes it. Write one
   and read it back through a different door and a raw JSON blob is a
   serialization bug, not a data bug.
@@ -399,6 +418,51 @@ flowchart TB
   `price_for_model` is the **only** pricing source, returning
   `estimated: True` for the family-table and default fallbacks so a readout can
   distinguish a fact from a guess.
+
+---
+
+## 6. App surfaces and navigation (the current shell)
+
+```mermaid
+flowchart TB
+  SHELL["ChatLayout + SessionListNav<br/>New · Search → command palette<br/>Projects · Artifacts · Customize"]
+  SHELL --> ROUTES["routes.ts<br/>/c/:id · /artifacts · /settings<br/>/board · /runs · /live · /learning"]
+  ROUTES --> CHAT["ChatThread + ChatThreadComposer<br/>folder chip every turn · model picker<br/>effort/thinking controls"]
+  ROUTES --> ART["ArtifactsPage<br/>collectArtifacts over the 40 most recent chats"]
+  ROUTES --> SET["Settings overlay (WorkspaceShell)<br/>rail: Setup · Agent · Data · App"]
+  CHAT --> DRAWER["RightDrawer<br/>artifacts · circuit · diff · terminal · tasks · notes"]
+  DRAWER --> CIRC["Circuit drawer<br/>CircuitSchematicEditor owns the graph<br/>3D stage is a lazy three.js chunk"]
+  SET --> APPEAR["Appearance<br/>theme · font size · reduce motion<br/>show raw reasoning switch"]
+  ART --> DRAWER
+```
+
+**Not what it looks like**
+
+- **Search** is the command palette (`toggleCommandPalette`), not a full-text
+  page. The reference's Search row and `Ctrl+K` are the same door.
+- The **Projects** row opens the composer's folder picker. The picker is
+  mounted on every turn, not only an empty chat, so the row works in an active
+  conversation. Clearing a folder is sent to the backend before the local row
+  is cleared; a failed POST leaves the old folder visible.
+- **Settings is an overlay with a URL**: `/settings` renders the
+  `WorkspaceShell` dialog and its rail (`settings-registry.ts`), not a second
+  app. The rail is August's own (Model settings, Memory, Plugins, Skills,
+  Commands, …), so Claude reference items such as Billing or Claude Code are
+  deliberately absent.
+- **Thinking** cards render distilled steps by default. The raw branch is
+  reachable only through Settings → Appearance → Show raw reasoning, which is a
+  live `useSyncExternalStore` preference, and Arena uses the same distilled
+  list. The former Vision pill was removed because no server emits `vision`.
+- **Artifacts** has two verbs: a card opens that artifact through the drawer's
+  file viewer (or an external link), while a chat group's "Open chat" opens the
+  chat with the artifact list. The page derives from `collectArtifacts`, the
+  same collector as the in-chat drawer.
+- **Circuit** is the one drawer section with two renderers over one graph:
+  `CircuitSchematicEditor` owns the fetch and reports it through
+  `onGraphChange`; the 3D stage consumes that same object. three.js is a
+  separate lazy chunk (`CircuitBreadboard3D-*.js`), the stage mounts before the
+  graph arrives, parts are placed from their pin centroid, and the camera is
+  reachable by pointer, wheel and arrow/+/−/Home keys.
 
 ---
 
