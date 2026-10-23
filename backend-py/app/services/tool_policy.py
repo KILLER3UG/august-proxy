@@ -300,13 +300,15 @@ _SHELL_EXACT = frozenset({
     # Spawns the ngspice binary on a model-authored netlist — same
     # edit-mode gating as a shell command. Both names: the registered
     # circuit_* tool and the legacy unprefixed alias. circuit_test wraps
-    # simulate_circuit, so it spawns the binary too; circuit_export_vcd
+    # simulate_circuit, so it spawns the binary too; circuit_batch_test runs
+    # the same simulation over every deck in a folder, so it is the same
+    # capability reached through a different door; circuit_export_vcd
     # runs the deck through eprvcd for the VCD artifact; circuit_annotate
     # runs the .op and writes the voltage-colored SVG artifact;
     # firmware_compile spawns arduino-cli / avr-gcc for the HEX artifact;
     # firmware_run spawns the Node avr8js sidecar; hdl_lint/hdl_simulate/
     # hdl_test spawn ghdl/verilator/iverilog/cocotb child processes.
-    'simulate_circuit', 'circuit_simulate', 'circuit_test',
+    'simulate_circuit', 'circuit_simulate', 'circuit_test', 'circuit_batch_test',
     'circuit_export_vcd', 'circuit_annotate', 'firmware_compile',
     'firmware_run', 'hdl_lint', 'hdl_simulate', 'hdl_test',
     # board_monitor holds the serial port open for a bounded read window —
