@@ -36,6 +36,7 @@ import {
   MeshStandardMaterial,
   OrthographicCamera,
   PCFShadowMap,
+  Plane,
   Raycaster,
   Scene,
   TubeGeometry,
@@ -107,6 +108,11 @@ interface Stage {
   applyPot?: () => void;
   /** The slab is rebuilt when the board's extents change. */
   slabKey?: string;
+  /** Board-space origin chosen on the first non-empty graph. Keeping it
+   *  stable means adding a part does not re-centre every existing part. */
+  origin?: { x: number; z: number };
+  path?: string;
+  resetView?: () => void;
 }
 
 const SWEEP_DEG = 270;
@@ -200,15 +206,19 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
     const reduceMotion = prefersReducedMotion();
     const speed = reduceMotion ? TWEEN_SPEED_REDUCED : 1;
     const ray = new Raycaster();
+    // Orthographic zoom keeps the cursor's ground point fixed by moving what
+    // the camera looks at; the camera position is an offset from that target.
+    const target = new Vector3(0, 0, 0);
+    const groundPlane = new Plane(new Vector3(0, 1, 0), 0);
 
     const applyCamera = (): void => {
       const r = 26 / (zoom / 8.4);
       camera.position.set(
-        r * Math.cos(elevation) * Math.sin(azimuth),
-        r * Math.sin(elevation),
-        r * Math.cos(elevation) * Math.cos(azimuth),
+        target.x + r * Math.cos(elevation) * Math.sin(azimuth),
+        target.y + r * Math.sin(elevation),
+        target.z + r * Math.cos(elevation) * Math.cos(azimuth),
       );
-      camera.lookAt(0, 0, 0);
+      camera.lookAt(target);
       const half = halfBase * (8.4 / zoom);
       camera.left = -half;
       camera.right = half;
@@ -218,6 +228,15 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
     };
     stage.setFit = (extent: number): void => {
       halfBase = extent;
+      applyCamera();
+    };
+    stage.resetView = (): void => {
+      target.set(0, 0, 0);
+      zoom = 8.4;
+      azimuth = Math.PI / 5;
+      elevation = Math.PI / 4.2;
+      targetAz = azimuth;
+      targetEl = elevation;
       applyCamera();
     };
 
@@ -340,7 +359,27 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
     const onWheel = (e: WheelEvent): void => {
       e.preventDefault();
       idleSince = e.timeStamp;
-      zoom = Math.min(22, Math.max(3.2, zoom * (e.deltaY > 0 ? 0.92 : 1.08)));
+      // Normalise line/page delta modes and clamp one event's magnitude, so a
+      // trackpad flick and a mouse notch do not mean two different zooms.
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 100 : 1;
+      const factor = Math.min(1.25, Math.max(0.8, Math.exp(-e.deltaY * unit * 0.0015)));
+      const next = Math.min(22, Math.max(3.2, zoom * factor));
+      if (next === zoom) return;
+      ray.setFromCamera(stage.pointer, camera);
+      const anchor = new Vector3();
+      const onGround = ray.ray.intersectPlane(groundPlane, anchor);
+      const oldZoom = zoom;
+      zoom = next;
+      if (onGround) {
+        // k is the new half-extent over the old one; moving the target toward
+        // the anchor by k keeps the point under the cursor on screen.
+        const k = oldZoom / zoom;
+        target.set(
+          anchor.x + (target.x - anchor.x) * k,
+          0,
+          anchor.z + (target.z - anchor.z) * k,
+        );
+      }
     };
     const onClick = (): void => {
       if (dragMoved) {
@@ -364,6 +403,7 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
         azimuth = Math.PI / 5;
         elevation = Math.PI / 4.2;
         zoom = 8.4;
+        target.set(0, 0, 0);
       } else handled = false;
       if (!handled) return;
       targetAz = azimuth;
@@ -526,11 +566,23 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
       }
     }
     if (!Number.isFinite(minX)) return;
-    const cx = (minX + maxX) / 2;
-    const cy = (minY + maxY) / 2;
+    const bboxX = (minX + maxX) / 2;
+    const bboxZ = (minY + maxY) / 2;
+    // The origin is the first graph's bbox centre and then stays put. Using
+    // the CURRENT bbox as the origin made every existing part slide when one
+    // new part extended the board.
+    if (!stage.origin || stage.path !== graph?.path) {
+      stage.origin = { x: bboxX, z: bboxZ };
+      stage.path = graph?.path;
+      stage.resetView?.();
+    }
+    const cx = stage.origin.x;
+    const cy = stage.origin.z;
     const width = Math.max(4, (maxX - minX) * WORLD_PER_UNIT + 2);
     const depth = Math.max(4, (maxY - minY) * WORLD_PER_UNIT + 2);
     const slabKey = `${width}x${depth}`;
+    const slabMidX = (bboxX - cx) * WORLD_PER_UNIT;
+    const slabMidZ = (bboxZ - cy) * WORLD_PER_UNIT;
     if (stage.slabKey !== slabKey) {
       const old = stage.scene.getObjectByName('slab');
       if (old) {
@@ -544,7 +596,11 @@ export function CircuitBreadboard3D({ graph, selectedRef, onSelect, className }:
       stage.scene.add(slab);
       stage.slabKey = slabKey;
     }
-    stage.setFit?.(Math.max(width, depth) / 2 + 1.5);
+    const slab = stage.scene.getObjectByName('slab');
+    if (slab) slab.position.set(slabMidX, 0, slabMidZ);
+    stage.setFit?.(
+      Math.max(Math.abs(slabMidX) + width / 2, Math.abs(slabMidZ) + depth / 2) + 1.5,
+    );
 
     const wanted = new Set<string>();
     let order = 0;
