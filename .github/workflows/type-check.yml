@@ -138,6 +138,15 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: npm run check:sse
 
+      # register_all() hand-imports and hand-calls every tool-registration
+      # group. A module dropped into tool_registrations/ that nothing imports
+      # compiles, lints and starts fine — its tools just never reach the
+      # registry, and no other gate names them. Static census: one node
+      # process, no interpreter.
+      - name: Tool registration census (every register() module claimed)
+        working-directory: ${{ github.workspace }}
+        run: npm run check:tool-registration
+
       # The updater signature is the only thing standing between a published
       # release and an installer the app would refuse. The release job signs
       # with a private key from a secret and the app verifies with a public

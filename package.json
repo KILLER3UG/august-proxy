@@ -20,6 +20,7 @@
     "check:minisign": "node scripts/check-minisign.mjs",
     "check:naming": "node scripts/check-naming.mjs",
     "check:sse": "node scripts/check-sse-parity.mjs",
+    "check:tool-registration": "node scripts/check-tool-registration.mjs",
     "check:truncate": "node scripts/check-truncate.mjs",
     "check:version": "node scripts/check-version-sync.mjs",
     "dev": "node scripts/dev-app.mjs",
