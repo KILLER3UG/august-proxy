@@ -742,6 +742,160 @@ def _menu_volts(fqbn: str) -> float | None:
     return None
 
 
+# The macros a variant header answers the pin map with. PIN_A0 is THE trap:
+# the digital count is where ANALOG numbering starts, not
+# ``NUM_DIGITAL_PINS - NUM_ANALOG_INPUTS`` — measured on this machine's
+# installed cores, ``NUM_DIGITAL_PINS`` is the count INCLUDING the
+# analog-capable pins (standard: 20 with 6 analog, PIN_A0 14 → 14 digital),
+# and ``variants/eightanaloginputs`` (nano, pro) only ``#undef``s
+# NUM_ANALOG_INPUTS before redefining it — the subtraction would delete
+# D12/D13 and the LED pin from every board using that variant.
+_PIN_MACRO_RE = re.compile(
+    r'^#define\s+(PIN_A0|NUM_DIGITAL_PINS|NUM_ANALOG_INPUTS|LED_BUILTIN)\s+\(?(\d+)[uUlL]*\)?',
+    re.M,
+)
+_PIN_INCLUDE_RE = re.compile(r'^#include\s+"(\.\./[^"]+)"', re.M)
+# (header mtime_ns, size) → macros, the same stamp _menu_volts caches by: a
+# core upgrade cannot leave a stale pin map cached.
+_pin_macros_cache: dict[str, tuple[tuple[int, int], dict[str, int]]] = {}
+
+
+def _core_pin_macros(fqbn: str) -> dict[str, int]:
+    """Pin facts read from the INSTALLED core's ``variants/<variant>/pins_arduino.h``.
+
+    The chip is a data file the tool loads — the SimulIDE lesson
+    (``_menu_volts`` carries the same idea for the rail), applied to the pin
+    map: ``boards.txt`` names the board's variant, the variant header names
+    its pins. Precedence lives with the CALLER (``_effective_pin_row``): the
+    declared ``_BOARD_PINS`` row stays the override, because the 32u4
+    silkscreen disagrees with ``PIN_A0`` (Leonardo's header numbers A0 as 18
+    while its silkscreen carries 20 digital pins) and the table is where the
+    human-readable answer is declared.
+
+    Values come from the file's OWN ``#define``s first; a macro the file does
+    not define is filled from the sibling header it ``#include``s (one hop,
+    relative to ``variants/`` — ``micro`` carries none of these and includes
+    the Leonardo header whole; ``eightanaloginputs`` defines only the analog
+    count and includes ``standard`` for the rest). An own-file definition
+    always beats an included one, which is what the ``#undef``+``#define``
+    pair at the bottom of eightanaloginputs is saying anyway.
+
+    Returns {} when nothing answers: no platform installed, no variant named,
+    or a header without ``PIN_A0``. Empty is "ask the declared row", not a
+    fact about the board.
+    """
+    parts = board_base_fqbn(str(fqbn or '').strip()).split(':')
+    if len(parts) < 3:
+        return {}
+    vendor, arch, board = parts[0].lower(), parts[1].lower(), parts[2]
+    menus = [seg for seg in str(fqbn or '').split(':') if '=' in seg]
+    for root in _packages_roots():
+        hw = root / vendor / 'hardware' / arch
+        if not hw.is_dir():
+            continue
+        try:
+            versions = sorted((p for p in hw.iterdir() if p.is_dir()),
+                              key=lambda p: _version_key(p.name), reverse=True)
+        except OSError:
+            continue
+        for version in versions:
+            lines: list[str] | None = None
+            if version.name and (version / 'boards.txt').is_file():
+                try:
+                    lines = (version / 'boards.txt').read_text(
+                        encoding='utf-8', errors='replace'
+                    ).splitlines()
+                except OSError:
+                    lines = None
+            if lines is None:
+                continue
+            # The variant is a boards.txt fact, and a menu-qualified FQBN may
+            # select a different one (``<board>.menu.<k>.<v>.build.variant=``
+            # beats ``<board>.build.variant=``).
+            variant = ''
+            for seg in menus:
+                key, _, value = seg.partition('=')
+                needle = f'{board}.menu.{key}.{value}.build.variant='
+                variant = next(
+                    (ln[len(needle):].strip() for ln in lines if ln.startswith(needle)), ''
+                )
+                if variant:
+                    break
+            if not variant:
+                needle = f'{board}.build.variant='
+                variant = next(
+                    (ln[len(needle):].strip() for ln in lines if ln.startswith(needle)), ''
+                )
+            if not variant:
+                continue
+            header = version / 'variants' / variant / 'pins_arduino.h'
+            try:
+                stamp = header.stat()
+            except OSError:
+                continue
+            cached = _pin_macros_cache.get(str(header))
+            if cached and cached[0] == (stamp.st_mtime_ns, stamp.st_size):
+                return dict(cached[1])
+            macros: dict[str, int] = {}
+
+            def _scan(text: str, header_dir: Path, depth: int) -> None:
+                if depth > 4:
+                    return
+                for m in _PIN_MACRO_RE.finditer(text):
+                    macros.setdefault(m.group(1), int(m.group(2)))
+                for inc in _PIN_INCLUDE_RE.finditer(text):
+                    # A variant's `#include "../standard/pins_arduino.h"` is
+                    # relative to the INCLUDING FILE's directory, like the
+                    # preprocessor's quoted form — not to variants/.
+                    target = (header_dir / inc.group(1)).resolve()
+                    try:
+                        _scan(
+                            target.read_text(encoding='utf-8', errors='replace'),
+                            target.parent,
+                            depth + 1,
+                        )
+                    except OSError:
+                        continue
+
+            try:
+                _scan(header.read_text(encoding='utf-8', errors='replace'),
+                      header.parent, 0)
+            except OSError:
+                continue
+            if not macros:
+                continue
+            _pin_macros_cache[str(header)] = (
+                (stamp.st_mtime_ns, stamp.st_size), dict(macros)
+            )
+            return dict(macros)
+    return {}
+
+
+def _effective_pin_row(board: str) -> dict[str, object]:
+    """The pin map a board answers with: the declared row, else the core.
+
+    ``_BOARD_PINS`` is the override — the human-declared answer, carrying the
+    silkscreen spelling where the header's numbers disagree — and the
+    installed core is the fallback for every board nobody filed, the same
+    order ``board_logic_level`` reads. The core answers nothing without
+    ``PIN_A0``, because a digital count derived any other way is the trap
+    recorded above.
+    """
+    row = _board_row(board)
+    if row:
+        return row
+    macros = _core_pin_macros(board)
+    if 'PIN_A0' not in macros:
+        return {}
+    out: dict[str, object] = {
+        'digital': macros['PIN_A0'],
+        'analog': macros.get('NUM_ANALOG_INPUTS', 0),
+    }
+    if 'LED_BUILTIN' in macros:
+        out['led'] = macros['LED_BUILTIN']
+    return out
+
+
 def board_logic_level(board: str) -> float:
     """Volts at logic 1 for a board.
 
@@ -1056,12 +1210,17 @@ def _board_row(board: str) -> dict[str, object]:
 
 
 def _board_pins(fqbn: str) -> dict[str, object]:
-    """The pin map for a board, or an empty map for one we do not know."""
-    return _board_row(fqbn)
+    """The pin map for a board, or an empty map for one we do not know.
+
+    The declared row first, the installed core's variant header second — the
+    same precedence ``board_pin_list`` renders, so the board list's ``pins``
+    payload and the pin LIST cannot disagree about one board.
+    """
+    return _effective_pin_row(fqbn)
 
 
 def board_pin_list(board: str) -> list[dict[str, object]]:
-    """The board's pins, from ``_BOARD_PINS`` — the ONE pin table.
+    """The board's pins: the declared ``_BOARD_PINS`` row, else the core.
 
     One entry per pin: ``name`` (D0..Dn, A0..Am — the label on the
     silkscreen, and the name a deck names the node by), ``number`` (the
@@ -1078,7 +1237,7 @@ def board_pin_list(board: str) -> list[dict[str, object]]:
     firmware bridge is AVR8-only, because the emulator's pin map is the
     ATmega328P's, so no timeline arrives speaking 32u4 numbers.
     """
-    pins = _board_row(board)
+    pins = _effective_pin_row(board)
     if not pins:
         return []
     digital = pins.get('digital')
