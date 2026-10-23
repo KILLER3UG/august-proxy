@@ -230,9 +230,13 @@ export function WorkspaceShell({
               : // The review inbox has no door of its own any more — proposals
                 // live inside Skills and Memory — so the ambient "there is
                 // something to decide" badge marks those two doors instead.
-                (s.id === 'skills' || s.id === 'memory-knowledge') && inbox.total > 0
-                ? String(inbox.total)
-                : null
+                // Each door counts only its own family: one skill proposal
+                // used to paint the same total on Memory too.
+                s.id === 'skills' && inbox.harness > 0
+                ? String(inbox.harness)
+                : s.id === 'memory-knowledge' && inbox.memory > 0
+                  ? String(inbox.memory)
+                  : null
           }
           onSelect={() => {
             if (!isFiltering) {
