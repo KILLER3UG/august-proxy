@@ -158,7 +158,7 @@ def _load_index(scope: str = 'global') -> dict[str, Any]:
             scopeClause = "AND (scope IS NULL OR scope = 'global' OR scope = ?)"
             params = (scope,)
         factRows = conn.execute(
-            "SELECT fact_key, fact_value, title, kind, category, description, "
+            "SELECT fact_key, fact_value, title, kind, category, description, source, "
             "COALESCE(scope, 'global') AS scope, COALESCE(updated_at, '') AS updated_at FROM facts "
             "WHERE (expires_at IS NULL OR expires_at = '' OR julianday(expires_at) > julianday('now')) "
             "AND (status IS NULL OR status = 'active') "
@@ -183,6 +183,7 @@ def _load_index(scope: str = 'global') -> dict[str, Any]:
                     'title': title,
                     'description': desc,
                     'body': body,
+                    'source': str(r['source'] or ''),
                     'kind': str(r['kind'] or 'fact'),
                     'category': str(r['category'] or 'general'),
                     # Carry the row's true scope — recall metrics
@@ -584,18 +585,31 @@ def retrieve_relevant_facts(
 # ── shared rendering (one shape for both recall lanes) ──────────────────────
 
 
+_DISTILLED_SOURCE = 'harness'
+_DISTILLED_MARK = '[distilled] '
+
+
 def _fact_line(row: dict[str, object], *, entry_cap: int = _ENTRY_CHAR_CAP) -> str:
     """Render one corpus row as its ``- title: body`` line.
 
     Used by BOTH lanes (profile + BM25) so the two can never drift in shape,
     and so one long body never crowds out its neighbours.
+
+    A fact the harness distilled from a transcript is marked, because the model
+    otherwise cannot tell its own earlier inference apart from something the
+    user actually said — and the two deserve different trust. Nothing here
+    refuses the fact: the distiller has no probe step, so it can never *earn*
+    the distinction, only disclose it. Marking is the honest half of a lift
+    measurement August does not have.
     """
     title = str(row.get('title') or '').strip()
     body = str(row.get('body') or '').strip()
     if len(body) > entry_cap:
         body = body[:entry_cap].rstrip() + '…'
     label = title or str(row.get('key') or '')
-    return f'- {label}: {body}' if body else f'- {label}'
+    mark = _DISTILLED_MARK if str(row.get('source') or '') == _DISTILLED_SOURCE else ''
+    text = f'{mark}{label}: {body}' if body else f'{mark}{label}'
+    return f'- {text}'
 
 
 def _row_identity(row: dict[str, object]) -> tuple[str, str]:
@@ -990,7 +1004,7 @@ def build_memory_delta_block(
             scopeClause = "AND (scope IS NULL OR scope = 'global')"
             scopeParams = ()
         rows = conn.execute(
-            "SELECT fact_key, fact_value, title, kind, category, description, "
+            "SELECT fact_key, fact_value, title, kind, category, description, source, "
             "COALESCE(scope, 'global') AS scope, COALESCE(updated_at, '') AS updated_at FROM facts "
             "WHERE (expires_at IS NULL OR expires_at = '' OR julianday(expires_at) > julianday('now')) "
             "AND (status IS NULL OR status = 'active') "
@@ -1014,6 +1028,7 @@ def build_memory_delta_block(
             'key': str(r['fact_key'] or ''),
             'title': str(r['title'] or '').strip(),
             'body': _fact_body_text(r['fact_value']),
+            'source': str(r['source'] or ''),
             'kind': str(r['kind'] or 'fact'),
             'category': str(r['category'] or 'general'),
             'scope': str(r['scope'] or 'global'),
