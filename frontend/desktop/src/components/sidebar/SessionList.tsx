@@ -60,6 +60,7 @@ import { NotificationsPanel } from "@/components/overlays/NotificationsPanel";
 import { SwitchAccountModal } from "@/components/overlays/SwitchAccountModal";
 import { usageApi } from '@/api/usage';
 import { SessionUsageProvider, NO_DELTAS } from './session-usage';
+import { useSessionReadState } from './session-read-state';
 
 const SESSIONS_KEY = "august-pinned-sessions";
 const STORAGE = (() => {
@@ -589,6 +590,24 @@ export function SessionList({
     if (next) setActiveStamp(next);
   }, [sessions, liveStatus, isLive, activeStamp]);
 
+  /** When this chat last moved, in ms — ONE definition, because both the sort
+   *  below and the unread test compare against it. The three stamps are merged
+   *  with max because each covers a gap in the others: `updatedAt` is the SoT
+   *  but only refreshes on the 60s reconcile, `activeStamp` covers the seconds
+   *  in between, and `startedAt` is all a local draft that has never synced has.
+   *
+   *  A second, slightly different recency for "is this unread" would make a row
+   *  flip groups for reasons the list order says nothing about. */
+  const recencyOf = useCallback(
+    (s: Session) =>
+      Math.max(
+        activeStamp[s.id] ?? 0,
+        Date.parse(s.updatedAt || '') || 0,
+        Date.parse(s.startedAt || '') || 0,
+      ),
+    [activeStamp],
+  );
+
   // DeepSeek parity: rows are ordered by the remembered choice — Newest
   // (default) or Name — applied to the unpinned pool. Folders and Pinned keep
   // their own deliberate order.
@@ -601,17 +620,8 @@ export function SessionList({
   const others = useMemo(() => {
     const list = visible.filter((s) => !pinnedIds.has(s.id));
     // "Newest first" is LAST ACTIVITY, not creation: a chat you replied to a
-    // minute ago belongs at the top even if you opened it last week. The three
-    // stamps are merged with max because each covers a gap in the others —
-    // `updatedAt` is the SoT but only refreshes on the 60s reconcile,
-    // `activeStamp` covers the seconds in between, and `startedAt` is all a
-    // local draft that has never synced has.
-    const recency = (x: Session) =>
-      Math.max(
-        activeStamp[x.id] ?? 0,
-        Date.parse(x.updatedAt || '') || 0,
-        Date.parse(x.startedAt || '') || 0,
-      );
+    // minute ago belongs at the top even if you opened it last week.
+    const recency = recencyOf;
     const live = (x: Session) => isLive(liveStatus(x));
     return list.sort((a, b) => {
       const aLive = live(a);
@@ -628,7 +638,45 @@ export function SessionList({
         ? (a.title || '').localeCompare(b.title || '')
         : recency(b) - recency(a);
     });
-  }, [visible, pinnedIds, sortBy, activeStamp, liveStatus, isLive]);
+  }, [visible, pinnedIds, sortBy, recencyOf, liveStatus, isLive]);
+
+  // ── New / Read ────────────────────────────────────────────────────────
+  // The reference's second group is "Read", which is only a real group because
+  // the app also knows which chats you have NOT read. That stamp lives in
+  // ./session-read-state.
+  const { readMap, markRead, backfill } = useSessionReadState();
+
+  /** Unread = it moved after you last opened it. The chat on screen is never
+   *  unread: you are looking at it. */
+  const isUnread = useCallback(
+    (s: Session) => s.id !== activeId && recencyOf(s) > (readMap[s.id] ?? 0),
+    [activeId, readMap, recencyOf],
+  );
+
+  // A chat appears in exactly ONE group, so opening one moves it out of New and
+  // back into its folder under Read rather than leaving a copy behind.
+  const { unreadOthers, readOthers } = useMemo(
+    () => ({
+      unreadOthers: others.filter(isUnread),
+      readOthers: others.filter((s) => !isUnread(s)),
+    }),
+    [others, isUnread],
+  );
+
+  // Chats that predate this feature are stamped with the activity they ALREADY
+  // have, so shipping the grouping cannot paint every old chat as new.
+  useEffect(() => {
+    backfill(visible.map((s) => [s.id, recencyOf(s)] as [string, number]));
+  }, [visible, recencyOf, backfill]);
+
+  // Opening a chat reads it — and a reply that lands while it is on screen
+  // keeps it read, because the stamp follows `updatedAt`. Without that second
+  // half the chat you are watching would announce itself as something you
+  // missed the moment it answered.
+  const activeUpdatedAt = sessions.find((s) => s.id === activeId)?.updatedAt;
+  useEffect(() => {
+    if (activeId) markRead(activeId);
+  }, [activeId, activeUpdatedAt, markRead]);
 
   /** Group each pool by project — the workspace a chat runs in — instead of by
    *  date. Persisted per install; ON by default because the pool already
@@ -788,13 +836,13 @@ export function SessionList({
         : 0,
     [searching, sessions, matchesSearch],
   );
-  // Single pass to bucket `others` by folderId (and unfiled) for the JSX
+  // Single pass to bucket the READ pool by folderId (and unfiled) for the JSX
   // below — the previous code called `others.filter(...)` per folder in the
   // render body, which was O(n×folders) on every render.
   const { othersByFolder, unfiledSessions, shownOthers } = useMemo(() => {
     const byFolder = new Map<string, Session[]>();
     const unfiled: Session[] = [];
-    for (const s of others) {
+    for (const s of readOthers) {
       if (searching && !matchesSearch(s)) continue;
       if (s.folderId) {
         const list = byFolder.get(s.folderId);
@@ -807,22 +855,31 @@ export function SessionList({
     let shown = capped(unfiled).length;
     for (const list of byFolder.values()) shown += capped(list).length;
     return { othersByFolder: byFolder, unfiledSessions: unfiled, shownOthers: shown };
-  }, [others, searching, matchesSearch]);
+  }, [readOthers, searching, matchesSearch]);
+
+  const visibleUnread = useMemo(
+    () => (searching ? unreadOthers.filter(matchesSearch) : unreadOthers),
+    [searching, unreadOthers, matchesSearch],
+  );
 
   // Pool sizes WITHOUT the search filter, for the shown/total caption. Only
   // walked while a filter can actually hide something, so the common
   // (unfiltered) render stays a single pass.
+  //
+  // The READ pool, not every unpinned chat: a folder's "3 of 5" that counted
+  // two chats currently sitting up under New would be a total the reader can
+  // never arrive at by looking at that folder.
   const poolTotals = useMemo(() => {
     const byFolder = new Map<string, number>();
     let unfiled = 0;
     if (searching) {
-      for (const s of others) {
+      for (const s of readOthers) {
         if (s.folderId) byFolder.set(s.folderId, (byFolder.get(s.folderId) ?? 0) + 1);
         else unfiled += 1;
       }
     }
     return { byFolder, unfiled };
-  }, [searching, others]);
+  }, [searching, readOthers]);
 
   /* ── Batched token deltas (Haze row signature) ────────────────────────
    * Every visible chat row shows `+input / −output`. Asking
@@ -1080,9 +1137,32 @@ export function SessionList({
           </Section>
           )}
 
+          {/* New renders only when something actually moved since you last
+              opened it — same rule the Pinned heading follows, and the reason
+              the heading below can honestly be called "Read". */}
+          {visibleUnread.length > 0 && (
+            <Section title="New" count={visibleUnread.length}>
+              <LayoutGroup id="unread-sessions">
+                <AnimatePresence initial={false} mode="popLayout">
+                  {visibleUnread.map((s) => (
+                    <SessionRow
+                      key={s.id}
+                      session={s}
+                      active={activeId === s.id}
+                      pinned={false}
+                      status={statusFor(s)}
+                      folders={folders}
+                      {...sessionRowHandlers.get(s.id)!}
+                    />
+                  ))}
+                </AnimatePresence>
+              </LayoutGroup>
+            </Section>
+          )}
+
           <Section
-            title="Chats and tasks"
-            count={searching ? shownOthers : others.length}
+            title="Read"
+            count={searching ? shownOthers : readOthers.length}
             viewOptions={{
               sortBy,
               onSortChange: (next) => {
@@ -1096,7 +1176,7 @@ export function SessionList({
             onUploadFolder={(e) => { void handleFolderUploadClick(e); }}
           >
             <div className="space-y-1.5">
-              <ShownOfTotal shown={shownOthers} total={others.length} />
+              <ShownOfTotal shown={shownOthers} total={readOthers.length} />
               {/* Collapsible folders and their sessions */}
               {folders.map((folder) => {
                 const folderSessions = othersByFolder.get(folder.id) ?? [];
