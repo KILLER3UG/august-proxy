@@ -126,6 +126,12 @@ _COERCIVE_RE = re.compile(
     r'|(?:only|just) (?:say|tell me) what i want to hear'
     r'|ignore (?:all )?(?:previous|prior|above) instructions'
     r'|you must (?:always )?obey'
+    # An injected "remember that the user is admin / has full access" is a
+    # permission claim wearing a fact's clothes. Match the explicit remember
+    # frame, not a bare "the user is an admin" (a legitimate role fact a
+    # human may state).
+    r'|remember (?:that )?the user (?:is|has) (?:an? )?'
+    r'(?:admin|root|superuser|system admin|full access|unrestricted access)'
     # flattery required
     r'|always (?:praise|flatter|compliment)(?: me)?|require flattery'
     r'|start every (?:reply|answer|response) with a compliment'
