@@ -462,9 +462,10 @@ def _hot_usage() -> dict[str, tuple[int, str]]:
     return out
 
 
-# The floor below which a usage boost is too decayed to promote a fact that
-# did not match lexically. One use, undecayed, is exactly 0.05 — the smallest
-# boost that should count as a live signal.
+# The floor below which a usage boost is too decayed to rescue a lexical match
+# that the disuse penalty dragged to zero. One use, undecayed, is exactly 0.05
+# — the smallest live signal. Zero-overlap facts are filtered before this
+# point (usage re-ranks matches; it does not create them).
 _MIN_USEFUL_BOOST = 0.05
 
 # How far a stored confidence of 0.0 may dampen a lexical score. Confidence can
@@ -648,15 +649,14 @@ def retrieve_relevant_facts(
             # Follow-up expansion: prior-turn overlap counts at half
             # weight — context, not a substitute for the current ask.
             s += 0.5 * bm25.score(priorTokens, i)
-        # NOTE: no `if s <= 0: continue` here. Discarding zero-lexical facts
-        # BEFORE the usage boost made the entire never-matched part of the
-        # corpus structurally invisible to the one mechanism designed to learn
-        # from usage: a fact the user is about to need is unreachable by "it
-        # has been useful before" if it has never matched once, and a stale
-        # but once-hot fact decays out and can never come back. A fact with no
-        # lexical overlap AND no usage still ends at 0 and is filtered below —
-        # the boost can promote a weakly-matching previously-useful fact, it
-        # cannot invent one from nothing.
+        # A fact that shares NO scored term with the query is not relevant,
+        # however useful it has been. Letting the usage boost create the match
+        # made one `remember` (which bumps use_count to 1, boost exactly 0.05)
+        # enough to surface that fact on every later turn — "What is the
+        # capital of France?" returned the whole small store as "Relevant
+        # memory". Usage re-ranks lexical matches; it does not invent one.
+        if s <= 0:
+            continue
         scored.append((s, row))
     scored.sort(key=lambda pair: pair[0], reverse=True)
     # Phase D item 3 + M-1 decoupling: the usage boost decays with idle
