@@ -76,3 +76,20 @@ The 13 live checks in the main goal, run through the real store/tool/prompt path
 and the scripted-provider loop; live `facts`/`memory_store` counts and the live
 skills-dir hash are re-checked afterwards. Model-judgment checks remain BLOCKED
 without a funded provider and are reported with substitute evidence.
+
+## Shipped 2026-10-25
+
+| Item | Commit | Live proof |
+|------|--------|------------|
+| M1/M2/M3 record shape, migration 056, aliases, version CAS, cascade, history | `9d74a334` | shape/CAS/cascade/history harness; migration 056 on a copy of the live schema with backfill and `.pre-migration` |
+| P1/X1 read lanes, master off, prompt triggers, person/sensitive filtering, permission-claim refusal | `46600697`, `1cd3408f` | master off → all four doors refuse, prompt 9301→5556 chars; profile+preference lane; person/sensitive absent from index; injected admin payload refused |
+| S1–S4 strict frontmatter, gating, caps, L2, external roots | `8485cdb5` | 8 malformed fixtures skipped with reasons; 3 gating cases hidden; L2 traversal variants refused; warning returned |
+| S5 install preview/confirm/scan/local | `a5329dce` | preview wrote nothing; confirm installed; unsafe pack refused and left no directory |
+| U1/U2 master switch, tag marker, save chip, install confirm | `58ff3147`, `237cf42e`, `6806f2bd` | Playwright: tags, master on/off, detail tag, pack preview/confirm, skill delete; chip rendered and Undo present |
+| API artifacts for the history route | `6806f2bd` | check:api, check:api-index green |
+
+Remaining named limits: model-judgment checks (direct answer, drafting judgment, the model choosing
+to load a skill) need a funded provider; the derived-fact producer is forward-looking (the store/
+cascade is proven, no current path writes `derived_from`); the bundled checkout remains writable by
+raw file tools (repo-wins deviation); the generic `read_file` remains machine-wide, so L2 must go
+through `load_skill(file=…)`.
