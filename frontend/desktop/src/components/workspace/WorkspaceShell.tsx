@@ -19,7 +19,13 @@ import {
 import { useLocation, useNavigate } from 'react-router-dom';
 import { WorkspaceNavLink } from './WorkspaceNavLink';
 import { SettingsSearch } from '@/components/settings/SettingsSearch';
-import { MODAL_LAYER, modalLayerClass } from '@/components/overlays/modal-layers';
+import {
+  SETTINGS_BACKDROP_CLASS,
+  SETTINGS_COLUMN_CLASS,
+  SETTINGS_CONTENT_CLASS,
+  SETTINGS_PANEL_CLASS,
+  SETTINGS_RAIL_CLASS,
+} from '@/components/settings/SettingsFrame';
 import { useAppUpdate } from '@/hooks/useAppUpdate';
 import { useAccountStore } from '@/store/account';
 import { useReviewInboxCount } from '@/lib/useReviewInboxCount';
@@ -278,84 +284,33 @@ export function WorkspaceShell({
      * replaces it: the chat stays behind, and the panel owns its own scroll so
      * no section can stretch the frame.
      *
-     * The backdrop DIMS what is behind it, because the reference does. The
-     * captured Claude settings modal is "a centred modal on a DIMMED chat
-     * behind it" (docs/plans/2026-10-11-ui-reference-capture.md:20) and the
-     * captured Haze settings panel says the same — "The chat is dimmed behind
-     * it" (the same file, :252). `bg-scrim` is the app's own scrim token
-     * (--dt-overlay-scrim: 32% over the light ground, 55% over the dark one),
-     * the same veil the responsive sidebar and drawer overlays already use.
+     * The frame's CLASSES come from `components/settings/SettingsFrame.tsx`,
+     * which is also what renders while this module's chunk is still loading —
+     * so the placeholder and the panel are the same box by construction. Read
+     * the sizing and scrim rationale there.
      *
-     * This backdrop used to carry NO tint, and the comment that sat here
-     * claimed the reference agreed — it did not, and the claim is what kept
-     * the behaviour in place. The panel is 920×680 and centred, so the dimmed
-     * app reads around it exactly as the captured reference shows.
-     *
-     * The panel sits on the USER-OWNED rung of the modal ladder
-     * (`components/overlays/modal-layers.ts`): above the app-owned first-run
-     * surfaces, which step aside while it is open. Those surfaces used to
-     * share this z-index with the panel, so the winner was decided by mount
-     * order — the first-run setup checklist painted over this whole panel and
-     * swallowed every click in it.
-     *
-     * Click-outside-to-close still works: the dialog stops propagation, so
+     * Click-outside-to-close works because the dialog stops propagation, so
      * only a click on the exposed app dismisses. */
     <div
-      className={cn(
-        'fixed inset-0 flex items-center justify-center bg-scrim p-3 sm:p-8',
-        modalLayerClass(MODAL_LAYER.userOwned),
-      )}
+      className={SETTINGS_BACKDROP_CLASS}
       onClick={closeToWorkspace}
       data-testid="settings-backdrop"
     >
-      {/* The panel is sized by the ROWS it has to hold, and the rows are
-       * three-column: a name, a value, and a date. At 920px the content
-       * column was 616px, so the name took 210px and the value - the
-       * informative column, the one the row exists for - was squeezed into
-       * ~300px and truncated after ~48 characters, while the name sat in a
-       * gap. The reference's settings is a WIDE panel (the owner's capture
-       * measures ~1600px across) whose content column gives the value
-       * ~690px.
-       *
-       * So the panel is wide now: 1440px, which is inside the reference's
-       * own 860-1600px range, and the content column goes from 616px to
-       * ~1080px. It is still a CENTRED modal over a live chat - that is
-       * August's identity and the reference's shape too - and `w-full` plus
-       * the padding keeps it honest on a narrow window.
-       *
-       * It used to be `h-full max-h-full` inside a `fixed inset-0` flex box,
-       * which pinned it to the full viewport height minus padding: 92% of the
-       * window at ANY window size, so opening settings covered essentially
-       * the whole app. `min()` keeps the cap honest on a short window,
-       * where the panel scrolls internally instead of overflowing. */}
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Settings"
         ref={trapRef}
-        className="relative flex max-h-[min(880px,calc(100vh-3rem))] w-full max-w-[1440px] overflow-hidden rounded-2xl border border-hairline-strong bg-background shadow-2xl"
+        className={SETTINGS_PANEL_CLASS}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Left rail.
-            No `h-full`: the panel's height is content-driven and capped by
-            `max-h`, so a percentage height resolves against an indefinite
-            parent and falls back to the rail's own content height — 670px
-            inside a 636px panel, with the profile footer clipped by the
-            panel's `overflow-hidden`. `align-items: stretch` plus `min-h-0`
-            makes the rail exactly the panel height and lets the inner nav
-            scroll, which is what the row of 17 sections needs.
-
-            The rail is RESPONSIVE, and that was measured rather than assumed.
-            At a fixed `w-60` (240px) it never yielded, so forcing the panel
-            narrow produced: 560px panel -> 313px column with the "Dark" button
-            of the Mode control pushed outside it; 420px -> 173px column with
-            System/Light/Dark AND all four font pills overflowing; 340px -> 93px
-            column and a horizontal scrollbar on the content region. `w-44`
-            below `sm` gives the column 360px at a 560px panel and 220px at
-            420px, which holds. The reference rail is narrow too (~180px in an
-            880px panel) — this is that proportion, applied responsively. */}
+        {/* Left rail — width and the no-`h-full` rule live with the class in
+            SettingsFrame. What belongs here is that the rail's own `nav` is the
+            scroller: 17 section rows overflow any panel height, and a rail that
+            grows instead of scrolling pushes the profile footer out of a panel
+            with `overflow-hidden`. */}
         <aside
-          className="flex min-h-0 w-44 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar sm:w-60"
+          className={SETTINGS_RAIL_CLASS}
           aria-label="Settings sections"
         >
           <div className="px-3 pb-2 pt-3">
@@ -410,22 +365,9 @@ export function WorkspaceShell({
         <ProfileRailRow />
       </aside>
 
-      {/* The reading column is centred in the space LEFT BY THE RAIL, and is
-         * deliberately NOT re-centred on the window. It used to carry `pr-60`
-         * — mirroring the rail's width on the right — to put the column's
-         * centre on screen centre. That cost 240px of content width: measured
-         * 361px of usable column inside an 848px panel, against ~640px in the
-         * reference. And the thing it bought does not exist in the reference.
-         * Haze's dialog spans 520..1400 (centre 960, the window centre) while
-         * its content pane spans 731..1372 — centre 1051, i.e. 91px RIGHT of
-         * window centre, because the rail sits inside the modal on the left. A
-         * left rail in a centred dialog pushes its content pane right by
-         * construction; every reference works that way.
-         *
-         * So the lost width was the bug and the off-centre column was never
-         * the fix. `workspace-shell-tier-filter.test.tsx` asserted `pr-60` was
-         * load-bearing; that pinned the wrong claim as a test, so it is
-         * rewritten below rather than deleted.
+      {/* The content region and its reading column: the widths and the
+         * centred-in-the-space-the-rail-leaves rule live with the classes in
+         * SettingsFrame, next to the placeholder that shares them.
          *
          * contentRef scopes the ?field= deep link to the section body, so a
          * control search never resolves against the rail that listed it.
@@ -433,23 +375,11 @@ export function WorkspaceShell({
          * whole settings pane a horizontal scrollbar. */}
         <div
           ref={contentRef}
-          className="flex min-h-0 flex-1 justify-center overflow-y-auto overflow-x-hidden"
+          className={SETTINGS_CONTENT_CLASS}
           data-testid="settings-content-region"
         >
-          {/* The 680px cap was calibrated, but to the reference dialog as
-              it was MEASURED THEN: a ~848px panel with a ~640px content
-              column. The reference the owner attached is a different shape
-              - a ~1600px settings panel whose content column is ~1290px,
-              and whose memory rows are three columns at ONE type size with
-              the VALUE column getting ~690px of them.
-              At 680px the value column was 303px, so every value in the
-              memory list truncated after ~48 characters while the name sat
-              in a gap the width of a sentence. The cap is 1080px now,
-              which is the same PROPORTION of the panel the reference has
-              (81% of its width; 75% here), and the panels that carry
-              their own inner measure are unaffected. */}
           <div
-            className="flex min-h-full w-full max-w-[1080px] flex-col"
+            className={SETTINGS_COLUMN_CLASS}
             data-testid="settings-content-column"
           >
             {children}

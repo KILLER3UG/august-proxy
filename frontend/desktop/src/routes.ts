@@ -18,10 +18,17 @@ import { ChatThread } from '@/sections/chat/ChatThread';
 import { SETTINGS_SECTIONS } from '@/settings/settings-registry';
 import { PageLoader } from '@/components/PageLoader';
 import { SectionBoundary } from '@/components/SectionBoundary';
+import { SettingsFrameSkeleton } from '@/components/settings/SettingsFrame';
 
 // Lazy-load heavy non-chat surfaces so the chat shell stays on the critical path.
+// ONE import expression, shared by the lazy element and `preloadSettingsPage`
+// below: Vite dedupes the specifier, so warming it makes `lazy()` resolve from
+// the module that is already in flight rather than issuing a second fetch.
+function loadSettingsPage() {
+  return import('@/sections/settings/SettingsPage');
+}
 const SettingsPage = lazy(() =>
-  import('@/sections/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })),
+  loadSettingsPage().then((m) => ({ default: m.SettingsPage })),
 );
 const AutomationsPage = lazy(() =>
   import('@/sections/automations/AutomationsPage').then((m) => ({ default: m.AutomationsPage })),
@@ -182,7 +189,25 @@ export const SETTINGS_TABS: readonly SettingsTab[] = SETTINGS_SECTIONS.filter((s
  * component because a component is what a route element is, not because a
  * constant would have broken. */
 export function SettingsPageRoute(): ReactNode {
-  return React.createElement(Lazy, null, React.createElement(SettingsPage));
+  return React.createElement(
+    Suspense,
+    { fallback: React.createElement(SettingsFrameSkeleton) },
+    React.createElement(SettingsPage),
+  );
+}
+
+/** Fetch the settings chunk before it is asked for.
+ *
+ *  The panel is the most-opened surface after the chat, and its chunk is 7 kB
+ *  gzipped — cheaper than the frame-less loading state it buys back. Fired from
+ *  main.tsx's idle deferral, so it never competes with the first paint.
+ *
+ *  This is a latency fix, not the correctness fix: `SettingsFrameSkeleton` is
+ *  what makes a COLD first open (idle callback starved, slow disk, a dev
+ *  reload that lands straight on Customize) look like the dialog opening
+ *  instead of a stray list under the page you were on. */
+export function preloadSettingsPage(): void {
+  void loadSettingsPage();
 }
 
 /* Dev-only design token inspector. `DesignRoute` is null in a production build

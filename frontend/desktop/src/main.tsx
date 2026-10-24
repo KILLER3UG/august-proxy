@@ -15,6 +15,7 @@ import { startRealtimeBridge } from './realtime/bridge';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { toast } from 'sonner';
 import App from './App';
+import { preloadSettingsPage } from './routes';
 import './styles.css';
 
 // The desktop webview has no console, so surface uncaught errors / rejected
@@ -76,9 +77,12 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 // Defer non-critical cold-start work until after first paint / idle.
 // KaTeX CSS is only needed when math renders; voice builtins register
 // command handlers that chat can live without for the first frame.
+// The settings chunk is fetched here because the panel is the next thing
+// anyone opens, and 7 kB at idle is cheaper than the dialog arriving late.
 function deferNonCritical() {
   void import('katex/dist/katex.min.css');
   void import('./api/voice/builtins');
+  preloadSettingsPage();
 }
 
 if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
