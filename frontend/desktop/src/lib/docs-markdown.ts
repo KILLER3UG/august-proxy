@@ -15,6 +15,43 @@ export interface Segment {
  *  validator counted but the reader did not lift would render as a code block. */
 const MERMAID_FENCE = /^```[ \t]*mermaid[ \t]*\r?\n([\s\S]*?)\r?\n^[ \t]*```[ \t]*$/m;
 
+/** The authored text under a heading, up to the next heading of the same or a
+ *  higher level.
+ *
+ *  `diagramDetails` points at a heading in the same document rather than
+ *  copying prose into metadata, and the contract says the browser shows that
+ *  content. Returning the heading's own section is what makes the panel show
+ *  something instead of telling the reader to go find it.
+ *
+ *  Matching is trimmed and case-insensitive because the mapping is authored by
+ *  hand next to a heading written by hand; the validator already refuses a
+ *  `diagramDetails` target that is not one of the document's headings, so this
+ *  only has to be forgiving about whitespace, not about existence.
+ */
+export function extractSection(body: string, heading: string): string {
+  const lines = body.replace(/\r\n/g, '\n').split('\n');
+  const wanted = heading.trim().toLowerCase();
+  let start = -1;
+  let level = 0;
+  for (let i = 0; i < lines.length; i += 1) {
+    const m = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(lines[i]);
+    if (!m) continue;
+    if (m[2].trim().toLowerCase() === wanted) {
+      start = i + 1;
+      level = m[1].length;
+      break;
+    }
+  }
+  if (start === -1) return '';
+  const collected: string[] = [];
+  for (let i = start; i < lines.length; i += 1) {
+    const m = /^(#{1,6})\s+/.exec(lines[i]);
+    if (m && m[1].length <= level) break;
+    collected.push(lines[i]);
+  }
+  return collected.join('\n').trim();
+}
+
 /** Split a document into markdown and diagram segments, in source order. */
 export function splitMermaidSegments(body: string): Segment[] {
   const segments: Segment[] = [];

@@ -36,7 +36,7 @@ import {
   type DocsPageNode,
 } from '@/api/api-client/docs-state';
 import { PageLoader } from '@/components/PageLoader';
-import { splitMermaidSegments, stripDuplicateTitle } from '@/lib/docs-markdown';
+import { extractSection, splitMermaidSegments, stripDuplicateTitle } from '@/lib/docs-markdown';
 import { cn } from '@/lib/utils';
 
 const PROJECT_KEY = 'august.docsProject';
@@ -122,6 +122,12 @@ export function DocsPage() {
   const segments = useMemo(
     () => splitMermaidSegments(page ? stripDuplicateTitle(body, page.title) : body),
     [body, page],
+  );
+  // The authored text behind a diagramDetails node, from the same stripped body
+  // the page renders, so the panel and the prose under it cannot disagree.
+  const detailSection = useMemo(
+    () => (detail ? extractSection(stripDuplicateTitle(body, page?.title ?? ''), detail) : ''),
+    [detail, body, page],
   );
   const ancestors = useMemo(() => {
     const chain: DocsPageNode[] = [];
@@ -355,9 +361,22 @@ export function DocsPage() {
                   </Button>
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  This explanation is authored in the document itself. Scroll to
-                  the heading above to read it.
+                  From this page&rsquo;s own text, under the heading the node points at.
                 </p>
+                {detailSection ? (
+                  <div className="mt-2 border-t border-hairline pt-2">
+                    <Markdown content={detailSection} variant="assistant" />
+                  </div>
+                ) : (
+                  /* The validator refuses a diagramDetails target that is not a
+                   * heading in the document, so arriving here means the heading
+                   * exists and is the LAST one on the page with nothing under it.
+                   * Say that rather than rendering an empty box, which reads as a
+                   * broken panel. */
+                  <p className="mt-2 text-xs italic text-muted-foreground">
+                    Nothing is written under that heading yet.
+                  </p>
+                )}
               </div>
             ) : null}
           </article>
