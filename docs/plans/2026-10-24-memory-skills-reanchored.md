@@ -73,11 +73,39 @@ Hermes-style renames.
 | spec item | status | evidence / what is missing |
 | --- | --- | --- |
 | provenance on facts; only user-stated writable by chat agent | **partial** | A provenance axis exists but is not the stated/observed/inferred vocabulary: `facts.source` distinguishes `'model'` (chat `remember`) from `'harness'` (distiller) from `'bench'`, and `verified_at` is set only by three human/UI doors and is now read by recall (`9e460c25`). Missing: a `stated` tag, and the distiller's `source='harness'` facts are now marked `[distilled]` on render — which is the disclosure half. |
-| version field + optimistic locking, conflict returns current content | **missing** | No `if_version` on any write path. `facts` has lineage columns (`supersedes`, `superseded_by`, `contradicts`) but they record succession, not a compare-and-swap. A concurrent edit silently overwrites. |
+| version field + optimistic locking, conflict returns current content | **done** (`if_version`) | Was: no compare-and-swap anywhere, so a concurrent edit silently overwrote. Now `save_fact(..., if_updated_at=...)` puts the guard INSIDE the `ON CONFLICT DO UPDATE` statement (`WHERE facts.updated_at = ?`) and raises `FactVersionConflict`, a `ValueError` subclass carrying the live row, so every caller that already treats a `ValueError` as a refusal still refuses. No column, no table, no store: the token is `updated_at`, which is microsecond-precise (`timeutil.utc_now_text`) and is ALREADY handed to the model by `list_facts` as `updated` — so the knob is satisfiable with no new read surface. `remember` advertises `if_version` and returns `{'ok': false, 'conflict': 'version', 'current': {...}}` naming the stamp to retry with; the project (markdown) door compares the same token against the entry's own `updated`. A token against a non-existent key is refused rather than inserting, in both stores — the token is a claim that the entry exists. |
 | edit-in-place with history; forget = delete + derived lines | **partial** | `remember` updates by key. `forget` retires rather than deletes. Lineage columns exist. Missing: the "now X, previously Y" history text, and deleting anything derived *solely* from a forgotten fact. |
 | subagents and cron read-only for memory | **exists** | AGENTS.md: "Sub-agents read and recall but never write; the parent turn is the only MODEL-facing memory write door." Verified this session that the deny-set path, not the offered surface, is what enforces it. |
 | write-time filters (secrets, IDs, sensitive flag, reject "never disagree") | **partial** | Present: `isSensitiveMemory`, a secret scanner (`hooks/secret_guard.scan_secrets`) refused at the `save_fact` door, `_REMEMBER_MIN_FACT_CHARS`, and `memoryIsJunk` — measured 0/14 false refusals on gold, 5/5 caught on junk. Missing: the rejection of honesty-suppressing / flattery-requiring / elevated-permission preference statements. That is a content-class filter that does not exist anywhere. |
 | compact write/recall trigger block in the prompt | **partial** | `<memory_policy>` exists and is kept in step with the frozen boot index. Not yet compared line-by-line against spec C4/C5 — **do that before adding text**, since the trimming goal applies and a duplicate block costs tokens on every turn. |
+
+### Step 2 item 1 verified live (no network, no credit, throwaway `AUGUST_DATA_DIR`)
+
+Store door (11 assertions, all pass): unversioned write lands (control); the stamp
+is on the wire at microsecond precision; the CURRENT token updates; a STALE token
+raises and stores nothing while returning the live row; a token against a missing
+key is refused and creates nothing; `FactVersionConflict` is a `ValueError`; and of
+two writes both claiming the same read, exactly one lands (`landed=1 lost=1`).
+
+Model door, through the real loop with the scripted provider
+(`list_facts` → `remember if_version=<stale>` → retry): the read returns
+`updated`, the stale write comes back `status:"error"` with
+`{"ok": false, "conflict": "version", "current": {...}}`, and the retry writes. A
+version conflict is an ERROR tool result, so the loop's failure taxonomy sees it —
+a refused write cannot read as a successful one.
+
+Gates: ruff, mypy (349 files), naming, docs, api, api-index, sse,
+tool-registration, brain-config, truncate, lint:ratchet, `e2e:smoke` 20/20. Live
+brain DB re-checked after every run: `facts` 0, `memory_store` 1 (`agent_registry`),
+no `probe:`/`bench:` rows.
+
+**Gate defect found on the way**: `scripts/check-naming.mjs` matches
+`^\s*def\s+\w+\s*\(`, so it never sees an `async def` signature — every camelCase
+parameter of every async tool handler is invisible to it, `remember` included. The
+new param was named snake_case regardless (it matches `expires_at` in the same
+tool), so the gate passes honestly rather than being baselined. Widening the scan
+is its own item: it will pull existing async-def camelCase params into the
+baseline, which is a census, not a fix.
 
 ## Step 3 — skills gap audit: not started
 

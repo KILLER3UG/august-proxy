@@ -31,6 +31,24 @@ PROFILE_FACT_KIND = 'profile'
 _FACT_KINDS = frozenset({'fact', 'lesson', 'preference', 'skill-note', PROFILE_FACT_KIND})
 
 
+class FactVersionConflict(ValueError):
+    """An ``if_updated_at`` write lost its compare-and-swap; nothing was written.
+
+    Carries the row as it stands NOW so the caller can merge and retry inside the
+    same turn rather than overwrite a change it never read. It subclasses
+    ``ValueError`` because every existing caller already treats that as "this
+    write was refused" — a caller that has not learned the new class still refuses
+    the write instead of treating it as success.
+    """
+
+    def __init__(self, factKey: str, current: FactDict) -> None:
+        super().__init__(
+            f'fact "{factKey}" changed since the version this write expected; nothing was written'
+        )
+        self.factKey = factKey
+        self.current = current
+
+
 def derive_fact_title(text: str) -> str:
     """Short human label for a fact (readability ruling 2026-08-26: titled
     entries, not raw blobs). First sentence/clause, capped at 60 chars."""
@@ -58,6 +76,7 @@ def save_fact(
     allow_scope_override: bool = False,
     description: str = '',
     verified: bool = False,
+    if_updated_at: str = '',
 ) -> None:
     """Save a structured fact. ``expires_at`` (ISO-8601 TEXT) is optional; the
     cognitive boot sweep purges facts whose expiry has passed.
@@ -91,6 +110,15 @@ def save_fact(
     2.4 (Part 25): an upsert resets ``status`` to 'active' — re-remembering a
     key that consolidation had superseded/retired must revive it, or the model
     believes it saved while retrieval keeps filtering the stale row out.
+
+    ``if_updated_at`` turns the write into a compare-and-swap: the row is only
+    updated while its ``updated_at`` still equals that stamp. The stamp is the
+    one ``list_facts`` and the Memory page already hand out and it carries
+    microseconds (see timeutil), so this needs no new column, table or store. A
+    mismatch raises ``FactVersionConflict`` with the row as it stands now; an
+    ``if_updated_at`` against no row at all is refused, because the token is a
+    claim that the entry exists — letting it insert would write a row the caller
+    believes it is updating.
     """
     from app.lib.paths import assertPytestDataDirIsolated
     from app.services.session_scope import GLOBAL_SCOPE, normalize_scope
@@ -110,6 +138,14 @@ def save_fact(
     # Scope is normalized here, once, by the only authority — a caller cannot
     # write a scope retrieval could never produce (see normalize_scope).
     scope = normalize_scope(scope)
+
+    if_updated_at = (if_updated_at or '').strip()
+    if if_updated_at and get_fact(factKey) is None:
+        raise ValueError(
+            f'no stored fact "{factKey}" matches version "{if_updated_at}": '
+            'there is nothing to update. Drop if_updated_at to create, or '
+            're-read the key list first.'
+        )
 
     if not allow_scope_override:
         existing = get_fact(factKey)
@@ -160,8 +196,12 @@ def save_fact(
     # '' = unspecified: fresh inserts default to 'fact', updates keep the
     # existing kind (a remember-without-kind must not downgrade a lesson).
     kindParam = kind if kind in _FACT_KINDS else ''
-    conn.execute(
-        """
+    # The guard belongs INSIDE the statement. Reading the stamp and then writing
+    # when it still matches leaves a window in which another writer moves the row
+    # and this write clobbers it — which is the exact race being closed.
+    casClause = '\n            WHERE facts.updated_at = ?' if if_updated_at else ''
+    cur = conn.execute(
+        f"""
         INSERT INTO facts (fact_key, fact_value, title, kind, description, category, source, confidence, expires_at, scope, verified_at, updated_at)
         VALUES (?, ?, ?, COALESCE(NULLIF(?, ''), 'fact'), ?, ?, ?, ?, ?, ?, CASE WHEN ? THEN datetime('now') ELSE NULL END, ?)
         -- The conflict target is the row's IDENTITY, scope + key, not the key
@@ -189,7 +229,7 @@ def save_fact(
             -- INSERT stamps it; a machine INSERT leaves it NULL — nothing
             -- has confirmed the fact yet.
             verified_at = CASE WHEN ? THEN datetime('now') ELSE facts.verified_at END,
-            updated_at = excluded.updated_at
+            updated_at = excluded.updated_at{casClause}
         """,
         (
             factKey,
@@ -205,8 +245,16 @@ def save_fact(
             1 if verified else 0,
             utc_now_text(),
             1 if verified else 0,
-        ),
+        )
+        + ((if_updated_at,) if if_updated_at else ()),
     )
+    if if_updated_at and int(cur.rowcount or 0) == 0:
+        # Nothing changed, so the row exists with a DIFFERENT stamp: whoever read
+        # this version is looking at a stale entry. Report the live row rather
+        # than a bare no, so the caller can merge and retry in the same turn.
+        conflictCurrent = get_fact(factKey) or cast('FactDict', {})
+        brain_commit(conn)
+        raise FactVersionConflict(factKey, conflictCurrent)
     brain_commit(conn)
     try:
         from app.services.memory_store.fact_retrieval import invalidate_fact_index

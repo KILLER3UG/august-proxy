@@ -48,6 +48,7 @@ from app.services.memory_store.messages import (
 )
 from app.services.memory_store.rest import (
     PROFILE_FACT_KIND,
+    FactVersionConflict,
     claim_proposal_decision,
     count_facts,
     decide_proposal,
@@ -100,6 +101,7 @@ __all__ = [
     'set_internal_state',
     'get_internal_state',
     'save_fact',
+    'FactVersionConflict',
     'get_fact',
     'derive_fact_title',
     'search_facts',

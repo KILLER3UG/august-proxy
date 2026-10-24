@@ -274,6 +274,64 @@ def _normalizeFactText(text: str) -> str:
     return re.sub(r'[^a-z0-9]+', ' ', (text or '').lower()).strip()
 
 
+def _unwrapFactValue(raw: object) -> str:
+    """The fact sentence out of its stored JSON envelope.
+
+    A fact body is stored JSON-encoded — either ``{"fact","details"}`` or a plain
+    string — so any door that shows a body to a human or a model has to unwrap it
+    or it renders the quotes.
+    """
+    import json as _json
+
+    text = str(raw or '')
+    try:
+        obj = _json.loads(text)
+    except Exception:
+        return text
+    if isinstance(obj, dict) and isinstance(obj.get('fact'), str):
+        return str(obj['fact'])
+    if isinstance(obj, str):
+        return obj
+    return text
+
+
+def _memory_version_conflict(
+    key: str,
+    *,
+    current_text: str,
+    current_updated: str,
+    current_description: str = '',
+    current_source: str = '',
+) -> str:
+    """The one version-conflict shape for BOTH memory stores.
+
+    Merge-and-retry cannot depend on which store the key happens to live in, and
+    a bare "conflict" is not actionable: the point of refusing the write is that
+    the caller now sees what it was about to overwrite, so the live body and its
+    stamp come back in the result.
+    """
+    import json as _json
+
+    return _json.dumps(
+        {
+            'ok': False,
+            'conflict': 'version',
+            'key': key,
+            'policy': (
+                f'nothing was written: "{key}" has changed since the version you passed. '
+                'Merge the current text below, then call remember again with key and '
+                f'if_version="{current_updated}" — or omit if_version to overwrite deliberately.'
+            ),
+            'current': {
+                'fact': current_text,
+                'description': current_description,
+                'source': current_source,
+                'updated': current_updated,
+            },
+        }
+    )
+
+
 def _storedFactTexts(scope: str, limit: int = 500) -> list[tuple[str, str]]:
     """``(key, normalized text)`` for the active facts visible to ``scope``.
 
@@ -392,6 +450,7 @@ async def _remember(
     kind: str = '',
     scope: str = '',
     description: str = '',
+    if_version: str = '',
     **_extra: object,
 ) -> str:
     """Single model write door into durable memory (facts store).
@@ -548,6 +607,27 @@ async def _remember(
                     'perFact': True,
                 }
             body = f'{text}\n\n{detailsText}' if detailsText else text
+            # A version token against the project store is checked against the
+            # entry's own `updated` stamp — the same compare the facts door does
+            # in SQL, and the same refusal: a token is a claim that the entry
+            # exists, so a create under one is not silently accepted.
+            _want_version = (if_version or '').strip()
+            if _want_version:
+                if not before:
+                    return _json.dumps(
+                        {
+                            'ok': False,
+                            'error': f'no stored project memory entry "{entryTitle}" to update; '
+                            'drop if_version to create it, or re-read list_facts first',
+                        }
+                    )
+                if str(before.get('updated') or '') != _want_version:
+                    return _memory_version_conflict(
+                        entryTitle,
+                        current_text=str(before.get('body') or ''),
+                        current_updated=str(before.get('updated') or ''),
+                        current_description=str(before.get('description') or ''),
+                    )
             entry = _pm.upsert_entry(ws, entryTitle, body,
                                      description=fmDesc, kind=fmKind,
                                      per_fact=bool(cfgPj.get('fileMemory', True)))
@@ -631,7 +711,16 @@ async def _remember(
         memory_store.save_fact(
             factKey, value, category=cat, source='model', confidence=0.7,
             expires_at=exp, title=factTitle, kind=factKind, scope=factScope,
-            description=factDesc,
+            description=factDesc, if_updated_at=(if_version or '').strip(),
+        )
+    except memory_store.FactVersionConflict as exc:
+        _cur = exc.current
+        return _memory_version_conflict(
+            factKey,
+            current_text=_unwrapFactValue(_cur.get('factValue')),
+            current_updated=str(_cur.get('updatedAt') or ''),
+            current_description=str(_cur.get('description') or ''),
+            current_source=str(_cur.get('source') or ''),
         )
     except Exception as exc:
         return _json.dumps({'ok': False, 'error': f'remember failed: {exc}'})
@@ -1347,7 +1436,8 @@ def register() -> None:
         'brain_query over a memory store) has run once, because a write made without looking '
         'is how the store fills with restatements — and a sentence already stored under another '
         'key is refused with that key, so update it instead. Pass a stable '
-        'key to update an existing entry rather than duplicate. Give every entry a one-line '
+        'key to update an existing entry rather than duplicate, and that entry\'s `updated` stamp as '
+        '`if_version` so a stale read cannot overwrite a change it never saw. Give every entry a one-line '
         '`description` — it is the recall hook shown in the index. '
         'Sensitive topics are refused unless enabled. Scope: inside a workspace session the default is '
         "project (this workspace's md-file memory); use scope='global' for user-level facts that "
@@ -1375,6 +1465,13 @@ def register() -> None:
                 'key': {
                     'type': 'string',
                     'description': 'Optional stable key; pass it to update an existing fact instead of creating a new one.',
+                },
+                'if_version': {
+                    'type': 'string',
+                    'description': 'Optimistic locking for an update: pass the `updated` stamp list_facts '
+                    'reported for this key. If anything changed that entry since you read it, nothing is '
+                    'written and the current text comes back to merge and retry. Omit to write '
+                    'unconditionally — correct for a create.',
                 },
                 'category': {
                     'type': 'string',
