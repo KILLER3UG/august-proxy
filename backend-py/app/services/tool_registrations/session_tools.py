@@ -104,6 +104,20 @@ async def _search(query: str, scope: str = 'files', limit: int = 10) -> str:
     return header + '\n'.join(blocks[:lim])
 
 
+_MEMORY_BRAIN_STORES = frozenset(
+    {
+        'facts',
+        'semantic_facts',
+        'memory',
+        'kv',
+        'memory_store',
+        'project-memory',
+        'project_memory',
+        'projectMemory',
+    }
+)
+
+
 async def _brainQuery(store: str, query: str = '', filters: str = '', limit: int = 10) -> str:
     """Read-only query over runtime stores (sessions, messages, daemons, blackboard)."""
     from app.json_narrowing import as_int, as_str
@@ -116,6 +130,10 @@ async def _brainQuery(store: str, query: str = '', filters: str = '', limit: int
     filters = as_str(filters)
     if not store:
         return '{"error": "brain_query: store is required — one of sessions, messages, daemons, blackboard, facts."}'
+    if store in _MEMORY_BRAIN_STORES:
+        _masterRefusal = _memoryDisabledRefusal()
+        if _masterRefusal:
+            return _masterRefusal
     try:
         filtersDict = {}
         if filters and filters.strip():
@@ -129,16 +147,7 @@ async def _brainQuery(store: str, query: str = '', filters: str = '', limit: int
         # Reading a memory store is a memory read — same gate as list_facts, so
         # `brain_query(store=facts)` (the route the boot index points at) also
         # satisfies `remember`'s read-before-write check.
-        if store in (
-            'facts',
-            'semantic_facts',
-            'memory',
-            'kv',
-            'memory_store',
-            'project-memory',
-            'project_memory',
-            'projectMemory',
-        ):
+        if store in _MEMORY_BRAIN_STORES:
             _markMemoryRead()
         return result
     except Exception as exc:
@@ -404,6 +413,9 @@ def _memoryPreflightRefusal(ws: str) -> str:
 
     from app.services import brain_config_service, memory_store
 
+    _masterRefusal = _memoryDisabledRefusal()
+    if _masterRefusal:
+        return _masterRefusal
     try:
         cfg = brain_config_service.getRuntimeConfig()
     except Exception:
@@ -490,6 +502,9 @@ async def _remember(
     text = str(fact or '').strip()
     if not text:
         return _json.dumps({'ok': False, 'error': 'fact is required'})
+    _masterRefusal = _memoryDisabledRefusal()
+    if _masterRefusal:
+        return _masterRefusal
     detailsText = str(details or '').strip()
     if len(text) < _REMEMBER_MIN_FACT_CHARS:
         return _json.dumps(
@@ -758,16 +773,18 @@ async def _remember(
         memory_store.touch_fact_usage([factKey])
     except Exception:
         pass
+    _rollbackId = ''
     try:
         from app.services.rollback_store import record_rollback
 
-        record_rollback(
+        _entry = record_rollback(
             type='restore_memory_item',
             target=factKey,
             before=before,
             after={'key': factKey, 'value': value, 'category': cat, 'source': 'model',
                    'title': factTitle, 'description': factDesc},
         )
+        _rollbackId = str((_entry or {}).get('id') or '')
     except Exception:
         pass
     _emitMemoryInvalidate()
@@ -779,6 +796,7 @@ async def _remember(
             'category': cat,
             'updated': before is not None,
             'version': _after.get('version'),
+            'rollbackId': _rollbackId or None,
         }
     )
 
@@ -807,6 +825,27 @@ _FORGET_INTENT_RE = re.compile(
     r'remembered|stored|saved|that|this|it|them)\b',
     re.IGNORECASE,
 )
+
+
+def _memoryDisabledRefusal() -> str:
+    """The master memory switch: off means no read, write, delete or inject."""
+    import json as _json
+
+    from app.services import brain_config_service
+
+    try:
+        cfg = brain_config_service.getRuntimeConfig()
+    except Exception:
+        return ''
+    if bool(cfg.get('memoryEnabled', True)):
+        return ''
+    return _json.dumps(
+        {
+            'ok': False,
+            'policy': 'refused: memory is turned off in Settings. Do not retry; answer from '
+            'the conversation and tell the user memory is disabled.',
+        }
+    )
 
 
 def _automationMemoryWriteRefusal() -> str:
@@ -893,6 +932,9 @@ async def _forget(key: str) -> str:
     factKey = (key or '').strip()
     if not factKey:
         return _json.dumps({'ok': False, 'error': 'key is required — call list_facts to see keys'})
+    _masterRefusal = _memoryDisabledRefusal()
+    if _masterRefusal:
+        return _masterRefusal
     _automationRefusal = _automationMemoryWriteRefusal()
     if _automationRefusal:
         return _automationRefusal
@@ -1089,6 +1131,9 @@ async def _list_facts(
 
     from app.services import brain_config_service, memory_store
 
+    _masterRefusal = _memoryDisabledRefusal()
+    if _masterRefusal:
+        return _masterRefusal
     try:
         cfg = brain_config_service.getRuntimeConfig()
     except Exception:

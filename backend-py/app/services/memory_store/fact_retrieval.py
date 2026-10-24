@@ -57,7 +57,7 @@ _DECAY_HALF_LIFE_DAYS = 30.0
 _PROFILE_CHAR_CAP = 600
 # Lane header: says out loud that this section is NOT keyword-matched, so the
 # model does not report it as "only relevant when asked".
-_PROFILE_LANE_HEADER = 'profile (always included, not keyword-matched):'
+_PROFILE_LANE_HEADER = 'Always-in memory (profile and standing preferences):'
 # The memory-delta lane: facts written after the session opened, rendered
 # AFTER the memory section as a plain "new in memory" section.
 # budget — it duplicates nothing the profile lane already carries, and a burst
@@ -163,7 +163,9 @@ def _load_index(scope: str = 'global') -> dict[str, Any]:
         factRows = conn.execute(
             "SELECT fact_key, fact_value, title, kind, category, description, source, "
             "COALESCE(verified_at, '') AS verified_at, "
-            "COALESCE(scope, 'global') AS scope, COALESCE(updated_at, '') AS updated_at FROM facts "
+            "COALESCE(scope, 'global') AS scope, COALESCE(updated_at, '') AS updated_at, "
+            "COALESCE(aliases, '[]') AS aliases, COALESCE(subject_type, '') AS subject_type, "
+            "COALESCE(tag, '') AS tag, COALESCE(sensitive, 0) AS sensitive FROM facts "
             "WHERE (expires_at IS NULL OR expires_at = '' OR julianday(expires_at) > julianday('now')) "
             "AND (status IS NULL OR status = 'active') "
             f"{scopeClause}",
@@ -174,22 +176,28 @@ def _load_index(scope: str = 'global') -> dict[str, Any]:
             title = str(r['title'] or '').strip()
             key = str(r['fact_key'] or '')
             desc = ' '.join(str(r['description'] or '').split())
+            _sensitiveFlag = int(r['sensitive'] or 0)
             # Sensitive rows never ride the recall corpus — the tail, the
             # always-on profile lane and the alias pre-read all read THIS
             # list, and all three are surfaces an unrelated turn sees. The
-            # write door catches sensitive text when it is on; rows written
-            # before that rule, by another door, or while the gate was on
-            # are caught here instead (the same read-time check the alias
-            # pre-read already applied). Explicit reads stay unfiltered: a
-            # model or human who asks brain_query/list_facts by name gets
-            # the row. Module-level import (the module needs only `re`), so
-            # the filter cannot silently fail open on an import hiccup.
-            if sensitiveMemoryReason(title, key, desc, body):
+            # durable `sensitive` flag (056) catches rows whose detector
+            # wording has since changed; the live detector catches rows
+            # written before the flag or by a raw-SQL path. Explicit reads
+            # stay unfiltered: a model or human who asks by name gets it.
+            if _sensitiveFlag or sensitiveMemoryReason(title, key, desc, body):
                 continue
-            # Title + description + key words + body: titles and the
+            try:
+                aliases = json.loads(str(r['aliases'] or '[]'))
+            except (json.JSONDecodeError, TypeError):
+                aliases = []
+            if not isinstance(aliases, list):
+                aliases = []
+            aliasText = ' '.join(str(a) for a in aliases)
+            # Title + description + aliases + key words + body: titles and the
             # ZCode-parity description hook carry the human phrasing the model
-            # is most likely to echo back.
-            text = f"{title} {desc} {key.replace('-', ' ').replace(':', ' ')} {body}"
+            # is most likely to echo back; explicit aliases are the words the
+            # writer said a future message might use.
+            text = f"{title} {desc} {aliasText} {key.replace('-', ' ').replace(':', ' ')} {body}"
             tokens = _tokenize(text)
             if not tokens:
                 continue
@@ -203,6 +211,10 @@ def _load_index(scope: str = 'global') -> dict[str, Any]:
                     'verified_at': str(r['verified_at'] or ''),
                     'kind': str(r['kind'] or 'fact'),
                     'category': str(r['category'] or 'general'),
+                    'aliases': [str(a) for a in aliases],
+                    'subject_type': str(r['subject_type'] or ''),
+                    'tag': str(r['tag'] or ''),
+                    'sensitive': bool(_sensitiveFlag),
                     # Carry the row's true scope — recall metrics
                     # and the transcript chip mislabeled bot-private recalls
                     # as 'global' (the hardcoded label).
@@ -301,14 +313,24 @@ def alias_preread_facts(
         hit = next(
             (
                 f
-                for f in (key, title, desc, *sorted(keyForms))
+                for f in (
+                    key,
+                    title,
+                    desc,
+                    *sorted(keyForms),
+                    *(
+                        str(a)
+                        for a in (row.get('aliases') or [])
+                        if len(str(a).strip()) >= _ALIAS_PREREAD_MIN_FIELD_CHARS
+                    ),
+                )
                 if len(f) >= _ALIAS_PREREAD_MIN_FIELD_CHARS and f.lower() in q
             ),
             '',
         )
         if not hit:
             continue
-        if sensitiveMemoryReason(title, key, desc, body):
+        if row.get('sensitive') or sensitiveMemoryReason(title, key, desc, body):
             continue
         matched.append(
             {
@@ -744,6 +766,8 @@ def resolve_memory_auto_inject() -> bool:
         cfg = _bc.getRuntimeConfig()
     except Exception:
         cfg = {}
+    if not bool(cfg.get('memoryEnabled', True)):
+        return False
     return bool(cfg.get('memoryAutoInject', False))
 
 
@@ -928,7 +952,9 @@ def build_profile_block(
     """
     index = _load_index(scope)
     corpus = index.get('rows') or []
-    profileRows = [r for r in corpus if str(r.get('kind') or '') == PROFILE_FACT_KIND]
+    profileRows = [
+        r for r in corpus if str(r.get('kind') or '') in (PROFILE_FACT_KIND, 'preference')
+    ]
     if not profileRows:
         return '', []
     ranked = _rank_profile_rows(profileRows)
@@ -1192,9 +1218,12 @@ def build_memory_delta_block(
         rows = conn.execute(
             "SELECT fact_key, fact_value, title, kind, category, description, source, "
             "COALESCE(verified_at, '') AS verified_at, "
-            "COALESCE(scope, 'global') AS scope, COALESCE(updated_at, '') AS updated_at FROM facts "
+            "COALESCE(scope, 'global') AS scope, COALESCE(updated_at, '') AS updated_at, "
+            "COALESCE(sensitive, 0) AS sensitive, COALESCE(subject_type, '') AS subject_type "
+            "FROM facts "
             "WHERE (expires_at IS NULL OR expires_at = '' OR julianday(expires_at) > julianday('now')) "
             "AND (status IS NULL OR status = 'active') "
+            "AND COALESCE(sensitive, 0) = 0 AND COALESCE(subject_type, '') != 'person' "
             # Fixed-width UTC text sorts chronologically; string comparison
             # keeps microseconds, which julianday() rounds to milliseconds.
             "AND updated_at > ? "
@@ -1211,6 +1240,11 @@ def build_memory_delta_block(
     cost = headerCost
     skipped = exclude_keys or frozenset()
     for r in rows:
+        if int(r['sensitive'] or 0) or sensitiveMemoryReason(
+            str(r['title'] or ''), str(r['fact_key'] or ''),
+            str(r['description'] or ''), _fact_body_text(r['fact_value']),
+        ):
+            continue
         row: dict[str, object] = {
             'key': str(r['fact_key'] or ''),
             'title': str(r['title'] or '').strip(),

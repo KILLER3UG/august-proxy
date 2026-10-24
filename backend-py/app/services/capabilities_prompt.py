@@ -521,6 +521,11 @@ def build_capabilities_block(
             include_names=include_tool_names,
         ),
         '</tools>',
+        '<skill_policy>',
+        'Before acting on a task a skill describes, call load_skill and follow it first — before '
+        'writing code, creating files or running commands. Read every skill that plausibly '
+        'applies; skip trivial tasks. Do not narrate skill loads.',
+        '</skill_policy>',
     ]
     if include_skills:
         skills_inner = (

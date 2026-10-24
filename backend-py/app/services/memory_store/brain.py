@@ -756,7 +756,9 @@ def brain_index_snippet(scope: str = 'global') -> str:
     )
     try:
         factRows = conn.execute(
-            "SELECT fact_key, title, category, description, fact_value FROM facts "
+            "SELECT fact_key, title, category, description, fact_value, "
+            "COALESCE(aliases, '[]') AS aliases, COALESCE(sensitive, 0) AS sensitive, "
+            "COALESCE(subject_type, '') AS subject_type FROM facts "
             f"WHERE {_vis} {scopeClause} "
             "ORDER BY updated_at DESC LIMIT 40",
             scopeParams,
@@ -764,12 +766,13 @@ def brain_index_snippet(scope: str = 'global') -> str:
         if factRows:
             lines.append('Facts:')
             for r in factRows:
-                # Sensitive rows never ride the boot index. The index is
-                # injected into EVERY session, unrelated turns included, and
-                # a derived title carries the fact's own text — the measured
-                # leak was a card number inside the index line. Same read-time
-                # check the recall corpus applies; explicit reads
-                # (brain_query / list_facts) stay unfiltered.
+                # Sensitive rows and other people's details never ride the
+                # boot index: it is injected into EVERY session, unrelated
+                # turns included, and a derived title carries the fact's own
+                # text. Explicit reads (brain_query / list_facts) still return
+                # them when the user raises them.
+                if int(r['sensitive'] or 0) or str(r['subject_type'] or '') == 'person':
+                    continue
                 if sensitiveMemoryReason(
                     str(r['title'] or ''), str(r['fact_key'] or ''),
                     str(r['description'] or ''), str(r['fact_value'] or ''),
@@ -789,13 +792,24 @@ def brain_index_snippet(scope: str = 'global') -> str:
                     except Exception:
                         pass
                     hook = ' '.join(raw.split())[:100]
+                # Item 8: the index line is a SLUG, a <=150-char description,
+                # and its aliases — not the whole recall hook.
+                hook = hook[:150].rstrip()
                 line = f"  - {label} ({r['fact_key']})"
                 if hook:
                     line += f' — {hook}'
+                try:
+                    _aliases = _json.loads(str(r['aliases'] or '[]'))
+                except (json.JSONDecodeError, TypeError):
+                    _aliases = []
+                if isinstance(_aliases, list) and _aliases:
+                    line += ' [aliases: ' + ', '.join(str(a) for a in _aliases[:4]) + ']'
                 lines.append(line)
             try:
                 total = conn.execute(
-                    f'SELECT COUNT(*) FROM facts WHERE {_vis} {scopeClause}', scopeParams
+                    f"SELECT COUNT(*) FROM facts WHERE {_vis} {scopeClause} "
+                    "AND COALESCE(sensitive, 0) = 0 AND COALESCE(subject_type, '') != 'person'",
+                    scopeParams,
                 ).fetchone()[0]
                 if total and total > len(factRows):
                     lines.append(f'  … +{total - len(factRows)} more (brain_query store=facts)')

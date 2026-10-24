@@ -1003,7 +1003,9 @@ def buildSystemPrompt(
         try:
             from app.services import brain_config_service as _mem_cfg
 
-            _memReadAllowed = bool(_mem_cfg.getRuntimeConfig().get('modelMemoryRead', True))
+            _memReadAllowed = bool(
+                _mem_cfg.getRuntimeConfig().get('modelMemoryRead', True)
+            ) and bool(_mem_cfg.getRuntimeConfig().get('memoryEnabled', True))
         except Exception:
             _memReadAllowed = True
         frozen: object
@@ -1222,7 +1224,10 @@ def buildSystemPrompt(
         try:
             from app.services import brain_config_service as _bc
 
-            memWritesOn = bool(_bc.getRuntimeConfig().get('modelMemoryWrites', True))
+            _memCfg = _bc.getRuntimeConfig()
+            memWritesOn = bool(_memCfg.get('modelMemoryWrites', True)) and bool(
+                _memCfg.get('memoryEnabled', True)
+            )
         except Exception:
             memWritesOn = True
         if memWritesOn:
@@ -3219,7 +3224,11 @@ async def _sendWorkbenchMessageStreamImpl(
             # `--memory-state off` arm measured identical prompts for exactly
             # this reason. One resolver, three readers.
             _memReadOn = resolve_memory_auto_inject()
+            _memEnabled = bool(_bc.getRuntimeConfig().get('memoryEnabled', True))
         except Exception:
+            _memReadOn = False
+            _memEnabled = True
+        if not _memEnabled:
             _memReadOn = False
         _lastUserIdx = next(
             (
@@ -3255,7 +3264,12 @@ async def _sendWorkbenchMessageStreamImpl(
             # Hoisted above the read gate so the skills block (which shares
             # the workspace scope) can't NameError when memory read is off.
             _wsForTail = session.workspacePath if session.workspacePath else ''
-            if _memReadOn:
+            _injectedFacts: list[tuple[str, str]]
+            if not _memEnabled:
+                # The master switch: off means no recall, no profile lane and
+                # no new-fact delta — the model sees no memory at all.
+                _memoryBlock, _injectedFacts = '', []
+            elif _memReadOn:
                 _recalledRows: list[dict[str, object]] = []
                 _memoryBlock, _injectedFacts = build_memory_block(
                     _userText,
@@ -3409,10 +3423,14 @@ async def _sendWorkbenchMessageStreamImpl(
             # Keys the recall lane already rendered are skipped, so one write
             # is never shown twice.
             try:
-                _deltaBlock = build_memory_delta_block(
-                    session_started_at=as_str(getattr(session, 'createdAt', ''), ''),
-                    scope=_turnScope,
-                    exclude_keys={str(k) for k, _ in (_injectedFacts or [])},
+                _deltaBlock = (
+                    build_memory_delta_block(
+                        session_started_at=as_str(getattr(session, 'createdAt', ''), ''),
+                        scope=_turnScope,
+                        exclude_keys={str(k) for k, _ in (_injectedFacts or [])},
+                    )
+                    if _memEnabled
+                    else ''
                 )
                 if _deltaBlock:
                     _memoryBlock = (
@@ -3421,7 +3439,9 @@ async def _sendWorkbenchMessageStreamImpl(
             except Exception:
                 logger.debug('memory delta block failed', exc_info=True)
             try:
-                _memWritesOn = bool(_bc.getRuntimeConfig().get('modelMemoryWrites', True))
+                _memWritesOn = bool(
+                    _bc.getRuntimeConfig().get('modelMemoryWrites', True)
+                ) and _memEnabled
             except Exception:
                 _memWritesOn = True
             # A leading `/name` is the whole request surface for a skill: it

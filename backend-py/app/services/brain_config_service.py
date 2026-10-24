@@ -52,6 +52,7 @@ boolKeys: tuple[str, ...] = (
     'enabled',
     'skillRelevanceMatch',
     'skillKeywordExpansion',
+    'memoryEnabled',
     'modelMemoryRead',
     'memoryAutoInject',
     'memoryReview',
@@ -263,6 +264,7 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # Memory read gate: when off, the facts-recall tool (brain_query/memory_search
     # over the facts store) is not offered. Default on so the model can pull
     # memory ON DEMAND. Per-turn auto-injection is a SEPARATE flag below.
+    ('memoryEnabled', 'memory_enabled', True, 'bool'),
     ('modelMemoryRead', 'model_memory_read', True, 'bool'),
     # Auto-inject gate: when on, the "Relevant memory:" section of facts relevant to the
     # latest turn is appended every turn (plus the names-only index in the
