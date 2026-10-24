@@ -139,89 +139,270 @@ def _validateSkillFile(target: Path, dirname: str) -> str | None:
     return None
 
 
-def install_pack(source: str) -> dict[str, Any]:
-    """Fetch, validate, and install a skill pack. Returns a receipt dict."""
-    url, subdir = _archive_url(source)
-    try:
-        blob = _fetch(url)
-    except httpx.HTTPError as exc:
-        return {'ok': False, 'error': f'network error: {exc}'}
-    rev = hashlib.sha256(blob).hexdigest()[:12]
+def _validatePlanSkill(files: dict[str, bytes], dirname: str) -> str | None:
+    """Validate one planned SKILL.md through the authoring door, before writing."""
+    import tempfile
 
+    text = files.get('SKILL.md')
+    if not text:
+        return f'{dirname}: SKILL.md is missing'
+    with tempfile.TemporaryDirectory(prefix='aug-skill-preview-') as td:
+        target = Path(td) / 'SKILL.md'
+        target.write_bytes(text)
+        from app.services import skill_service
+
+        parsed = skill_service._parseSkill(target)  # noqa: SLF001
+        if not parsed:
+            return f'{dirname}: SKILL.md failed to parse (frontmatter with a name is required)'
+    return None
+
+
+_MEMORY_INSTRUCTION_RE = re.compile(
+    r'\b(remember (?:that|this)|always agree with|ignore (?:all )?(?:previous|prior) '
+    r'instructions|you are (?:the )?(?:system )?admin)\b',
+    re.IGNORECASE,
+)
+
+
+def _scanSkillText(text: str) -> list[dict[str, str]]:
+    """Findings for one skill body: unsafe (shell/URL/secret) and memory-instruction."""
+    findings: list[dict[str, str]] = []
+    try:
+        from app.services.harness_rails import _content_check
+
+        refused = _content_check({'body': text})
+        if refused:
+            findings.append(
+                {
+                    'severity': 'unsafe',
+                    'reason': str(refused.get('reason') or refused.get('rule') or 'unsafe content'),
+                }
+            )
+    except Exception:
+        log.debug('skill content scan unavailable', exc_info=True)
+    match = _MEMORY_INSTRUCTION_RE.search(text)
+    if match:
+        findings.append(
+            {
+                'severity': 'warn',
+                'reason': f'skill text instructs memory: {match.group(0)!r}',
+            }
+        )
+    return findings
+
+
+def _safeDirName(name: str, fallback: str) -> str:
+    safe = re.sub(r'[^A-Za-z0-9._ -]', '-', name)[:64]
+    return safe if _SAFE_NAME.match(safe) and safe not in ('.', '..') else fallback
+
+
+def _planFromZip(blob: bytes, subdir: str, source: str) -> dict[str, Any]:
     try:
         zf = zipfile.ZipFile(io.BytesIO(blob))
     except zipfile.BadZipFile:
-        return {'ok': False, 'error': 'archive is not a valid zip'}
-    with zf:
-        names = zf.namelist()
-        for n in names:
-            if n.startswith('/') or '..' in Path(n).parts:
-                return {'ok': False, 'error': 'archive contains an unsafe path — refused'}
-        skills = _skillDirsInArchive(zf, subdir)
-        if not skills:
-            return {'ok': False, 'error': 'no skill folders (directories with SKILL.md) found in the archive'}
+        raise ValueError('archive is not a valid zip') from None
+    names = zf.namelist()
+    for n in names:
+        if n.startswith('/') or '..' in Path(n).parts:
+            raise ValueError('archive contains an unsafe path — refused')
+    skills = _skillDirsInArchive(zf, subdir)
+    if not skills:
+        raise ValueError('no skill folders (directories with SKILL.md) found in the archive')
+    packName = (subdir.split('/')[-1] if subdir else source.rstrip('/').split('/')[-1]) or 'pack'
+    packName = _safeDirName(packName, 'pack')
+    plan: list[dict[str, Any]] = []
+    for dirname, (dirPrefix, memberPaths) in sorted(skills.items()):
+        files: dict[str, bytes] = {}
+        for member in memberPaths:
+            rel = (
+                member[len(dirPrefix):]
+                if dirPrefix and member.startswith(dirPrefix)
+                else member.rsplit('/', 1)[-1]
+            )
+            if not rel or rel.startswith('/') or '..' in Path(rel).parts:
+                continue
+            files[rel] = zf.read(member)
+        plan.append({'dir': dirname, 'files': files})
+    return {
+        'pack': packName,
+        'source': source,
+        'rev': hashlib.sha256(blob).hexdigest()[:12],
+        'skills': plan,
+    }
 
-        packName = (subdir.split('/')[-1] if subdir else source.rstrip('/').split('/')[-1]) or 'pack'
-        packName = re.sub(r'[^A-Za-z0-9._ -]', '', packName)[:48] or 'pack'
-        root = _agentRoot()
-        manifest = _loadManifest(root)
-        entry = manifest.get(packName) or {}
-        prevDirs = set(entry.get('skills') or [])
 
-        installed: list[str] = []
-        refused: list[str] = []
-        for dirname, (dirPrefix, memberPaths) in sorted(skills.items()):
-            safe = re.sub(r'[^A-Za-z0-9._ -]', '-', dirname)[:64]
-            if not _SAFE_NAME.match(safe) or safe in ('.', '..'):
-                refused.append(f'{dirname}: invalid directory name')
+def _planFromFolder(root: Path, source: str) -> dict[str, Any]:
+    if not root.is_dir():
+        raise ValueError('source folder does not exist')
+    skill_dirs: list[Path] = []
+    if (root / 'SKILL.md').is_file():
+        skill_dirs = [root]
+    else:
+        skill_dirs = sorted(
+            p for p in root.iterdir() if p.is_dir() and (p / 'SKILL.md').is_file()
+        )
+    if not skill_dirs:
+        raise ValueError('no skill folders (directories with SKILL.md) found in the folder')
+    plan: list[dict[str, Any]] = []
+    total = 0
+    for sd in skill_dirs:
+        files: dict[str, bytes] = {}
+        for f in sorted(sd.rglob('*')):
+            if f.is_symlink() or not f.is_file():
                 continue
-            target = root / safe
-            if target.exists() and safe not in prevDirs:
-                refused.append(f'{dirname}: agent skills dir {safe!r} already exists (not owned by this pack)')
+            rel = f.relative_to(sd).as_posix()
+            if rel.startswith('/') or '..' in Path(rel).parts:
                 continue
-            if target.exists():
-                shutil.rmtree(target)
-            target.mkdir(parents=True)
-            wrote = False
-            for m in memberPaths:
-                relPath = m[len(dirPrefix):] if dirPrefix and m.startswith(dirPrefix) else m.rsplit('/', 1)[-1]
-                if not relPath:
-                    continue
-                dest = (target / relPath).resolve()
-                if not str(dest).startswith(str(target.resolve())):
-                    continue  # traversal belt-and-braces
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_bytes(zf.read(m))
-                if relPath == 'SKILL.md':
-                    wrote = True
-            if not wrote:
-                shutil.rmtree(target, ignore_errors=True)
-                refused.append(f'{dirname}: SKILL.md could not be materialized')
-                continue
-            # Same authoring door as the UI add-box.
-            err = _validateSkillFile(target, dirname)
-            if err:
-                shutil.rmtree(target, ignore_errors=True)
-                refused.append(err)
-                continue
-            installed.append(safe)
+            blob = f.read_bytes()
+            total += len(blob)
+            if total > _MAX_BYTES:
+                raise ValueError(f'folder exceeds the {_MAX_BYTES} byte limit')
+            files[rel] = blob
+        plan.append({'dir': sd.name, 'files': files})
+    return {
+        'pack': _safeDirName(root.name, 'pack'),
+        'source': source,
+        'rev': '',
+        'skills': plan,
+    }
 
-        if not installed:
-            return {'ok': False, 'error': 'nothing installed', 'refused': refused}
-        manifest[packName] = {
-            'source': source, 'rev': rev, 'skills': installed, 'installedAt': time.time(),
-        }
-        _saveManifest(root, manifest)
-        # Drop old dirs of THIS pack that the new version no longer contains.
-        for gone in prevDirs - set(installed):
-            victim = root / gone
-            if victim.is_dir():
-                shutil.rmtree(victim, ignore_errors=True)
+
+def _planFromRawUrl(source: str) -> dict[str, Any]:
+    from urllib.parse import urlparse
+
+    blob = _fetch(source)
+    name = Path(urlparse(source).path).stem or 'skill'
+    return {
+        'pack': _safeDirName(name, 'skill'),
+        'source': source,
+        'rev': hashlib.sha256(blob).hexdigest()[:12],
+        'skills': [{'dir': name, 'files': {'SKILL.md': blob}}],
+    }
+
+
+def _buildPlan(source: str) -> dict[str, Any]:
+    s = (source or '').strip()
+    local = Path(s)
+    if s and local.is_dir():
+        return _planFromFolder(local, s)
+    if s.startswith('https://') and s.split('?')[0].endswith('.md'):
+        return _planFromRawUrl(s)
+    url, subdir = _archive_url(s)
+    return _planFromZip(_fetch(url), subdir, s)
+
+
+def _preview(plan: dict[str, Any]) -> dict[str, Any]:
+    skills: list[dict[str, Any]] = []
+    refused: list[str] = []
+    for item in plan['skills']:
+        dirname = str(item.get('dir') or '')
+        files = item.get('files') or {}
+        err = _validatePlanSkill(files, dirname)
+        if err:
+            refused.append(err)
+            continue
+        text = files.get('SKILL.md', b'').decode('utf-8', 'replace')
+        skills.append(
+            {
+                'name': dirname,
+                'files': len(files),
+                'bytes': sum(len(v) for v in files.values()),
+                'findings': _scanSkillText(text),
+            }
+        )
+    return {
+        'pack': plan['pack'],
+        'source': plan['source'],
+        'rev': plan['rev'],
+        'skills': skills,
+        'refused': refused,
+    }
+
+
+def install_pack(source: str, *, confirm: bool = False) -> dict[str, Any]:
+    """Preview, then (only with ``confirm=True``) install a skill pack.
+
+    Nothing is written until the caller confirms. The preview names every
+    skill, its file count/size, and any content scan finding; unsafe shell,
+    URL or credential content refuses the install even after confirmation.
+    Local folders and raw ``.md`` URLs follow the same path; scripts are
+    copied, never executed.
+    """
+    try:
+        plan = _buildPlan(source)
+    except (ValueError, httpx.HTTPError) as exc:
+        return {'ok': False, 'error': f'network error: {exc}' if isinstance(exc, httpx.HTTPError) else str(exc)}
+    preview = _preview(plan)
+    unsafe = [
+        {'skill': sk['name'], **finding}
+        for sk in preview['skills']
+        for finding in sk['findings']
+        if finding['severity'] == 'unsafe'
+    ]
+    if not confirm:
         return {
-            'ok': True, 'pack': packName, 'rev': rev, 'skills': installed,
-            'refused': refused,
-            'note': 'skills appear in the catalogue next turn (load_skill by name)',
+            'ok': False,
+            'requiresConfirmation': True,
+            'preview': preview,
+            'findings': [f for sk in preview['skills'] for f in sk['findings']],
         }
+    if unsafe:
+        return {
+            'ok': False,
+            'error': 'refused: the pack contains unsafe content (shell, URL or credential text)',
+            'findings': unsafe,
+            'preview': preview,
+        }
+    if not preview['skills']:
+        return {'ok': False, 'error': 'nothing to install', 'refused': preview['refused'], 'preview': preview}
+
+    root = _agentRoot()
+    manifest = _loadManifest(root)
+    packName = str(plan['pack'])
+    entry = manifest.get(packName) or {}
+    prevDirs = set(entry.get('skills') or [])
+    installed: list[str] = []
+    refused = list(preview['refused'])
+    byName = {str(item['dir']): item for item in plan['skills']}
+    for sk in preview['skills']:
+        dirname = str(sk['name'])
+        safe = _safeDirName(dirname, dirname)
+        item = byName.get(dirname) or {}
+        files = item.get('files') or {}
+        target = root / safe
+        if target.exists() and safe not in prevDirs:
+            refused.append(f'{dirname}: agent skills dir {safe!r} already exists (not owned by this pack)')
+            continue
+        if target.exists():
+            shutil.rmtree(target)
+        target.mkdir(parents=True)
+        for rel, blob in files.items():
+            dest = (target / rel).resolve()
+            if not dest.is_relative_to(target.resolve()):
+                continue
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(blob)
+        err = _validateSkillFile(target, dirname)
+        if err:
+            shutil.rmtree(target, ignore_errors=True)
+            refused.append(err)
+            continue
+        installed.append(safe)
+    if not installed:
+        return {'ok': False, 'error': 'nothing installed', 'refused': refused, 'preview': preview}
+    manifest[packName] = {
+        'source': source, 'rev': plan['rev'], 'skills': installed, 'installedAt': time.time(),
+    }
+    _saveManifest(root, manifest)
+    for gone in prevDirs - set(installed):
+        victim = root / gone
+        if victim.is_dir():
+            shutil.rmtree(victim, ignore_errors=True)
+    return {
+        'ok': True, 'pack': packName, 'rev': plan['rev'], 'skills': installed,
+        'refused': refused, 'findings': [f for sk in preview['skills'] for f in sk['findings']],
+        'note': 'skills appear in the catalogue next turn (load_skill by name)',
+    }
 
 
 def list_packs() -> list[dict[str, Any]]:

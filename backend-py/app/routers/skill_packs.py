@@ -27,10 +27,11 @@ async def packs_install(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     source = str(payload.get('source') or '').strip()
     if not source:
         raise HTTPException(status_code=400, detail='source is required')
+    confirm = bool(payload.get('confirm'))
     from app.services import skill_packs
 
     try:
-        return await asyncio.to_thread(skill_packs.install_pack, source)
+        return await asyncio.to_thread(skill_packs.install_pack, source, confirm=confirm)
     except ValueError as exc:
         return {'ok': False, 'error': str(exc)}
 
