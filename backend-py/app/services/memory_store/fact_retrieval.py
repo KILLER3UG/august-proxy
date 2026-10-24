@@ -216,6 +216,100 @@ def _load_index(scope: str = 'global') -> dict[str, Any]:
     return index
 
 
+# C6: the deterministic pre-read attaches at most this many records. The
+# count bound is the spec's; the byte bound comes from the Tier-1 memory
+# slice at the call site, so no second budget exists for this lane.
+_ALIAS_PREREAD_MAX_FACTS = 2
+# A field shorter than this never matches: a 1-2 char key ("ml", "c") would
+# substring-fire on half of every message and the record it drags in is noise.
+_ALIAS_PREREAD_MIN_FIELD_CHARS = 3
+
+
+def alias_preread_facts(
+    text: str,
+    scope: str = 'global',
+    limit: int = _ALIAS_PREREAD_MAX_FACTS,
+    exclude_keys: frozenset[str] | set[str] | None = None,
+) -> list[dict[str, object]]:
+    """Deterministic alias pre-read (C6) over the cached fact corpus.
+
+    Substring-matches ``text`` against the fields a fact already carries —
+    ``key``, ``title``, ``description`` (facts have NO aliases column and
+    this adds none; a migration would be a schema change for a lane that
+    works on existing fields) — and returns at most ``limit`` rows, newest
+    first, each carrying the ``matched_field`` so the caller's block can be
+    audited. No BM25 and no LLM call, and NO added I/O on the turn path: the
+    per-scope corpus is the same cached index ``build_memory_block`` and the
+    profile lane load for this turn, so a call here is string scans over a
+    warm cache and never delays first token by a round-trip.
+
+    A matched row is dropped when its text trips ``sensitiveMemoryReason`` —
+    there is no ``sensitive`` column to filter on, so the read-time check
+    reuses the write-door detector and catches rows written before that rule
+    or by a door that does not run it. ``exclude_keys`` drops facts the turn
+    already rendered (the BM25 lane, the profile lane), so one fact is never
+    shown twice.
+    """
+    from app.services.sensitive_topics import sensitiveMemoryReason
+
+    q = ' '.join(str(text or '').split()).lower()
+    if not q:
+        return []
+    index = _load_index(scope)
+    skipped = {str(k or '').lower() for k in (exclude_keys or ())}
+    matched: list[dict[str, object]] = []
+    for row in sorted(
+        index.get('rows', []),
+        key=lambda r: str(r.get('updated_at') or ''),
+        reverse=True,
+    ):
+        if len(matched) >= limit:
+            break
+        key = str(row.get('key') or '')
+        if not key or key.lower() in skipped:
+            continue
+        title = str(row.get('title') or '').strip()
+        desc = ' '.join(str(row.get('description') or '').split())
+        body = str(row.get('body') or '').strip()
+        # The key's own segments are the aliases: keys are namespaced by
+        # convention (`bench:gpu-setup`, the `feedback:<topic>` shape
+        # <memory_policy> itself recommends), so a message that names the
+        # subject almost never contains the full key. Each segment (and its
+        # spaced form, for "gpu setup" prose) is an existing field's
+        # derivation, not a new column.
+        keyForms = {key.lower()}
+        for part in key.replace('/', ':').split(':'):
+            p = part.strip().lower()
+            if len(p) >= _ALIAS_PREREAD_MIN_FIELD_CHARS:
+                keyForms.add(p)
+                if ' ' not in p and '-' in p:
+                    keyForms.add(p.replace('-', ' '))
+        hit = next(
+            (
+                f
+                for f in (key, title, desc, *sorted(keyForms))
+                if len(f) >= _ALIAS_PREREAD_MIN_FIELD_CHARS and f.lower() in q
+            ),
+            '',
+        )
+        if not hit:
+            continue
+        if sensitiveMemoryReason(title, key, desc, body):
+            continue
+        matched.append(
+            {
+                'key': key,
+                'title': title,
+                'description': desc,
+                'body': body,
+                'category': str(row.get('category') or 'general'),
+                'scope': str(row.get('scope') or 'global'),
+                'matched_field': hit,
+            }
+        )
+    return matched
+
+
 def find_similar_facts(
     text: str, k: int = 3, *, scope: str = 'global'
 ) -> list[tuple[float, str, str]]:

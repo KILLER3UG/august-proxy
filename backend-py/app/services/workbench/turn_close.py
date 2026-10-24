@@ -164,16 +164,31 @@ def _edit_verify_sample(currentMessages: list[dict[str, Any]]) -> str:
     return ''
 
 
+def messageText(content: object) -> str:
+    """Text of one message's content — the one tail-side extractor.
+
+    A bare ``as_str(content, '')`` returns ``''`` for a multipart list, so a
+    consumer built on it silently never fires on image+text messages. A str
+    passes through; a list joins its ``{'type': 'text'}`` blocks; anything
+    else is no text.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        texts = [
+            str(b.get('text') or '')
+            for b in content
+            if isinstance(b, dict) and b.get('type') == 'text'
+        ]
+        return ' '.join(t for t in texts if t)
+    return ''
+
+
 def lastUserMessageText(session: WorkbenchSession) -> str:
     """Extract text content from the last user message in a session."""
     for msg in reversed(session.messages):
         if msg.get('role') == 'user':
-            content = msg.get('content', '')
-            if isinstance(content, str):
-                return content
-            elif isinstance(content, list):
-                texts = [b.get('text', '') for b in content if isinstance(b, dict) and b.get('type') == 'text']
-                return ' '.join(texts)
+            return messageText(msg.get('content', ''))
     return ''
 
 async def emitStopHook(sessionId: str, toolRound: int, turnError: str | None) -> None:

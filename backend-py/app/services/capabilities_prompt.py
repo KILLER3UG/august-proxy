@@ -549,6 +549,68 @@ def build_capabilities_block(
     return '\n'.join(parts)
 
 
+# C6: the deterministic pre-read attaches at most this many skill hints. The
+# count bound is the spec's; the byte bound comes from the Tier-1 skills slice
+# at the call site, so no second budget exists for this lane.
+_ALIAS_PREREAD_MAX_SKILLS = 2
+
+
+def alias_preread_skills(
+    text: str,
+    catalogue: list[dict[str, object]] | None = None,
+    exclude: frozenset[str] | set[str] | None = None,
+    limit: int = _ALIAS_PREREAD_MAX_SKILLS,
+) -> list[dict[str, object]]:
+    """Deterministic skill pre-read (C6): names the message spells verbatim.
+
+    Substring-matches ``text`` against the fields a skill already carries —
+    ``name`` (raw and with separators spaced), ``keywords``, and the whole
+    ``trigger`` — with NO BM25 and NO catalogue I/O beyond the caller's own
+    (the catalogue is mtime-memoized). BM25 stays the ranker for fuzzy
+    relevance; this lane catches the exact-name case the tokenizer splits or
+    scores below the relevance gate, and it fires even when the ranked lane
+    is off, because a skill the user literally named is not a coincidence of
+    wording. Hint-only by contract: the caller renders ONE line per match
+    pointing at ``load_skill`` — never a body, never an auto-load.
+
+    ``exclude`` are lower-cased names already rendered this turn (the Relevant
+    skills tail, a ``/pinned`` skill), so one skill is never shown twice.
+    """
+    q = ' '.join(str(text or '').split()).lower()
+    if not q:
+        return []
+    if catalogue is None:
+        try:
+            from app.services import skill_service
+
+            catalogue = skill_service.catalogue()
+        except Exception:
+            catalogue = []
+    skipped = {str(n or '').lower() for n in (exclude or ())}
+    matched: list[dict[str, object]] = []
+    for s in catalogue:
+        if len(matched) >= limit:
+            break
+        name = as_str(s.get('name'), '').strip()
+        if not name or name.lower() in skipped:
+            continue
+        candidates = {
+            name.lower(),
+            name.lower().replace('-', ' ').replace('.', ' ').replace('_', ' '),
+        }
+        keywords = s.get('keywords')
+        if isinstance(keywords, list):
+            candidates |= {
+                str(k).strip().lower() for k in keywords if len(str(k).strip()) >= 4
+            }
+        trigger = as_str(s.get('trigger'), '').strip()
+        if trigger:
+            candidates.add(trigger.lower())
+        if any(c and c in q for c in candidates):
+            matched.append(s)
+    return matched
+
+
 def skills_tools_allowed(allowed_tool_names: Iterable[str]) -> bool:
     allowed = set(allowed_tool_names)
     return bool(allowed & {'load_skill', 'load_skills', 'list_skills'})

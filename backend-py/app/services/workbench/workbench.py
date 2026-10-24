@@ -1301,6 +1301,7 @@ from app.services.workbench.prompt_build import (  # noqa: E402
     _modelDisplayName,
     _probe_workspace_git,
     clear_skill_prompt_caches,  # noqa: F401 -- re-export: old import path (skill_service fallback, tests)
+    currentIndexBudget,
     harness_guide_for,
     memory_nudge_block,
     queue_memory_habit_nudge,  # noqa: F401 -- re-export: tests + turn_close resolve via wb
@@ -3217,6 +3218,12 @@ async def _sendWorkbenchMessageStreamImpl(
         if _lastUserIdx is not None:
             _userMsg = currentMessages[_lastUserIdx]
             _userText = as_str(_userMsg.get('content'), '')
+            # C6 matches the message the model will actually see, so the
+            # extraction must be list-safe: the bare as_str above returns ''
+            # for a multipart (image+text) message, and a pre-read built on
+            # it would silently never fire on exactly the turns that carry
+            # the most context.
+            _aliasText = _tc.messageText(_userMsg.get('content'))
             # Phase D item 2: query expansion — the previous user
             # turn joins the facts query at half weight so follow-ups
             # ("and the second one?") still recall their antecedent fact.
@@ -3245,6 +3252,63 @@ async def _sendWorkbenchMessageStreamImpl(
                     # every other session stays on the plain global corpus.
                     scope=_turnScope,
                 )
+                # C6 deterministic alias pre-read: substring-match the message
+                # against the fields a fact already carries (key/title/
+                # description — there is no aliases column), riding the same
+                # cached corpus the BM25 lane just loaded, so it adds no I/O
+                # and no LLM call. BM25 stays the ranker; this lane catches
+                # the exact name the user typed that tokenization splits or
+                # scores below the gate. At most 2 records, sensitive-shaped
+                # rows skipped at read time, and every attached byte draws on
+                # the SAME Tier-1 memory slice that budgets the boot index —
+                # no second budget, or A1 would be decorative. Gated by
+                # memoryAutoInject like the lane beside it: a user who turned
+                # per-turn injection off opted out of tail memory entirely.
+                try:
+                    from app.services.memory_store.fact_retrieval import (
+                        alias_preread_facts,
+                    )
+
+                    _aliasRows = alias_preread_facts(
+                        _aliasText,
+                        scope=_turnScope,
+                        exclude_keys={str(k) for k, _ in (_injectedFacts or [])},
+                    )
+                except Exception:
+                    logger.debug('alias pre-read failed', exc_info=True)
+                    _aliasRows = []
+                if _aliasRows:
+                    _aliasLines = ['Aliased memory (deterministic match, not search):']
+                    _aliasBudget = currentIndexBudget()[0]
+                    for _ar in _aliasRows:
+                        _label = str(_ar.get('title') or '') or str(_ar.get('key') or '')
+                        _body = str(_ar.get('body') or '')
+                        _arKey = str(_ar.get('key') or '')
+                        _line = f'- {_label} ({_arKey})'
+                        if _body:
+                            _line += f' — {_body}'
+                        if _aliasBudget - len(_line) < 0:
+                            break
+                        _aliasBudget -= len(_line) + 1
+                        _aliasLines.append(_line)
+                        _recalledRows.append(
+                            {
+                                'key': str(_ar.get('key') or ''),
+                                'category': str(_ar.get('category') or 'general'),
+                                'snippet': _body[:120],
+                                'scope': str(_ar.get('scope') or 'global'),
+                            }
+                        )
+                        _injectedFacts.append(
+                            (str(_ar.get('key') or ''), str(_ar.get('title') or ''))
+                        )
+                    if len(_aliasLines) > 1:
+                        _aliasBlock = '\n'.join(_aliasLines)
+                        _memoryBlock = (
+                            f'{_memoryBlock}\n\n{_aliasBlock}'
+                            if _memoryBlock
+                            else _aliasBlock
+                        )
                 # Phase D item 4: recall metrics — one internal_state
                 # counter row per turn (before/after instrument for every
                 # retrieval change). Best-effort, never blocking.
@@ -3358,6 +3422,48 @@ async def _sendWorkbenchMessageStreamImpl(
                 _session_scope.bot_agent_id(_turnScope),
                 pinned=(_pinnedSkill,) if _pinnedSkill else (),
             )
+            # C6 skill half: a name/keyword/trigger the message spells
+            # verbatim gets a ONE-LINE hint pointing at load_skill — never a
+            # body, never an auto-load. HINT-ONLY by contract, and the bytes
+            # draw on the skills slice of the same Tier-1 budget. Skills the
+            # tail already rendered (or the user pinned) are excluded, so one
+            # skill is never shown twice. Ungated by memoryAutoInject: the
+            # skills tail has no opt-out switch of its own to honour.
+            try:
+                from app.services import skill_service as _c6_svc
+                from app.services.capabilities_prompt import alias_preread_skills
+
+                _aliasSkills = alias_preread_skills(
+                    _aliasText,
+                    catalogue=_c6_svc.catalogue(
+                        _wsForTail or None, _session_scope.bot_agent_id(_turnScope)
+                    ),
+                    exclude={
+                        *(str(n).lower() for n in (_skillsDetail or {})),
+                        *({_pinnedSkill.lower()} if _pinnedSkill else set()),
+                    },
+                )
+            except Exception:
+                logger.debug('alias skill pre-read failed', exc_info=True)
+                _aliasSkills = []
+            if _aliasSkills:
+                _hintLines = [
+                    'Aliased skills (matched this message — bodies load via load_skill):'
+                ]
+                _hintBudget = currentIndexBudget()[1]
+                for _as in _aliasSkills:
+                    _hintLine = f"- {as_str(_as.get('name'), '')}"
+                    if not _hintLine.strip('- '):
+                        continue
+                    if _hintBudget - len(_hintLine) < 0:
+                        break
+                    _hintBudget -= len(_hintLine) + 1
+                    _hintLines.append(_hintLine)
+                if len(_hintLines) > 1:
+                    _hintBlock = '\n'.join(_hintLines)
+                    _skillsBlock = (
+                        f'{_skillsBlock}\n\n{_hintBlock}' if _skillsBlock else _hintBlock
+                    )
             _nudgeBlock = memory_nudge_block(session, _memWritesOn)
             # The workdir file map used to ride INSIDE <workspace> in the
             # system block. Its builder has a 120 s TTL by design (a bounded
