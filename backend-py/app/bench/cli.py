@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 from contextvars import Token
 
@@ -68,6 +69,31 @@ def build_parser() -> argparse.ArgumentParser:
         help="JSONL event stream destination ('-' = stdout)",
     )
     parser.add_argument('--run-id', default='', help='run id (generated when empty)')
+    parser.add_argument(
+        '--memory-state',
+        choices=('inherit', 'on', 'off'),
+        default='inherit',
+        help=(
+            'force the recalled-facts lane for this run instead of inheriting the '
+            'stored `memoryAutoInject`. This is the arm of a paired lift: run the '
+            'same task and script twice, on and off, and the only thing that '
+            'differs is the memory tail. Requires an isolated AUGUST_DATA_DIR when '
+            'combined with --memory-corpus, and it ASSERTS the arm took effect — '
+            'a run where `on` produced no recall block exits 43 rather than '
+            'reporting a lift of zero.'
+        ),
+    )
+    parser.add_argument(
+        '--memory-corpus',
+        default='',
+        help=(
+            'path to a JSON array of facts to write into the store before the run: '
+            '[{"key": "...", "value": "...", "kind": "lesson", "category": "general"}]. '
+            'Without a corpus the two arms render identically and the comparison is '
+            'vacuous. Refused unless AUGUST_DATA_DIR is set explicitly, because '
+            'otherwise this writes durable facts into the real brain database.'
+        ),
+    )
     parser.add_argument(
         '--context-window',
         type=int,
@@ -128,6 +154,8 @@ def main(argv: list[str] | None = None) -> int:
         run_id=args.run_id,
         context_window=args.context_window,
         script_path=args.script,
+        memory_state='' if args.memory_state == 'inherit' else args.memory_state,
+        memory_corpus=args.memory_corpus,
     )
     if args.output_schema:
         try:
@@ -138,9 +166,33 @@ def main(argv: list[str] | None = None) -> int:
     if args.max_turns <= 0:
         print('august-bench: --max-turns must be positive', file=sys.stderr)
         return EXIT_INPUT
+    # The corpus is a durable write into whatever store this process points at.
+    # `dataDir()` falls back to the live app data directory when AUGUST_DATA_DIR
+    # is unset, so without this gate `--memory-corpus` would seed facts into the
+    # user's real brain database — the exact isolation failure AGENTS.md records
+    # for the old test suite. Refuse rather than default to a safe path, because
+    # a silently-chosen temp dir would also make a lift un-reproducible.
+    if opts.memory_corpus and not os.environ.get('AUGUST_DATA_DIR'):
+        print(
+            'august-bench: --memory-corpus writes durable facts, so it requires an '
+            'explicit AUGUST_DATA_DIR pointing at a throwaway directory. Refusing to '
+            'seed the live store.',
+            file=sys.stderr,
+        )
+        return EXIT_INPUT
+    if opts.memory_corpus and not opts.memory_state:
+        print(
+            'august-bench: --memory-corpus without --memory-state cannot show a '
+            'lift; pass --memory-state on and off for the two arms.',
+            file=sys.stderr,
+        )
+        return EXIT_INPUT
     token = _apply_context_window_override(opts.context_window)
     if token is not None:
         print(f'august-bench: context window overridden to {opts.context_window} tokens', file=sys.stderr)
+    mem_token = _apply_memory_state_override(opts.memory_state)
+    if mem_token is not None:
+        print(f'august-bench: memory state forced to {opts.memory_state}', file=sys.stderr)
     try:
         return asyncio.run(run_bench(opts))
     except KeyboardInterrupt:
@@ -151,6 +203,25 @@ def main(argv: list[str] | None = None) -> int:
             from app.services.workbench.context import contextWindowOverride
 
             contextWindowOverride.reset(token)
+        if mem_token is not None:
+            from app.services.memory_store.fact_retrieval import memoryStateOverride
+
+            memoryStateOverride.reset(mem_token)
+
+
+def _apply_memory_state_override(state: str) -> Token[str] | None:
+    """Publish the forced memory arm for the whole run, or None when inheriting.
+
+    Same shape as `_apply_context_window_override`: a ContextVar, set before
+    `asyncio.run` copies the context into the run's task, and reset in the
+    `finally` so a long-lived process that runs the bench twice does not carry
+    the first run's arm into the second.
+    """
+    from app.services.memory_store.fact_retrieval import memoryStateOverride
+
+    if state not in ('on', 'off'):
+        return None
+    return memoryStateOverride.set(state)
 
 
 def _apply_context_window_override(tokens: int) -> Token[int] | None:

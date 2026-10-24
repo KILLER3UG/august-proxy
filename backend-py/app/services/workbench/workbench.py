@@ -3144,15 +3144,20 @@ async def _sendWorkbenchMessageStreamImpl(
             build_memory_block,
             build_memory_delta_block,
             build_profile_memory_block,
+            resolve_memory_auto_inject,
         )
 
         try:
             from app.services import brain_config_service as _bc
 
-            # Per-turn memory recall section is gated by memoryAutoInject
-            # (default off) — recall happens only when the model calls the
-            # read tool, not automatically every turn.
-            _memReadOn = bool(_bc.getRuntimeConfig().get('memoryAutoInject', False))
+            # Per-turn recall is gated by `memoryAutoInject`, armed by default
+            # since 2026-10-24 (it shipped off). Resolved through the one helper
+            # rather than read off the config here: this line used to call
+            # `getRuntimeConfig().get('memoryAutoInject')` directly, so a per-run
+            # override set anywhere else could not reach the main turn — the
+            # `--memory-state off` arm measured identical prompts for exactly
+            # this reason. One resolver, three readers.
+            _memReadOn = resolve_memory_auto_inject()
         except Exception:
             _memReadOn = False
         _lastUserIdx = next(

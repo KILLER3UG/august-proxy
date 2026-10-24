@@ -25,9 +25,11 @@ import sys
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from app.bench.protocol import (
+    EXIT_CONTROL,
     EXIT_ERROR,
     EXIT_INPUT,
     EXIT_NAMES,
@@ -68,6 +70,12 @@ class BenchOptions:
     #: to `bench.scripted_provider` instead of a network, so a multi-round tool
     #: turn can be driven with no API credit and every request body is recorded.
     script_path: str = ''
+    #: The forced memory arm: '' (inherit), 'on', or 'off'. Published as a
+    #: ContextVar by the CLI; carried here so the run can assert it took effect.
+    memory_state: str = ''
+    #: Path to a JSON array of facts to seed before the run. Without a corpus the
+    #: on/off arms render identical prompts and the comparison proves nothing.
+    memory_corpus: str = ''
     output_schema: dict[str, Any] | None = None
     trajectory_path: str = 'trajectory.json'
     events_path: str = '-'  # '-' = stdout
@@ -151,6 +159,9 @@ async def run_bench(opts: BenchOptions) -> int:
     # providers.json in a checkout), so the next normal chat failed until the
     # user found and fixed the store by hand.
     scripted_previous_client: Any = None
+    # Bound unbound-safe: `--memory-state` is legal without `--script`, and the
+    # arm gate below reads this to decide whether it can assert anything at all.
+    scripted_client: Any = None
     saved_providers_store: dict[str, Any] | None = None
     if opts.script_path:
         # The seam (`app.providers.clients.getClient`) is resolved at call time
@@ -174,6 +185,17 @@ async def run_bench(opts: BenchOptions) -> int:
         print(
             f'august-bench: scripted provider armed with {len(scripted_client.rounds)} round(s) '
             f'from {opts.script_path} — no request leaves this process',
+            file=sys.stderr,
+        )
+
+    if opts.memory_corpus:
+        seeded, seed_error = _seed_memory_corpus(opts.memory_corpus)
+        if seed_error:
+            print(f'august-bench: cannot seed --memory-corpus: {seed_error}', file=sys.stderr)
+            return EXIT_INPUT
+        print(
+            f'august-bench: seeded {seeded} fact(s) into '
+            f'{os.environ.get("AUGUST_DATA_DIR", "?")} (arm={opts.memory_state or "inherit"})',
             file=sys.stderr,
         )
 
@@ -314,6 +336,21 @@ async def run_bench(opts: BenchOptions) -> int:
             if not ok and exit_code == EXIT_OK:
                 exit_code = EXIT_ERROR
                 exit_reason = f'final answer failed --output-schema: {reason}'
+
+        # ── memory-arm gate: prove the control actually fired ────────────
+        # Without this, a lift of zero is ambiguous: it could mean memory does
+        # not help, or it could mean both arms ran identical prompts because the
+        # corpus was empty, the recall query matched nothing, or the override
+        # never reached the loop. Those are different findings and only one of
+        # them is about memory.
+        if opts.memory_state and scripted_client is not None:
+            arm_error, arm_report = _assert_memory_arm_applied(opts.memory_state, scripted_client)
+            writer.write('memory/arm', **arm_report)
+            if arm_error:
+                print(f'august-bench: {arm_error}', file=sys.stderr)
+                # A distinct code: the run worked, the CONTROL did not.
+                exit_code = EXIT_CONTROL
+                exit_reason = arm_error
     except Exception as exc:
         logger.exception('august-bench run crashed')
         exit_code = EXIT_ERROR
@@ -373,6 +410,129 @@ async def run_bench(opts: BenchOptions) -> int:
 
             config_service.saveProvidersStore(saved_providers_store)
     return exit_code
+
+
+_RECALL_MARKER = 'Relevant memory:'
+
+
+def _seed_memory_corpus(path: str) -> tuple[int, str]:
+    """Write the corpus facts into the current store. ``(count_written, error)``.
+
+    Keys are namespaced `bench:` so a seeded corpus is identifiable and can be
+    told apart from a real learned fact. The CLI has already refused to get here
+    without an explicit `AUGUST_DATA_DIR`, which is what keeps this off the
+    user's brain database.
+    """
+    import json
+
+    from app.services.memory_conn import conn
+    from app.services.memory_schema import ensure_schema
+    from app.services.memory_store import save_fact
+
+    try:
+        raw = json.loads(Path(path).read_text(encoding='utf-8'))
+    except OSError as exc:
+        return 0, f'{exc}'
+    except ValueError as exc:
+        return 0, f'not valid JSON: {exc}'
+    if not isinstance(raw, list) or not raw:
+        return 0, 'corpus must be a non-empty JSON array of fact objects'
+    # The bench drives the loop in-process and never runs the app's startup, so
+    # on a throwaway data directory the brain schema does not exist yet and the
+    # first write dies on `no such table: facts`. Creating it here is the same
+    # bootstrap the app performs at boot, not a parallel schema.
+    with conn() as migration_conn:
+        ensure_schema(migration_conn)
+    written = 0
+    for entry in raw:
+        if not isinstance(entry, dict):
+            return written, 'every corpus entry must be an object'
+        value = str(entry.get('value') or '').strip()
+        if not value:
+            return written, 'corpus entry has no non-empty "value"'
+        key = str(entry.get('key') or f'fact-{written}').strip()
+        save_fact(
+            f'bench:{key}',
+            value,
+            category=str(entry.get('category') or 'general'),
+            source='bench',
+            kind=str(entry.get('kind') or 'lesson'),
+        )
+        written += 1
+    return written, ''
+
+
+def _body_has_recall(body: object) -> bool:
+    """True when a request body actually carries the recalled-facts tail.
+
+    Deliberately narrow, because the first version of this matched the marker
+    anywhere in any message and so passed the `off` arm too: the system prompt
+    NAMES the `Relevant memory:` section while describing the memory policy, and
+    a substring test cannot tell a section being described from a section being
+    shipped. Two constraints fix it — user role only (the tail is appended to the
+    user message), and the marker must start a line.
+
+    Never checks tool definitions or the system message, for the same reason: an
+    assertion that can be satisfied by prose about the feature is not an
+    assertion about the feature.
+    """
+    if not isinstance(body, dict):
+        return False
+    messages = body.get('messages')
+    if not isinstance(messages, list):
+        return False
+    for msg in messages:
+        if not isinstance(msg, dict) or msg.get('role') != 'user':
+            continue
+        content = msg.get('content')
+        parts: list[str] = []
+        if isinstance(content, str):
+            parts.append(content)
+        elif isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and isinstance(block.get('text'), str):
+                    parts.append(block['text'])
+        for part in parts:
+            if any(line.startswith(_RECALL_MARKER) for line in part.splitlines()):
+                return True
+    return False
+
+
+def _assert_memory_arm_applied(state: str, client: Any) -> tuple[str | None, dict[str, Any]]:
+    """Require the forced arm to be visible in what would have gone to the provider.
+
+    Returns ``(error_or_None, report)``. The report is emitted either way, so a
+    passing run still shows the evidence rather than just a green tick.
+    """
+    bodies = list(getattr(client, 'requests', []) or [])
+    hits = sum(1 for b in bodies if _body_has_recall(b))
+    report = {
+        'state': state,
+        'requests': len(bodies),
+        'withRecallBlock': hits,
+    }
+    if not bodies:
+        return (
+            'memory arm was not exercised: the scripted provider recorded no '
+            'request body, so nothing can be asserted about it',
+            report,
+        )
+    if state == 'on' and hits == 0:
+        return (
+            f'--memory-state on produced no {_RECALL_MARKER!r} block in any of the '
+            f'{len(bodies)} recorded request bodies. Either the corpus did not seed, '
+            'the recall query matched nothing, or the override did not reach the '
+            'loop. A lift measured here would be a measurement of nothing.',
+            report,
+        )
+    if state == 'off' and hits > 0:
+        return (
+            f'--memory-state off still produced {_RECALL_MARKER!r} in {hits} of '
+            f'{len(bodies)} request bodies — the arm is decorative, so the two '
+            'arms are not comparable',
+            report,
+        )
+    return None, report
 
 
 def _extract_final_answer(session: Any, trajectory: TrajectoryBuilder) -> str:

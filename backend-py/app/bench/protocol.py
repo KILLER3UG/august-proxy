@@ -21,12 +21,18 @@ EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_INPUT = 42
 EXIT_TURN_LIMIT = 53
+# The run completed but the arm it was supposed to exercise did not take effect
+# — e.g. `--memory-state on` produced no recall block. Distinct from EXIT_ERROR on
+# purpose: a broken control must not look like a broken product, or the first
+# thing a reader does is debug the wrong thing.
+EXIT_CONTROL = 43
 
 EXIT_NAMES = {
     EXIT_OK: 'ok',
     EXIT_ERROR: 'error',
     EXIT_INPUT: 'input',
     EXIT_TURN_LIMIT: 'turn-limit',
+    EXIT_CONTROL: 'control-not-applied',
 }
 
 # Workbench emit types that are dropped from the bench stream (UI-only chrome
