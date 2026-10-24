@@ -524,6 +524,9 @@ async def _remember(
                 "tell the user you can't save memories while this setting is off.",
             }
         )
+    _automationRefusal = _automationMemoryWriteRefusal()
+    if _automationRefusal:
+        return _automationRefusal
     if not bool(cfg.get('memorySensitiveTopics', False)):
         # Name the trigger: a refusal that only says "sensitive topic" cannot
         # be told apart from a false positive, so the model just retried and
@@ -789,6 +792,47 @@ _FORGET_INTENT_RE = re.compile(
 )
 
 
+def _automationMemoryWriteRefusal() -> str:
+    """Refuse memory writes from an unattended automation/cron run.
+
+    Sub-agents are stopped by their deny set; an automation job is a
+    different session (created with ``headless=True`` and stamped with
+    ``automationJobId``) that reaches the same registry, so without this
+    gate a scheduled run could write durable memory no human asked for.
+    Read paths stay open; only the two mutating doors call this.
+    """
+    import json as _json
+    import logging as _logging
+
+    try:
+        from app.services.workbench.context import currentSessionId
+
+        if not str(currentSessionId.get() or '').strip():
+            # Outside a turn there is no automation to refuse for; do not use
+            # get_session()'s most-recent fallback, which could point at an
+            # automation session and refuse an unrelated direct write.
+            return ''
+        from app.services.workbench.workbench import get_session
+
+        session = get_session()
+        if session is None or not getattr(session, 'headless', False):
+            return ''
+        meta = getattr(session, 'metadata', None) or {}
+        if not str(meta.get('automationJobId') or '').strip():
+            return ''
+    except Exception:
+        _logging.getLogger(__name__).debug('automation memory gate failed', exc_info=True)
+        return ''
+    return _json.dumps(
+        {
+            'ok': False,
+            'policy': 'refused: automation/cron runs are read-only for memory. Tell the '
+            'user this run cannot save or delete memories; write it from an interactive '
+            'chat instead.',
+        }
+    )
+
+
 def _userAskedForDeletion() -> bool:
     """True when the current turn's latest user message asks to delete memory.
 
@@ -806,6 +850,9 @@ def _userAskedForDeletion() -> bool:
             return False
         text = lastUserMessageText(session)
     except Exception:
+        import logging as _logging
+
+        _logging.getLogger(__name__).debug('forget-intent check failed; refusing delete', exc_info=True)
         return False
     return bool(_FORGET_INTENT_RE.search(text or ''))
 
@@ -829,6 +876,9 @@ async def _forget(key: str) -> str:
     factKey = (key or '').strip()
     if not factKey:
         return _json.dumps({'ok': False, 'error': 'key is required — call list_facts to see keys'})
+    _automationRefusal = _automationMemoryWriteRefusal()
+    if _automationRefusal:
+        return _automationRefusal
     # Project-scope delete: `project:<title>` targets the workspace's md
     # entries; a bare key inside a non-home workspace tries the project
     # entries first (matching remember's auto-project default) and falls
