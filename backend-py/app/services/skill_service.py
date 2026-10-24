@@ -215,6 +215,16 @@ def _iterSkillMd(root: Path) -> list[Path]:
                     if entry.name == 'SKILL.md':
                         found.append(entry)
                         if len(found) >= _SKILL_WALK_MAX_FILES:
+                            # The cap truncates the tree, and a silent
+                            # truncation is indistinguishable from "that is
+                            # every skill" — the one census that found no
+                            # second glob also found this line missing.
+                            logger.warning(
+                                'skill walk hit the %d-file cap under %s — '
+                                'skills beyond it are invisible to discovery',
+                                _SKILL_WALK_MAX_FILES,
+                                root,
+                            )
                             return sorted(found, key=str)
                 elif (
                     depth < _SKILL_WALK_MAX_DEPTH
