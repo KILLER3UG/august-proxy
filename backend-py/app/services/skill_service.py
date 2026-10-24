@@ -178,6 +178,56 @@ def _root_mtime(root: Path) -> float:
         return 0.0
 
 
+# A skill is a FOLDER containing SKILL.md, and the authoring format allows an
+# optional category level (`<root>/<category>/<name>/SKILL.md`) so a root with
+# forty skills can be grouped. Discovery used to be exactly one level deep, which
+# silently ignored every grouped skill — including the ones `skill_packs` installs
+# from a category layout, which it flattens on write to work around the same gap.
+#
+# ONE walker serves both the discovery loop and the memo key. They must agree: a
+# key computed over a different file set than the build it caches is a stale
+# catalogue that no edit can bust.
+_SKILL_WALK_MAX_DEPTH = 4
+_SKILL_WALK_MAX_FILES = 400
+
+
+def _iterSkillMd(root: Path) -> list[Path]:
+    """Every ``SKILL.md`` under ``root``, at any category depth, deterministically.
+
+    Bounded on purpose. The walk is an explicit stack rather than ``rglob('**')``
+    because it must not descend a symlinked directory — a root sits on disk where
+    the app has no business reading the whole tree, and `<root>/group/link` is how
+    a discovery pass becomes a loop. Dot-directories are skipped, which keeps
+    ``.git``, ``.venv`` and the delete trash out of the walk without naming each
+    one.
+    """
+    found: list[Path] = []
+    stack: list[tuple[Path, int]] = [(root, 0)]
+    while stack:
+        current, depth = stack.pop()
+        try:
+            entries = sorted(current.iterdir())
+        except OSError:
+            continue
+        for entry in entries:
+            try:
+                if entry.is_file():
+                    if entry.name == 'SKILL.md':
+                        found.append(entry)
+                        if len(found) >= _SKILL_WALK_MAX_FILES:
+                            return sorted(found, key=str)
+                elif (
+                    depth < _SKILL_WALK_MAX_DEPTH
+                    and not entry.name.startswith('.')
+                    and not entry.is_symlink()
+                    and entry.is_dir()
+                ):
+                    stack.append((entry, depth + 1))
+            except OSError:
+                continue
+    return sorted(found, key=str)
+
+
 def _skillMdMarks(pairs: list[tuple[str, Path]]) -> tuple:
     """Per-skill SKILL.md mtimes for the catalogue memo key (Part 16 Phase D
     step 1). Root-dir mtime misses IN-PLACE SKILL.md edits — a hand edit or
@@ -188,7 +238,7 @@ def _skillMdMarks(pairs: list[tuple[str, Path]]) -> tuple:
         try:
             if not root.is_dir():
                 continue
-            for md in root.glob('*/SKILL.md'):
+            for md in _iterSkillMd(root):
                 try:
                     marks.append((str(md), md.stat().st_mtime))
                 except OSError:
@@ -354,16 +404,32 @@ def _validateDescription(description: str, *, allow_long: bool = False) -> None:
 
 
 def _parseSkill(path: Path) -> Optional[dict[str, object]]:
+    """Parse one SKILL.md, or None when it is not a skill — naming WHY in the log.
+
+    A bad skill is skipped, never fatal: discovery of every other skill continues
+    (the caller has always done that). But it used to be skipped SILENTLY, so a
+    skill that vanished from the catalogue left nothing behind to read — the one
+    symptom a user or a developer actually has to work from.
+    """
     try:
         text = path.read_text('utf-8')
-    except Exception:
+    except Exception as exc:
+        logger.warning('skipping %s: unreadable (%s)', path, exc)
         return None
     m = re.match('^---\\s*\\n(.*?)\\n---\\s*\\n(.*)', text, re.DOTALL)
     if not m:
+        # `re.match` anchors at byte 0, so a leading blank line lands here — that
+        # is the format rule (frontmatter starts the file), not a parse bug.
+        logger.warning(
+            'skipping %s: no closing frontmatter (the file must start with `---` '
+            'at byte 0 and close with `---` before the body)',
+            path,
+        )
         return None
     frontmatter = _parse_frontmatter_block(m.group(1))
     body = m.group(2).strip()
     if not body:
+        logger.warning('skipping %s: frontmatter present but the body is empty', path)
         return None
     stat = path.stat()
     known = ('name', 'description', 'trigger', 'category', 'disabled', 'created_by')
@@ -489,12 +555,7 @@ def list_all(
     for scope, root in _skillRoots(workspace, agent_id):
         if not root.is_dir():
             continue
-        for entry in sorted(root.iterdir()):
-            if not entry.is_dir():
-                continue
-            md = entry / 'SKILL.md'
-            if not md.exists():
-                continue
+        for md in _iterSkillMd(root):
             parsed = _parseSkill(md)
             if not parsed:
                 continue
@@ -502,9 +563,7 @@ def list_all(
             try:
                 _validateName(name)
             except SkillValidationError as exc:
-                import logging
-
-                logging.getLogger('august.skills').warning(
+                logger.warning(
                     'skipping skill with invalid name %r (%s): %s', name, md, exc
                 )
                 continue

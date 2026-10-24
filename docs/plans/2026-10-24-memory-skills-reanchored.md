@@ -107,15 +107,43 @@ tool), so the gate passes honestly rather than being baselined. Widening the sca
 is its own item: it will pull existing async-def camelCase params into the
 baseline, which is a census, not a fix.
 
-## Step 3 — skills gap audit: not started
+## Step 3 — skills gap audit
 
-`docs/SKILL_AUTHORING.md` is the format spec and much of Part B already ships
-(SKILL.md folders, `references/`, `metadata.hermes` parsing, unknown keys
-round-tripping through patches, lazy `catalogue()` as the single prompt door,
-`tool_search` → `tool_call` for on-demand load). To be audited item by item:
-frontmatter validation with skip-and-log, `platforms` / `requires_*` /
-`fallback_for_*` gating, L2 traversal and symlink rejection, `${...}` substitution,
-install/import confirmation, size caps.
+Format spec: `docs/SKILL_AUTHORING.md`. Most of Part B already ships, so this is a
+census, not a build plan. Statuses marked ✓ were re-read in the code by me; the
+rest are the audit agent's findings and are cited to a file:line but not yet
+independently opened.
+
+| Part B item | status | evidence |
+| --- | --- | --- |
+| folder + `SKILL.md`, `---` at byte 0, YAML mapping, non-empty body | ✓ exists | `re.match('^---\s*\n(.*?)\n---\s*\n(.*)', …)` — anchored at byte 0, so a leading blank line fails; an empty body is refused at `skill_service.py:432`. Both proved live with fixtures. |
+| required `name` / `description` at DISCOVERY | partial | `_parseSkill` falls back to the DIRECTORY name for `name` and `''` for `description`; the caps and required-ness are enforced only on the write door |
+| skip a bad skill, log a reason, keep the siblings loading | ✓ **built now** | was: invalid *name* logged, every other failure mode vanished silently. Now `_parseSkill` names each cause (unreadable / no closing frontmatter / empty body) at `skill_service.py:417-432` |
+| recursive discovery with an optional category level | ✓ **built now** | was exactly one level (`root.iterdir()` + `entry/'SKILL.md'`), so `<root>/<category>/<name>/SKILL.md` was invisible while `skill_packs` could install that layout — it flattened on write to work around the gap. One shared walker `_iterSkillMd` now feeds BOTH discovery and the memo key, depth- and count-bounded, never descending a dot-dir or a symlinked directory |
+| roots + precedence, user overrides bundled, bundled read-only | partial | four roots (bot → project → agent → bundled), earlier wins, `overrides` badge. Missing: no config-supplied external root. And `migrate_flat_skills` WRITES into the bundled/install tree, so "bundled is read-only" is not true today |
+| unknown frontmatter keys round-trip; `metadata.hermes` parsed | ✓ exists | both ends opened: `_parse_frontmatter_block` (`skill_service.py:469`) parses nested blocks to any depth and keeps leaves as raw strings so a write is byte-identical; `_renderSkillMd` (`:1210`) re-emits unknown keys after the canonical ones. A falsy unknown value is dropped — the agent's claim, not yet opened |
+| `platforms` / `requires_tools` / `requires_toolsets` / `fallback_for_*` gating | **missing** | only `disabled: true` and `status: retired` gate visibility (`:647`, `:650`); the `requires_*`/`fallback_for_*` names appear nowhere in `backend-py/app` |
+| L1 body + file list + absolute dir; L2 one file, traversal rejected | ✓ **built now (L1)** | `load_skill` returned neither the directory nor a usable path — see the fix. L2 is `read_file` on the absolute path, which is now proven to pass `bind_path`; per-skill containment is the generic door, not a skill-specific one |
+| `${SKILL_DIR}` / `${SESSION_ID}` substitution | ✓ **built now** | none existed; added with the Hermes aliases |
+| soft line target / hard char cap on the body | missing | a 500-char cap on the DESCRIPTION only (`:219`); `load_bodies` budgets preloads at 24000 chars (`:565`) |
+| install with confirmation + exfiltration scan | partial | remote pack install is solid (source + sha256 recorded, traversal refused, 20 MB cap, non-owned collisions refused) but it is a single click with no content scan, and there is no local-folder import at all. `harness_rails._content_check` exists and is wired ONLY to the proposal/auto-apply lane |
+| scripts run through the existing terminal tool | ✓ exists | no dedicated skill-script door; `scripts/*.mjs` go through the general gated `run_command` |
+
+Verified live on throwaway dirs (`e2e` of the walker, not a read of the code):
+a category-nested skill is discovered and its 9 bundled siblings are unaffected;
+three malformed fixtures are each skipped WITH a logged reason while a good
+sibling in the same root still loads; a dot-directory is not walked; editing a
+NESTED `SKILL.md` busts the catalogue memo (the key and the build now come from
+one walker — before, the key could not even see the file). One control could NOT
+be run here: creating a directory symlink needs a privilege this shell does not
+have, so "symlinked directory is not descended" is implemented and unproven.
+
+Still open, with a recommendation rather than a build: `platforms` gating (cheap,
+low value on a single-user Windows desktop); making `name`/`description` required
+at discovery (would silently hide existing learned skills that lack a description —
+needs a census of the user's own skills first); `list_skills` truncating every
+description to 60 chars while the index renders the whole trigger
+(`skill_tools.py:132`); the bundled root being writable by a migration.
 
 ## Step 4 — the two confirmed gaps to build
 
