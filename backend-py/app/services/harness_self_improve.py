@@ -642,12 +642,51 @@ def _apply_skill_write(row: dict[str, Any]) -> dict[str, Any]:
         )
 
         _validateName(name)
-        _validateDescription(description or 'Created from an approved harness proposal.')
         root = _agentSkillsDir()
         skill_dir = root / name
         md = skill_dir / 'SKILL.md'
         if kind == 'skill_patch' and not md.exists():
             return {'ok': False, 'error': f'skill {name!r} does not exist; use skill_create'}
+        # Part 16 Phase D step 2: learned-skill provenance. version bumps
+        # per approved patch; status starts active (stale/retired via
+        # later proposals); supersedes stamps the lineage.
+        version = 1
+        prior: dict[str, str] = {}
+        priorUnknownLines: list[str] = []
+        if kind == 'skill_patch' and md.exists():
+            # Read the frontmatter this write replaces. The version bump
+            # needs it, and so does carrying over the fields the proposal
+            # itself is silent about.
+            try:
+                priorText = md.read_text('utf-8')
+                prior = _parse_frontmatter_from_md(priorText)
+                version = int(prior.get('version') or 1) + 1
+                # A patch that stays silent about the description keeps the
+                # one it is patching — the placeholder destroyed the
+                # operator's own words (measured: a body-only patch replaced
+                # a real description with the created-from text).
+                if not description.strip():
+                    description = prior.get('description', '').strip().strip('"')
+                # Unknown frontmatter keys round-trip through every patch
+                # (SKILL_AUTHORING.md): the prior file's lines are re-emitted
+                # VERBATIM below, so a nested `metadata.hermes` block keeps
+                # its bytes instead of being flattened by a line parser.
+                _restated = {
+                    'name', 'description', 'trigger', 'category', 'created_by',
+                    'origin', 'learned_from', 'version', 'status', 'keywords',
+                    'disabled', 'supersedes',
+                }
+                inUnknown = False
+                for ln in priorText[3:].split('---', 1)[0].split('\n'):
+                    if not ln.strip():
+                        continue
+                    if not ln[0].isspace():
+                        inUnknown = ln.partition(':')[0].strip().lower() not in _restated
+                    if inUnknown:
+                        priorUnknownLines.append(ln)
+            except Exception:
+                version = 2
+        _validateDescription(description or 'Created from an approved harness proposal.')
         skill_dir.mkdir(parents=True, exist_ok=True)
         normalized = _ensure_canonical_body(
             body,
@@ -655,20 +694,6 @@ def _apply_skill_write(row: dict[str, Any]) -> dict[str, Any]:
             description=description or 'Created from an approved harness proposal.',
             is_learned=True,
         )
-        # Part 16 Phase D step 2: learned-skill provenance. version bumps
-        # per approved patch; status starts active (stale/retired via
-        # later proposals); supersedes stamps the lineage.
-        version = 1
-        prior: dict[str, str] = {}
-        if kind == 'skill_patch' and md.exists():
-            # Read the frontmatter this write replaces. The version bump
-            # needs it, and so does carrying over the fields the proposal
-            # itself is silent about.
-            try:
-                prior = _parse_frontmatter_from_md(md.read_text('utf-8'))
-                version = int(prior.get('version') or 1) + 1
-            except Exception:
-                version = 2
         # Which skill this one replaced, who wrote it, what it triggers on
         # and which episodes it came from are properties of the SKILL, not
         # of one proposal — a v3 patch that restates none of them must not
@@ -736,6 +761,13 @@ def _apply_skill_write(row: dict[str, Any]) -> dict[str, Any]:
             disabled=disabled,
         )
         content = frontmatter + normalized
+        if priorUnknownLines:
+            # Re-emit the prior file's unknown frontmatter lines verbatim —
+            # byte-for-byte, nested blocks included (SKILL_AUTHORING.md:
+            # "Unknown frontmatter round-trips through every patch").
+            head, sep, tail = content.partition('\n---\n')
+            if sep:
+                content = head + '\n' + '\n'.join(priorUnknownLines) + sep + tail
         # P2#13: preserve the file this write replaces before it lands.
         from app.services.skill_versions import snapshot_before_write
 
