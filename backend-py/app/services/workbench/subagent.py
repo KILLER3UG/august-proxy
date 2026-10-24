@@ -363,18 +363,16 @@ def subagent_memory_block(session: object, goal: str, workspace: str | None) -> 
     turn is the single door that mutates durable memory.
     """
     try:
-        from app.services import brain_config_service as bc
         from app.services import session_scope as scope_mod
         from app.services.memory_store.fact_retrieval import (
-            build_memory_block,
-            build_profile_memory_block,
+            build_memory_context_for_turn,
         )
 
         resolved = scope_mod.resolve_scope(session)
-        if bool(bc.getRuntimeConfig().get('memoryAutoInject', False)):
-            block, _ = build_memory_block(goal, workspace=workspace or '', scope=resolved)
-        else:
-            block, _ = build_profile_memory_block(scope=resolved)
+        # One resolver for the gate, shared with the main turn's reader, so a
+        # per-run `--memory-state` override cannot apply to one path and be
+        # silently ignored by the other.
+        block, _ = build_memory_context_for_turn(goal, workspace=workspace or '', scope=resolved)
         return block
     except Exception:
         logger.debug('subagent memory build failed', exc_info=True)

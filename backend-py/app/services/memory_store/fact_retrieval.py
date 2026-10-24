@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+from contextvars import ContextVar
 from typing import Any
 
 from app.services.memory_conn import conn as _conn
@@ -591,6 +592,58 @@ _DISTILLED_SOURCE = 'harness'
 _DISTILLED_MARK = '[distilled] '
 
 
+memoryStateOverride: ContextVar[str] = ContextVar('memory_state_override', default='')
+
+_MEMORY_STATE_VALUES = ('', 'on', 'off')
+
+
+def resolve_memory_auto_inject() -> bool:
+    """The one answer to "should the recalled-facts lane ride this turn?".
+
+    Two callers used to each write `bool(cfg.get('memoryAutoInject', False))` and
+    then branch to the same two builders — so any per-run override had to be
+    threaded through both, and the second one (the subagent path) is exactly the
+    kind of reader a first implementation forgets. One resolver, one branch.
+
+    The override wins over the stored config, and an empty override means
+    "inherit", so a process that never sets it behaves exactly as before. This is
+    the same shape as `contextWindowOverride`: the value is resolved from
+    config, not from a session field, so a ContextVar is the only seam that
+    reaches every reader without one.
+    """
+    state = memoryStateOverride.get()
+    if state == 'on':
+        return True
+    if state == 'off':
+        return False
+    from app.services import brain_config_service as _bc
+
+    try:
+        cfg = _bc.getRuntimeConfig()
+    except Exception:
+        cfg = {}
+    return bool(cfg.get('memoryAutoInject', False))
+
+
+def build_memory_context_for_turn(
+    query: str,
+    *,
+    workspace: str = '',
+    scope: str = 'global',
+) -> tuple[str, list[tuple[str, str]]]:
+    """Render the per-turn memory tail under the resolved gate.
+
+    `Relevant memory:` (BM25) when auto-inject is on; the always-in profile lane
+    when it is off. This is the branch both readers used to duplicate.
+    """
+    if resolve_memory_auto_inject():
+        return build_memory_block(
+            (query or '').strip(), workspace=workspace, scope=scope, record=False
+        )
+    block, rows = build_profile_memory_block(scope=scope)
+    return block, [(str(r.get('key') or ''), str(r.get('title') or '')) for r in rows]
+
+
 def _fact_line(row: dict[str, object], *, entry_cap: int = _ENTRY_CHAR_CAP) -> str:
     """Render one corpus row as its ``- title: body`` line.
 
@@ -1107,13 +1160,18 @@ def memory_context_preview(
     because the tool-gating that suppresses the index lives in one other place
     (``workbench`` builds it only when the memory read tools are offered).
     """
+    autoInject = resolve_memory_auto_inject()
+    # Still read the config directly for the one value this preview REPORTS
+    # rather than gates on. Removing it with the auto-inject branch left these
+    # two references to `cfg` unbound — mypy caught it, and this function is a
+    # preview surface, so a runtime NameError here would have shown up as a
+    # blank panel rather than a crash.
     from app.services import brain_config_service as _bc
 
     try:
         cfg = _bc.getRuntimeConfig()
     except Exception:
         cfg = {}
-    autoInject = bool(cfg.get('memoryAutoInject', False))
 
     turnBlock: str
     injected: list[tuple[str, str]]
