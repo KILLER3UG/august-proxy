@@ -5,7 +5,7 @@
 
 # API Index — every route
 
-419 routes across 346 paths,
+421 routes across 348 paths,
 grouped by family. **This file is generated.** For the prose that explains what
 these are for and when to reach for them, read
 [`API_REFERENCE.md`](./API_REFERENCE.md) — it covers the families that matter in
@@ -498,7 +498,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `GET` | `/api/desktop-automation/config` | Return the effective desktop-automation configuration. |
 | `GET` | `/api/desktop-automation/health` | Report desktop-automation capability and a live probe. |
 
-## Other (30)
+## Other (32)
 
 > Routes not yet assigned a family. Naming these is a small doc task;
 > leaving them here is what keeps the index honest.
@@ -515,6 +515,8 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `GET` | `/api/conversations` | Return conversations grouped by clientType (Node contract). |
 | `GET` | `/api/detail/{request_id}` | Return detailed info for a specific request, or 404. |
 | `GET` | `/api/details` | Return request detail entries as a bare array (Node contract). |
+| `GET` | `/api/docs-state` | Get Catalog |
+| `GET` | `/api/docs-state/page` | Get Page |
 | `POST` | `/api/exam/{examId}/answer` | Record an answer for a question. Returns correctness + rationale. |
 | `POST` | `/api/exam/{examId}/help` | Explain a question via Prefrontal without revealing the answer in the banner state. |
 | `GET` | `/api/exam/{examId}/question/{position}` | Fetch one question. NEVER leaks correct_index or rationale (the authoring invariant). |
@@ -538,4 +540,4 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 
 ---
 
-Generated from `docs/api/openapi.json` (419 operations).
+Generated from `docs/api/openapi.json` (421 operations).

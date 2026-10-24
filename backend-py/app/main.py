@@ -497,6 +497,7 @@ from app.routers import code_review as codeReviewRoutes  # noqa: E402
 from app.routers import config as configRoutes  # noqa: E402
 from app.routers import curator as curatorRoutes  # noqa: E402
 from app.routers import desktop_automation as desktopAutomationRoutes  # noqa: E402
+from app.routers import docs_state as docsStateRoutes  # noqa: E402
 from app.routers import exam as examRoutes  # noqa: E402
 from app.routers import gateway as gatewayRoutes  # noqa: E402
 from app.routers import git as gitRoutes  # noqa: E402
@@ -528,6 +529,7 @@ from app.routers import whats_new as whatsNewRoutes  # noqa: E402
 from app.routers import workbench as workbenchRoutes  # noqa: E402
 
 app.include_router(configRoutes.router)
+app.include_router(docsStateRoutes.router)
 app.include_router(hooksRoutes.router)
 # BEFORE skillsRoutes: /api/skills/packs must not be captured by
 # GET /api/skills/{name} (FastAPI matches in include order).

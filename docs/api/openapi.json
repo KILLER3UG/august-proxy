@@ -8996,6 +8996,115 @@
         "summary": "Getdetails"
       }
     },
+    "/api/docs-state": {
+      "get": {
+        "operationId": "get_catalog_api_docs_state_get",
+        "parameters": [
+          {
+            "description": "Absolute path of the project to read.",
+            "in": "query",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Absolute path of the project to read.",
+              "title": "Project",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Include each page body (large).",
+            "in": "query",
+            "name": "body",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Include each page body (large).",
+              "title": "Body",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Catalog Api Docs State Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Catalog"
+      }
+    },
+    "/api/docs-state/page": {
+      "get": {
+        "operationId": "get_page_api_docs_state_page_get",
+        "parameters": [
+          {
+            "description": "Absolute path of the project to read.",
+            "in": "query",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Absolute path of the project to read.",
+              "title": "Project",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The page id from the catalog.",
+            "in": "query",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "The page id from the catalog.",
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Page Api Docs State Page Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Page"
+      }
+    },
     "/api/exam/generate": {
       "post": {
         "description": "Generate a new exam via Prefrontal. Topic can be a string or derived from uploaded files.",
