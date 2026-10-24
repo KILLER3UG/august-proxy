@@ -585,6 +585,7 @@ def alias_preread_skills(
 
             catalogue = skill_service.catalogue()
         except Exception:
+            logger.debug('skill catalogue unavailable for alias pre-read', exc_info=True)
             catalogue = []
     skipped = {str(n or '').lower() for n in (exclude or ())}
     matched: list[dict[str, object]] = []
