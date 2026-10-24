@@ -1434,6 +1434,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/brain/stores/facts/{row_id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Getfacthistory
+         * @description Edit history for one fact, projected from the rollback store.
+         */
+        get: operations["getFactHistory_api_brain_stores_facts__row_id__history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/brain/stores/{name}": {
         parameters: {
             query?: never;
@@ -12102,6 +12122,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    getFactHistory_api_brain_stores_facts__row_id__history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                row_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

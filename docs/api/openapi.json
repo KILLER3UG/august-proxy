@@ -7156,6 +7156,47 @@
         ]
       }
     },
+    "/api/brain/stores/facts/{row_id}/history": {
+      "get": {
+        "description": "Edit history for one fact, projected from the rollback store.",
+        "operationId": "getFactHistory_api_brain_stores_facts__row_id__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "row_id",
+            "required": true,
+            "schema": {
+              "title": "Row Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Getfacthistory",
+        "tags": [
+          "brain-config"
+        ]
+      }
+    },
     "/api/brain/stores/{name}": {
       "get": {
         "description": "Read-only paginated browse of one brain store (Memory settings page).\n\nPart 17 Phase C: ``sort``/``category``/``source``/``confidence`` move\nfiltering and ordering server-side so they hold past the fetch cap.",

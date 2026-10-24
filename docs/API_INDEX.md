@@ -5,7 +5,7 @@
 
 # API Index — every route
 
-421 routes across 348 paths,
+422 routes across 349 paths,
 grouped by family. **This file is generated.** For the prose that explains what
 these are for and when to reach for them, read
 [`API_REFERENCE.md`](./API_REFERENCE.md) — it covers the families that matter in
@@ -112,7 +112,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `PATCH` | `/api/sessions/{sessionId}/messages/enrichment` | Attach the client-authored structured transcript to one message. |
 | `GET` | `/api/sessions/search` | Full-text search across conversation messages (C8). |
 
-## Memory & brain (25)
+## Memory & brain (26)
 
 | Method | Path | Summary |
 | --- | --- | --- |
@@ -140,6 +140,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `GET` | `/api/brain/stores/{name}` | Read-only paginated browse of one brain store (Memory settings page). |
 | `PATCH` | `/api/brain/stores/{name}/{row_id}` | Update whitelisted fields of one brain-store row (Memory UI inline edit). |
 | `DELETE` | `/api/brain/stores/{name}/{row_id}` | Delete one row from a brain store (per-entry Delete in the Memory UI). |
+| `GET` | `/api/brain/stores/facts/{row_id}/history` | Edit history for one fact, projected from the rollback store. |
 | `GET` | `/api/brain/turn-outcomes` | M5 telemetry: per-model/provider error rates plus the per-turn verdict distribution (046) for the Observabili… |
 
 ## Skills (12)
@@ -540,4 +541,4 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 
 ---
 
-Generated from `docs/api/openapi.json` (421 operations).
+Generated from `docs/api/openapi.json` (422 operations).
