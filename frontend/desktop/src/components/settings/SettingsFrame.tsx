@@ -33,15 +33,31 @@ export const SETTINGS_BACKDROP_CLASS = cn(
 );
 
 /** The panel: wide (the reference's settings panel is ~1600px across, and a
- *  920px panel squeezed every three-column row's VALUE into ~300px) and capped
- *  in height so it stays a centred modal rather than a full-viewport page. */
-export const SETTINGS_PANEL_CLASS =
-  'relative flex max-h-[min(880px,calc(100vh-3rem))] w-full max-w-[1440px] overflow-hidden rounded-2xl border border-hairline-strong bg-background shadow-2xl';
+ *  920px panel squeezed every three-column row's VALUE into ~300px) and a FIXED
+ *  height, not a content-driven one.
+ *
+ *  The height was `max-h` only, which let each section size the dialog. Measured
+ *  in the running app across tabs: General 1440×880 at y=60, Appearance
+ *  1440×654 at y=173, Skills/About/Plugins 1440×648 at y=176 — so switching a
+ *  tab resized the panel by up to 232px and, because it is vertically centred,
+ *  moved its top edge 116px. The whole dialog bounced as you browsed, and the
+ *  rail scrolled to a different place each time. One height for every section
+ *  is what a centred modal has to be; a section that overflows it scrolls
+ *  inside the content region, which already has `overflow-y-auto`.
+ *
+ *  `max-h` stays alongside it so a short window still caps the panel instead of
+ *  letting it overflow the viewport. */
+export const SETTINGS_PANEL_CLASS = cn(
+  'relative flex h-[min(880px,calc(100vh-3rem))] w-full max-w-[1440px]',
+  'max-h-[min(880px,calc(100vh-3rem))] overflow-hidden rounded-2xl border',
+  'border-hairline-strong bg-background shadow-2xl',
+);
 
-/** The left rail. No `h-full`: the panel's height is content-driven, so a
- *  percentage height resolves against an indefinite parent and the profile
- *  footer gets clipped. `align-items: stretch` + `min-h-0` is what makes the
- *  rail exactly the panel height. */
+/** The left rail. `min-h-0` + `overflow-hidden` so its own `nav` is the
+ *  scroller: 17 section rows are taller than any panel height, and a rail that
+ *  grew instead of scrolling would push the profile footer out of a panel with
+ *  `overflow-hidden`. It stretches to the panel's fixed height by the flex
+ *  row's default `align-items: stretch`. */
 export const SETTINGS_RAIL_CLASS =
   'flex min-h-0 w-44 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar sm:w-60';
 
@@ -57,14 +73,11 @@ export const SETTINGS_COLUMN_CLASS = 'flex min-h-full w-full max-w-[1080px] flex
  *  (SettingsPage's `SettingsSectionLoader`), so the two loading states —
  *  shell cold, section cold — look like one continuous thing.
  *
- *  The panel carries an explicit height here, which the real dialog does not.
- *  `SETTINGS_PANEL_CLASS` caps at `min(880px, 100vh-3rem)` but is otherwise
- *  content-driven, and the content that holds it up is the 17-row rail — which
- *  a placeholder does not have. Measured with the height left out: the frame
- *  came up 1600×347 and the real panel landed 1440×880, so the fix removed one
- *  jump and left another. The same `min()` expression, on both sides, is what
- *  makes the swap size-neutral. */
-const FRAME_PANEL_CLASS = cn(SETTINGS_PANEL_CLASS, 'h-[min(880px,calc(100vh-3rem))]');
+ *  It uses `SETTINGS_PANEL_CLASS` verbatim. An earlier revision carried its own
+ *  explicit height, because the placeholder's short rail could not hold the
+ *  panel up the way the 17-row rail does and the frame came up 1600×347 against
+ *  a real 1440×880. Now that the panel has a fixed height of its own the
+ *  override is gone, so the two states cannot disagree about size at all. */
 
 /** The rail rows fade toward the bottom of the list, which is what reads as
  *  "more rows continue here". Written as literal classes rather than a computed
@@ -96,7 +109,7 @@ export function SettingsFrameSkeleton() {
         role="dialog"
         aria-modal="true"
         aria-label="Settings"
-        className={FRAME_PANEL_CLASS}
+        className={SETTINGS_PANEL_CLASS}
       >
         <aside className={SETTINGS_RAIL_CLASS} aria-label="Settings sections">
           <div className="px-3 pb-2 pt-3">

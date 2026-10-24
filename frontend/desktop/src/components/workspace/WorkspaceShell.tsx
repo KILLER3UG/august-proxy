@@ -304,8 +304,9 @@ export function WorkspaceShell({
         className={SETTINGS_PANEL_CLASS}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Left rail — width and the no-`h-full` rule live with the class in
-            SettingsFrame. What belongs here is that the rail's own `nav` is the
+        {/* Left rail — its width and the fixed panel height it stretches to
+            live with the classes in SettingsFrame. What belongs here is that
+            the rail's own `nav` is the
             scroller: 17 section rows overflow any panel height, and a rail that
             grows instead of scrolling pushes the profile footer out of a panel
             with `overflow-hidden`. */}
