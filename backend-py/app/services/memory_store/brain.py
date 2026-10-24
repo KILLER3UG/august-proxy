@@ -891,6 +891,56 @@ def _store_id_column(store: str) -> str:
     return 'key' if store == 'memory' else 'id'
 
 
+def _historyValue(obj: object) -> str:
+    """The fact text carried by one rollback snapshot (before or after)."""
+    if not isinstance(obj, dict):
+        return ''
+    raw: object = obj.get('factValue') if 'factValue' in obj else obj.get('value')
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    if isinstance(raw, dict):
+        raw = raw.get('fact') or ''
+    return ' '.join(str(raw or '').split())
+
+
+def fact_history(row_id: object) -> dict[str, object]:
+    """The edit history for one fact row, read from the rollback store.
+
+    The rollback log IS the history system (a snapshot is taken before every
+    model/UI overwrite); this projects the entries for one key instead of
+    adding a second table. Newest first, bounded.
+    """
+    conn = _conn()
+    try:
+        row = conn.execute('SELECT fact_key FROM facts WHERE id = ?', (row_id,)).fetchone()
+    except sqlite3.Error as exc:
+        return {'ok': False, 'error': str(exc)}
+    if row is None:
+        return {'ok': False, 'error': 'row not found'}
+    key = str(row['fact_key'] or '')
+    from app.services.rollback_store import list_entries
+
+    targets = {key, f'facts:{key}'}
+    entries: list[dict[str, object]] = []
+    for entry in list_entries():
+        if entry.get('type') != 'restore_memory_item':
+            continue
+        if str(entry.get('target') or '') not in targets:
+            continue
+        entries.append(
+            {
+                'entryId': entry.get('id'),
+                'at': entry.get('at'),
+                'before': _historyValue(entry.get('before')),
+                'after': _historyValue(entry.get('after')),
+            }
+        )
+    return {'ok': True, 'key': key, 'entries': list(reversed(entries))[:20]}
+
+
 def _record_row_rollback(store: str, target: str, before: object, after: object) -> None:
     """Best-effort undo record for a settings-UI memory mutation."""
     try:

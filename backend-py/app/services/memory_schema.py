@@ -64,6 +64,15 @@ _CORE_SCHEMA_SQL = """
             last_injected_at TEXT,
             verified_at TEXT,
             contradicts TEXT,
+            -- 056: the main-goal record shape. Additive; a fresh database is
+            -- born with them and 056's ALTERs are the legacy path.
+            aliases TEXT DEFAULT '[]',
+            subject_type TEXT DEFAULT '',
+            tag TEXT DEFAULT '',
+            source_session TEXT DEFAULT '',
+            sensitive INTEGER DEFAULT 0,
+            version INTEGER DEFAULT 1,
+            derived_from TEXT DEFAULT '[]',
             -- One key per SCOPE, not one key in the whole store. The old
             -- column-level UNIQUE forced every per-scope memory to be
             -- hand-namespaced by the caller, and the namespacing changed the
@@ -404,6 +413,14 @@ def _ensure_fact_signal_columns(conn: sqlite3.Connection) -> None:
     ensure_column(conn, 'facts', 'last_injected_at', 'TEXT')
     ensure_column(conn, 'facts', 'verified_at', 'TEXT')
     ensure_column(conn, 'facts', 'contradicts', 'TEXT')
+    # 056: the main-goal record shape (aliases/tag/session/sensitive/version).
+    ensure_column(conn, 'facts', 'aliases', "TEXT DEFAULT '[]'")
+    ensure_column(conn, 'facts', 'subject_type', "TEXT DEFAULT ''")
+    ensure_column(conn, 'facts', 'tag', "TEXT DEFAULT ''")
+    ensure_column(conn, 'facts', 'source_session', "TEXT DEFAULT ''")
+    ensure_column(conn, 'facts', 'sensitive', 'INTEGER DEFAULT 0')
+    ensure_column(conn, 'facts', 'version', 'INTEGER DEFAULT 1')
+    ensure_column(conn, 'facts', 'derived_from', "TEXT DEFAULT '[]'")
     # 055: the automation SOURCE stamp (M-12). `episodes.scope` is "whose
     # memory is this?"; the source is "what produced this?".
     ensure_column(conn, 'episodes', 'source', 'TEXT')
@@ -1189,6 +1206,13 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             ensure_column(conn, 'facts', 'last_used_at', 'TEXT')
             ensure_column(conn, 'facts', 'status', "TEXT DEFAULT 'active'")
             ensure_column(conn, 'facts', 'description', "TEXT DEFAULT ''")
+            ensure_column(conn, 'facts', 'aliases', "TEXT DEFAULT '[]'")
+            ensure_column(conn, 'facts', 'subject_type', "TEXT DEFAULT ''")
+            ensure_column(conn, 'facts', 'tag', "TEXT DEFAULT ''")
+            ensure_column(conn, 'facts', 'source_session', "TEXT DEFAULT ''")
+            ensure_column(conn, 'facts', 'sensitive', 'INTEGER DEFAULT 0')
+            ensure_column(conn, 'facts', 'version', 'INTEGER DEFAULT 1')
+            ensure_column(conn, 'facts', 'derived_from', "TEXT DEFAULT '[]'")
             # M-2: scope axis. The ensure_column runs before
             # migration 032 on the fast path, so the migration's ALTER fails
             # (recorded, swallowed) — the index is created here to stay

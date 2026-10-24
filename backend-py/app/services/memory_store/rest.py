@@ -14,6 +14,7 @@ from app.services.memory_conn import conn as _conn
 from app.services.memory_conn import db_path as _db_path
 from app.services.memory_store.timeutil import utc_now_text
 from app.services.memory_store.wire import _json, _row_as_wire
+from app.services.sensitive_topics import sensitiveMemoryReason
 from app.type_aliases import FactDict, JsonValue, ProposalDict
 
 logger = logging.getLogger('august.memory_store.rest')
@@ -28,7 +29,7 @@ logger = logging.getLogger('august.memory_store.rest')
 # constraint, so this frozenset (plus the `remember` tool's schema enum) is the
 # whole surface; no migration and no new store.
 PROFILE_FACT_KIND = 'profile'
-_FACT_KINDS = frozenset({'fact', 'lesson', 'preference', 'skill-note', PROFILE_FACT_KIND})
+_FACT_KINDS = frozenset({'fact', 'lesson', 'preference', 'skill-note', 'person', PROFILE_FACT_KIND})
 
 
 class FactVersionConflict(ValueError):
@@ -77,6 +78,12 @@ def save_fact(
     description: str = '',
     verified: bool = False,
     if_updated_at: str = '',
+    aliases: list[str] | tuple[str, ...] | str | None = None,
+    subject_type: str = '',
+    tag: str = '',
+    source_session: str = '',
+    sensitive: bool | None = None,
+    derived_from: list[str] | tuple[str, ...] | str | None = None,
 ) -> None:
     """Save a structured fact. ``expires_at`` (ISO-8601 TEXT) is optional; the
     cognitive boot sweep purges facts whose expiry has passed.
@@ -173,6 +180,25 @@ def save_fact(
                     f'from scope "{requested}" — write the global key from a '
                     'global scope, or use a distinct key for this scope.'
                 )
+    # The record shape is server-stamped. `tag` names the writer's code path
+    # (never the model's claim); `subject_type` is the one-word identity the
+    # index/UI groups by; `sensitive` is a durable copy of the write-door
+    # detector so a read door can filter without re-running the regex.
+    tagValue = (tag or '').strip().lower()
+    if tagValue not in _TAG_VALUES:
+        tagValue = _deriveFactTag(source)
+    subjectValue = (subject_type or '').strip().lower()
+    if subjectValue not in _SUBJECT_TYPES:
+        subjectValue = _deriveSubjectType(kind, category)
+    aliasesJson = _json(_normalizedStringList(aliases))
+    derivedJson = _json(_normalizedStringList(derived_from, cap=8, itemCap=80))
+    _valueText = factValue if isinstance(factValue, str) else str(factValue or '')
+    sensitiveFlag = 1 if (
+        sensitive
+        if sensitive is not None
+        else sensitiveMemoryReason(_valueText, title or '', description or '')
+    ) else 0
+
     # A durable fact is re-injected into later turns — the <memory> tail and the
     # always-in profile lane carry whatever is stored here out to every provider
     # request. A credential saved as a fact is therefore published onward
@@ -199,11 +225,19 @@ def save_fact(
     # The guard belongs INSIDE the statement. Reading the stamp and then writing
     # when it still matches leaves a window in which another writer moves the row
     # and this write clobbers it — which is the exact race being closed.
-    casClause = '\n            WHERE facts.updated_at = ?' if if_updated_at else ''
+    # `if_version` accepts the microsecond `updated_at` stamp (the original
+    # token) or the integer `version` the record now carries.
+    _versionToken = bool(if_updated_at) and if_updated_at.isdigit()
+    if _versionToken:
+        casClause = '\n            WHERE facts.version = ?'
+        casValue: object = int(if_updated_at)
+    else:
+        casClause = '\n            WHERE facts.updated_at = ?' if if_updated_at else ''
+        casValue = if_updated_at
     cur = conn.execute(
         f"""
-        INSERT INTO facts (fact_key, fact_value, title, kind, description, category, source, confidence, expires_at, scope, verified_at, updated_at)
-        VALUES (?, ?, ?, COALESCE(NULLIF(?, ''), 'fact'), ?, ?, ?, ?, ?, ?, CASE WHEN ? THEN datetime('now') ELSE NULL END, ?)
+        INSERT INTO facts (fact_key, fact_value, title, kind, description, category, source, confidence, expires_at, scope, verified_at, updated_at, aliases, subject_type, tag, source_session, sensitive, version, derived_from)
+        VALUES (?, ?, ?, COALESCE(NULLIF(?, ''), 'fact'), ?, ?, ?, ?, ?, ?, CASE WHEN ? THEN datetime('now') ELSE NULL END, ?, ?, ?, ?, ?, ?, 1, ?)
         -- The conflict target is the row's IDENTITY, scope + key, not the key
         -- alone. `fact_key` unique store-wide (pre-055) meant one key had one
         -- home in the whole install, which is why per-scope memory had to be
@@ -221,6 +255,13 @@ def save_fact(
             confidence = excluded.confidence,
             expires_at = excluded.expires_at,
             status = 'active',
+            aliases = CASE WHEN excluded.aliases != '[]' THEN excluded.aliases ELSE facts.aliases END,
+            subject_type = CASE WHEN excluded.subject_type != '' THEN excluded.subject_type ELSE facts.subject_type END,
+            tag = CASE WHEN excluded.tag != '' THEN excluded.tag ELSE facts.tag END,
+            source_session = CASE WHEN excluded.source_session != '' THEN excluded.source_session ELSE facts.source_session END,
+            sensitive = CASE WHEN excluded.sensitive = 1 OR COALESCE(facts.sensitive, 0) = 1 THEN 1 ELSE 0 END,
+            version = COALESCE(facts.version, 1) + 1,
+            derived_from = CASE WHEN excluded.derived_from != '[]' THEN excluded.derived_from ELSE facts.derived_from END,
             -- M-8: a RE-STATEMENT is the only verification this store can
             -- observe. `verified` is the caller's claim that a HUMAN wrote
             -- or restated the fact (the Settings write and the bulk import
@@ -244,9 +285,15 @@ def save_fact(
             normalize_scope(scope),
             1 if verified else 0,
             utc_now_text(),
-            1 if verified else 0,
+            aliasesJson,
+            subjectValue,
+            tagValue,
+            (source_session or '').strip(),
+            sensitiveFlag,
+            derivedJson,
         )
-        + ((if_updated_at,) if if_updated_at else ()),
+        + ((1 if verified else 0),)
+        + ((casValue,) if if_updated_at else ()),
     )
     if if_updated_at and int(cur.rowcount or 0) == 0:
         # Nothing changed, so the row exists with a DIFFERENT stamp: whoever read
@@ -296,13 +343,91 @@ def touch_fact_usage(factKeys: list[str]) -> int:
     return touched
 
 
+_TAG_VALUES = ('stated', 'observed', 'inferred')
+_SUBJECT_TYPES = ('profile', 'preference', 'topic', 'area', 'person')
+
+
+def _deriveFactTag(source: str) -> str:
+    """The record's provenance tag, derived from the writer's code path.
+
+    ``stated`` is the chat agent's and the human's door; ``inferred`` is the
+    distiller/promotion path; ``observed`` is a bench/import observation.
+    Never a model-supplied value — a tag the model can write is a claim
+    nothing can check.
+    """
+    src = (source or '').strip().lower()
+    if src in ('user', 'model', ''):
+        return 'stated'
+    if src == 'bench' or src.startswith('imported'):
+        return 'observed'
+    return 'inferred'
+
+
+def _deriveSubjectType(kind: str, category: str) -> str:
+    k = (kind or '').strip().lower()
+    c = (category or '').strip().lower()
+    if k == 'profile':
+        return 'profile'
+    if k == 'preference':
+        return 'preference'
+    if k == 'person' or c == 'person':
+        return 'person'
+    if k == 'project' or c == 'project':
+        return 'area'
+    return 'topic'
+
+
+def _normalizedStringList(values: object, *, cap: int = 8, itemCap: int = 60) -> list[str]:
+    if isinstance(values, str):
+        raw: list[object] = [v.strip() for v in values.split(',')]
+    elif isinstance(values, (list, tuple)):
+        raw = list(values)
+    else:
+        raw = []
+    out: list[str] = []
+    for v in raw:
+        s = ' '.join(str(v or '').split())[:itemCap]
+        if s and s.lower() not in {x.lower() for x in out}:
+            out.append(s)
+        if len(out) >= cap:
+            break
+    return out
+
+
+def _factRow(row: sqlite3.Row | dict[str, object]) -> FactDict:
+    """A fact row with the record shape normalized on read.
+
+    Legacy rows (before 056) or raw-SQL writers can leave ``tag`` /
+    ``subject_type`` empty; derive the honest value from the fields that
+    already encode it rather than printing a blank marker. ``aliases`` and
+    ``derivedFrom`` are stored as JSON text and handed out as lists.
+    """
+    d = cast(dict[str, object], _row_as_wire(row))
+    if not d.get('tag'):
+        d['tag'] = _deriveFactTag(str(d.get('source') or ''))
+    if not d.get('subjectType'):
+        d['subjectType'] = _deriveSubjectType(
+            str(d.get('kind') or ''), str(d.get('category') or '')
+        )
+    for field in ('aliases', 'derivedFrom'):
+        raw = d.get(field)
+        if isinstance(raw, str):
+            try:
+                parsed = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                parsed = []
+            d[field] = parsed if isinstance(parsed, list) else []
+    d['sensitive'] = bool(d.get('sensitive'))
+    return cast(FactDict, d)
+
+
 def get_fact(factKey: str) -> FactDict | None:
     """Get a fact by key."""
     conn = _conn()
     row = conn.execute('SELECT * FROM facts WHERE fact_key = ?', (factKey,)).fetchone()
     if not row:
         return None
-    return cast(FactDict, _row_as_wire(row))
+    return _factRow(row)
 
 
 def _visibility_where(
@@ -355,7 +480,7 @@ def search_facts(query: str, category: str = '', scope: str = 'global') -> list[
             f"AND {vis} ORDER BY updated_at DESC LIMIT 20",
             (like, like, *visParams),
         ).fetchall()
-    return [cast(FactDict, _row_as_wire(r)) for r in rows]
+    return [_factRow(r) for r in rows]
 
 
 def list_facts(
@@ -395,7 +520,7 @@ def list_facts(
             'ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?',
             (*visParams, lim, off),
         ).fetchall()
-    return [cast(FactDict, _row_as_wire(r)) for r in rows]
+    return [_factRow(r) for r in rows]
 
 
 def count_facts(
@@ -570,6 +695,44 @@ def restore_superseded_losers(factKey: str) -> list[str]:
     except Exception:
         logger.debug('superseded restore failed', exc_info=True)
     return restored
+
+
+def dependent_facts(factKey: str) -> list[FactDict]:
+    """Every fact derived SOLELY from ``factKey`` (transitively).
+
+    A row is a dependent only when every key in its ``derived_from`` list is
+    already in the forgotten set — a row that also derives from a surviving
+    parent is a different memory and stays. The walk repeats because deleting
+    a dependent can make ITS children solely derived. Returns the rows to
+    delete, children last (callers delete in order).
+    """
+    conn = _conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM facts WHERE derived_from IS NOT NULL AND derived_from != '' AND derived_from != '[]'"
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    deleted = {factKey}
+    out: list[FactDict] = []
+    changed = True
+    while changed:
+        changed = False
+        for row in rows:
+            try:
+                parents = json.loads(str(row['derived_from'] or '[]'))
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if not isinstance(parents, list) or not parents:
+                continue
+            key = str(row['fact_key'] or '')
+            if not key or key in deleted:
+                continue
+            if {str(p) for p in parents} <= deleted:
+                deleted.add(key)
+                out.append(_factRow(row))
+                changed = True
+    return out
 
 
 def delete_fact(factKey: str) -> bool:

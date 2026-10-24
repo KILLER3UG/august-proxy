@@ -303,6 +303,7 @@ def _memory_version_conflict(
     current_updated: str,
     current_description: str = '',
     current_source: str = '',
+    current_version: object = None,
 ) -> str:
     """The one version-conflict shape for BOTH memory stores.
 
@@ -328,6 +329,7 @@ def _memory_version_conflict(
                 'description': current_description,
                 'source': current_source,
                 'updated': current_updated,
+                'version': current_version,
             },
         }
     )
@@ -452,6 +454,7 @@ async def _remember(
     scope: str = '',
     description: str = '',
     if_version: str = '',
+    aliases: object = None,
     **_extra: object,
 ) -> str:
     """Single model write door into durable memory (facts store).
@@ -732,6 +735,10 @@ async def _remember(
             factKey, value, category=cat, source='model', confidence=0.7,
             expires_at=exp, title=factTitle, kind=factKind, scope=factScope,
             description=factDesc, if_updated_at=(if_version or '').strip(),
+            aliases=aliases if isinstance(aliases, (list, tuple, str)) else None,
+            source_session=_currentRememberSessionKey()
+            if _currentRememberSessionKey() != 'default'
+            else '',
         )
     except memory_store.FactVersionConflict as exc:
         _cur = exc.current
@@ -741,6 +748,7 @@ async def _remember(
             current_updated=str(_cur.get('updatedAt') or ''),
             current_description=str(_cur.get('description') or ''),
             current_source=str(_cur.get('source') or ''),
+            current_version=_cur.get('version'),
         )
     except Exception as exc:
         return _json.dumps({'ok': False, 'error': f'remember failed: {exc}'})
@@ -763,7 +771,16 @@ async def _remember(
     except Exception:
         pass
     _emitMemoryInvalidate()
-    return _json.dumps({'ok': True, 'key': factKey, 'category': cat, 'updated': before is not None})
+    _after = memory_store.get_fact(factKey) or {}
+    return _json.dumps(
+        {
+            'ok': True,
+            'key': factKey,
+            'category': cat,
+            'updated': before is not None,
+            'version': _after.get('version'),
+        }
+    )
 
 
 # Sources the model may delete via `forget`: its own writes, user-added
@@ -1004,7 +1021,22 @@ async def _forget(key: str) -> str:
                 'it is not visible to this session and cannot be forgotten from here.',
             }
         )
+    _derived: list[dict[str, object]] = []
     try:
+        _derived = [dict(d) for d in memory_store.dependent_facts(factKey)]
+        for _dep in _derived:
+            _depKey = str(_dep.get('factKey') or _dep.get('key') or '')
+            if not _depKey:
+                continue
+            try:
+                from app.services.rollback_store import record_rollback
+
+                record_rollback(
+                    type='restore_memory_item', target=_depKey, before=_dep, after=None
+                )
+            except Exception:
+                pass
+            memory_store.delete_fact(_depKey)
         deleted = memory_store.delete_fact(factKey)
     except Exception as exc:
         return _json.dumps({'ok': False, 'error': f'forget failed: {exc}'})
@@ -1022,7 +1054,14 @@ async def _forget(key: str) -> str:
             pass
     if deleted:
         _emitMemoryInvalidate()
-    return _json.dumps({'ok': bool(deleted), 'deleted': bool(deleted), 'key': factKey})
+    return _json.dumps(
+        {
+            'ok': bool(deleted),
+            'deleted': bool(deleted),
+            'key': factKey,
+            'derivedDeleted': [str(d.get('factKey') or d.get('key') or '') for d in _derived],
+        }
+    )
 
 
 async def _list_facts(
@@ -1576,10 +1615,12 @@ def register() -> None:
                 },
                 'kind': {
                     'type': 'string',
-                    'enum': ['fact', 'lesson', 'preference', 'skill-note', 'profile'],
+                    'enum': ['fact', 'lesson', 'preference', 'skill-note', 'profile', 'person'],
                     'description': 'Entry type. Default fact. `profile` is who the user IS '
                     '(name, role, expertise, standing constraints) and is always in context '
-                    'instead of waiting for a keyword match — use it sparingly and precisely.',
+                    'instead of waiting for a keyword match — use it sparingly and precisely. '
+                    '`person` is a durable detail about someone else; it stays out of the '
+                    'automatic index unless the user raises that person.',
                 },
                 'key': {
                     'type': 'string',
@@ -1587,10 +1628,10 @@ def register() -> None:
                 },
                 'if_version': {
                     'type': 'string',
-                    'description': 'Optimistic locking for an update: pass the `updated` stamp list_facts '
-                    'reported for this key. If anything changed that entry since you read it, nothing is '
-                    'written and the current text comes back to merge and retry. Omit to write '
-                    'unconditionally — correct for a create.',
+                    'description': 'Optimistic locking for an update: pass the `updated` stamp or the '
+                    'integer `version` list_facts reported for this key. If anything changed that entry '
+                    'since you read it, nothing is written and the current text comes back to merge and '
+                    'retry. Omit to write unconditionally — correct for a create.',
                 },
                 'category': {
                     'type': 'string',
@@ -1614,6 +1655,12 @@ def register() -> None:
                 'expires_at': {
                     'type': 'string',
                     'description': 'Optional ISO-8601 expiry (e.g. 2026-12-31T00:00:00Z); purged after this.',
+                },
+                'aliases': {
+                    'type': 'array',
+                    'items': {'type': 'string'},
+                    'description': 'Optional alternative names or phrasings a future message may use '
+                    'for this fact (≤8, 60 chars each). They join the deterministic alias pre-read.',
                 },
             },
             'required': ['fact'],

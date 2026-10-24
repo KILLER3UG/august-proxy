@@ -141,6 +141,17 @@ async def getBrainStore(
     return result
 
 
+@router.get('/stores/facts/{row_id}/history')
+async def getFactHistory(row_id: str):
+    """Edit history for one fact, projected from the rollback store."""
+    from app.services.memory_store.brain import fact_history
+
+    result = fact_history(row_id)
+    if not result.get('ok'):
+        raise HTTPException(status_code=404, detail=str(result.get('error') or 'not found'))
+    return result
+
+
 @router.delete('/stores/{name}/{row_id:path}')
 async def deleteBrainStoreRow(name: str, row_id: str):
     """Delete one row from a brain store (per-entry Delete in the Memory UI).
