@@ -101,6 +101,53 @@ _DERIVABLE_RE = re.compile(
 )
 
 
+# Instructions that compromise the assistant, refused at the model's write door
+# (spec C7: honesty-suppressing, flattery-requiring or permission-claiming text
+# "never persists as a preference"). Every arm is SECOND-PERSON and directed at
+# the assistant, because that is what makes it an instruction to the model rather
+# than a description of the person: "prefers blunt review feedback" and "never
+# sugarcoat my code review" are honest-favoring preferences and must not match,
+# while "always agree with me" must. Narrow on purpose — the door is a refusal the
+# model cannot argue with, so a false positive costs a real memory.
+_COERCIVE_RE = re.compile(
+    r'\b('
+    # disagreement suppressed
+    r'always agree with me|never (disagree|push back|challenge|contradict|correct) ?(?:me)?'
+    r'|don\'?t ever (?:disagree|push back|correct|challenge)(?: me)?'
+    r'|stop (?:pushing back|disagreeing|correcting me)'
+    r'|never (?:say|tell(?: me)?) (?:that )?(?:i\'?m|i am) (?:wrong|incorrect|mistaken)'
+    r'|(?:only|just) (?:say|tell me) what i want to hear'
+    # flattery required
+    r'|always (?:praise|flatter|compliment)(?: me)?|require flattery'
+    r'|start every (?:reply|answer|response) with a compliment'
+    r'|always (?:act|be) (?:overly |extremely)?(?:enthusiastic|positive|agreeable) about (?:my|all my)'
+    # permissions the install has not granted
+    r'|you (?:now |already )?(?:have|are granted|are given) '
+    r'(?:full|elevated|root|unrestricted|admin|superuser|all)\b[^.]{0,20}?'
+    r'(?:access|permission|privilege|clearance)'
+    r'|you are (?:an? |the )?(?:super ?admin|system admin|root)'
+    r'|(?:no|none of the) (?:rule|rules|limit|limits|restriction|restrictions|guardrail|guardrails|policy|policies) '
+    r'apply to you'
+    r'|you are (?:exempt from|not bound (?:by|to)) (?:any )?(?:safety|rule|rules|policy|restriction|guardrail)'
+    r'|ignore (?:your|the|all) (?:safety (?:rule|rules|guideline|guidelines|policy|restriction)|guardrail|restriction|rule|rules|policy)'
+    r'|grant(?:ing)? yourself'
+    r')',
+    re.IGNORECASE,
+)
+
+
+def coercivePreferenceReason(*texts: str) -> str:
+    """The matched phrase when this text must not be filed, else ``''``.
+
+    Returns the trigger rather than a bare bool for the same reason
+    ``sensitiveMemoryReason`` does: a refusal the model cannot name, it cannot
+    tell the user about, and it retries.
+    """
+    blob = ' '.join(str(t) for t in texts if t)
+    match = _COERCIVE_RE.search(blob)
+    return match.group(0).strip() if match else ''
+
+
 def statementOf(value: object) -> str:
     """The candidate text, collapsed to single spaces (how it is compared)."""
     return ' '.join(str(value or '').split()).strip()

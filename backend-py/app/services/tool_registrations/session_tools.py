@@ -8,6 +8,7 @@ from pathlib import Path
 
 from app.json_narrowing import as_int, as_str
 from app.services import tool_registry
+from app.services.memory_quality import coercivePreferenceReason as _coercivePreferenceReason
 from app.services.sensitive_topics import sensitiveMemoryReason as _sensitiveMemoryReason
 
 
@@ -539,6 +540,22 @@ async def _remember(
                     'otherwise tell the user you did not store it.',
                 }
             )
+    # Not behind a setting: filing this would make the store instruct every later
+    # session to be dishonest, and a rule the model installed cannot be argued
+    # away from the inside. A human writing it from Settings is their own choice
+    # about their own assistant, so the door stays on the model's path — the same
+    # split the sensitive-topic gate uses.
+    _coercive = _coercivePreferenceReason(text, detailsText)
+    if _coercive:
+        return _json.dumps(
+            {
+                'ok': False,
+                'policy': f'refused: "{_coercive}" asks the assistant to suppress disagreement, '
+                'require praise, or claim permissions this install has not granted. That is not a '
+                'preference to store. Tell the user it was not saved; if they meant something '
+                'narrower ("keep critique specific", "write blunt review comments"), save that.',
+            }
+        )
     sessKey = _currentRememberSessionKey()
     used = _rememberTurnCounts.get(sessKey, 0)
     if used >= _REMEMBER_PER_TURN_LIMIT:
