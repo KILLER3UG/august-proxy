@@ -128,7 +128,14 @@ def memoryIsJunk(text: object) -> str:
     if _RUNTIME_RE.search(statement):
         return 'runtime detail that goes stale silently'
     if _DERIVABLE_RE.search(statement):
-        return 'restates what the project already documents'
+        # Worded to what the pattern actually matches. It said "restates what the
+        # project already documents", which is what the branch is FOR, but the
+        # regex only catches a fact naming a config file or using
+        # `the repo|the codebase` plus four specific verbs — measured: four
+        # plainly-derivable sentences ("the repo uses FastAPI for its HTTP layer")
+        # all passed. A reason the pattern cannot deliver is a reason a reader
+        # will later trust too broadly.
+        return 'names a config file or restates the repo layout, which the source already shows'
     return ''
 
 

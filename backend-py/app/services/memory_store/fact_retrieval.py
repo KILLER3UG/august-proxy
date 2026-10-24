@@ -159,6 +159,7 @@ def _load_index(scope: str = 'global') -> dict[str, Any]:
             params = (scope,)
         factRows = conn.execute(
             "SELECT fact_key, fact_value, title, kind, category, description, source, "
+            "COALESCE(verified_at, '') AS verified_at, "
             "COALESCE(scope, 'global') AS scope, COALESCE(updated_at, '') AS updated_at FROM facts "
             "WHERE (expires_at IS NULL OR expires_at = '' OR julianday(expires_at) > julianday('now')) "
             "AND (status IS NULL OR status = 'active') "
@@ -184,6 +185,7 @@ def _load_index(scope: str = 'global') -> dict[str, Any]:
                     'description': desc,
                     'body': body,
                     'source': str(r['source'] or ''),
+                    'verified_at': str(r['verified_at'] or ''),
                     'kind': str(r['kind'] or 'fact'),
                     'category': str(r['category'] or 'general'),
                     # Carry the row's true scope — recall metrics
@@ -595,11 +597,15 @@ def _fact_line(row: dict[str, object], *, entry_cap: int = _ENTRY_CHAR_CAP) -> s
     Used by BOTH lanes (profile + BM25) so the two can never drift in shape,
     and so one long body never crowds out its neighbours.
 
-    A fact the harness distilled from a transcript is marked, because the model
-    otherwise cannot tell its own earlier inference apart from something the
-    user actually said — and the two deserve different trust. Nothing here
-    refuses the fact: the distiller has no probe step, so it can never *earn*
-    the distinction, only disclose it. Marking is the honest half of a lift
+    Marking is skipped when a person has confirmed the row. `verified_at` is set
+    by exactly three human/UI doors and was read by NOTHING — the column existed,
+    the distinction existed, and the read path threw it away. Consulting it here
+    is the whole fix: a distilled lesson a human later confirmed stops being
+    presented as the model's own unverified guess.
+
+    Nothing is refused. That is deliberate: the distiller has no probe step, so
+    it can never *earn* the distinction harness2 requires (an execution isolating
+    one cause), only disclose it. Marking is the honest half of a lift
     measurement August does not have.
     """
     title = str(row.get('title') or '').strip()
@@ -607,7 +613,12 @@ def _fact_line(row: dict[str, object], *, entry_cap: int = _ENTRY_CHAR_CAP) -> s
     if len(body) > entry_cap:
         body = body[:entry_cap].rstrip() + '…'
     label = title or str(row.get('key') or '')
-    mark = _DISTILLED_MARK if str(row.get('source') or '') == _DISTILLED_SOURCE else ''
+    verified = bool(str(row.get('verified_at') or '').strip())
+    mark = (
+        ''
+        if verified
+        else (_DISTILLED_MARK if str(row.get('source') or '') == _DISTILLED_SOURCE else '')
+    )
     text = f'{mark}{label}: {body}' if body else f'{mark}{label}'
     return f'- {text}'
 
@@ -1005,6 +1016,7 @@ def build_memory_delta_block(
             scopeParams = ()
         rows = conn.execute(
             "SELECT fact_key, fact_value, title, kind, category, description, source, "
+            "COALESCE(verified_at, '') AS verified_at, "
             "COALESCE(scope, 'global') AS scope, COALESCE(updated_at, '') AS updated_at FROM facts "
             "WHERE (expires_at IS NULL OR expires_at = '' OR julianday(expires_at) > julianday('now')) "
             "AND (status IS NULL OR status = 'active') "
@@ -1029,6 +1041,7 @@ def build_memory_delta_block(
             'title': str(r['title'] or '').strip(),
             'body': _fact_body_text(r['fact_value']),
             'source': str(r['source'] or ''),
+            'verified_at': str(r['verified_at'] or ''),
             'kind': str(r['kind'] or 'fact'),
             'category': str(r['category'] or 'general'),
             'scope': str(r['scope'] or 'global'),
