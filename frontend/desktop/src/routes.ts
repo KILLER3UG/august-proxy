@@ -7,6 +7,7 @@ import {
   MessageSquare,
   Mic,
   Bot,
+  BookOpen,
   History,
   Kanban,
   GraduationCap,
@@ -58,6 +59,10 @@ const LearningHub = lazy(() =>
 const DesignRoute = import.meta.env.DEV
   ? lazy(() => import('@/pages/DesignRoute').then((m) => ({ default: m.DesignRoute })))
   : null;
+
+const DocsPage = lazy(() =>
+  import('@/sections/docs/DocsPage').then((m) => ({ default: m.DocsPage })),
+);
 
 function Lazy({ children }: { children: ReactNode }) {
   return React.createElement(Suspense, { fallback: React.createElement(PageLoader) }, children);
@@ -160,6 +165,17 @@ export const SECTION_ROUTES: readonly SectionRoute[] = [
     label: 'Learning',
     Icon: GraduationCap,
     element: React.createElement(LazySection, { name: 'Learning' }, React.createElement(LearningHub)),
+    nav: true,
+  },
+  {
+    /* The Nessa Docs reader: a project's `docs/state/` map, rendered from the
+     * catalog the backend validates. Lazy like every other non-chat surface —
+     * and the mermaid renderer it may load is lazy a second time inside, so a
+     * docs page with no diagram never fetches the parser at all. */
+    path: '/docs',
+    label: 'Docs',
+    Icon: BookOpen,
+    element: React.createElement(LazySection, { name: 'Docs' }, React.createElement(DocsPage)),
     nav: true,
   },
 ] as const;
