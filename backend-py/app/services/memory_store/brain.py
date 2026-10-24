@@ -40,7 +40,11 @@ _BRAINStores: dict[str, dict[str, object]] = {
             # offers the restore. The columns are guaranteed by
             # `memory_schema._ensure_fact_signal_columns` on every boot.
             'superseded_by, supersedes, contradicts, verified_at, '
-            'injected_count, last_injected_at'
+            'injected_count, last_injected_at, '
+            # 056: the main-goal record shape (aliases/tag/source session/
+            # sensitive/version/derived_from) — the Memory UI shows the tag
+            # marker and the detail reads them.
+            'aliases, subject_type, tag, source_session, sensitive, version, derived_from'
         ),
         'search_cols': ['fact_key', 'fact_value', 'title'],
         'label': 'structured semantic facts',

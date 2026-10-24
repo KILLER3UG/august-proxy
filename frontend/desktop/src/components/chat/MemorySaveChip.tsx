@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { BookmarkPlus, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { undoAugustRollback } from '@/api/api-client/manage';
+import { Button } from '@/components/ui/button';
 import type { ChatMessage } from '@/types/chat';
 
 /**
@@ -54,15 +55,17 @@ export function MemorySaveChip({ tools }: { tools?: ChatMessage['tools'] }) {
       <span className="max-w-[16rem] truncate" title={saved.key}>
         Memory saved: {saved.key}
       </span>
-      <button
+      <Button
         type="button"
+        size="sm"
+        variant="ghost"
         onClick={() => undo.mutate(saved.rollbackId)}
         disabled={undo.isPending}
-        className="inline-flex items-center gap-0.5 text-primary transition hover:underline disabled:opacity-50"
+        className="h-auto gap-0.5 px-1 py-0 text-2xs text-primary hover:bg-transparent hover:underline"
         data-testid="memory-save-undo"
       >
         <Undo2 className="size-2.5" aria-hidden /> Undo
-      </button>
+      </Button>
     </span>
   );
 }

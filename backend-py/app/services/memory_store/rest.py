@@ -191,7 +191,7 @@ def save_fact(
     if subjectValue not in _SUBJECT_TYPES:
         subjectValue = _deriveSubjectType(kind, category)
     aliasesJson = _json(_normalizedStringList(aliases))
-    derivedJson = _json(_normalizedStringList(derived_from, cap=8, itemCap=80))
+    derivedJson = _json(_normalizedStringList(derived_from, cap=8, item_cap=80))
     _valueText = factValue if isinstance(factValue, str) else str(factValue or '')
     sensitiveFlag = 1 if (
         sensitive
@@ -377,7 +377,7 @@ def _deriveSubjectType(kind: str, category: str) -> str:
     return 'topic'
 
 
-def _normalizedStringList(values: object, *, cap: int = 8, itemCap: int = 60) -> list[str]:
+def _normalizedStringList(values: object, *, cap: int = 8, item_cap: int = 60) -> list[str]:
     if isinstance(values, str):
         raw: list[object] = [v.strip() for v in values.split(',')]
     elif isinstance(values, (list, tuple)):
@@ -386,7 +386,7 @@ def _normalizedStringList(values: object, *, cap: int = 8, itemCap: int = 60) ->
         raw = []
     out: list[str] = []
     for v in raw:
-        s = ' '.join(str(v or '').split())[:itemCap]
+        s = ' '.join(str(v or '').split())[:item_cap]
         if s and s.lower() not in {x.lower() for x in out}:
             out.append(s)
         if len(out) >= cap:
