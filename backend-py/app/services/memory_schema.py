@@ -1232,6 +1232,12 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     _ensure_messages_fts(conn)
     repair_fts_sync(conn)
     _run_migrations_safe(conn)
+    # subagent_runs is created by migration 006, which runs INSIDE the runner
+    # above — create_extended_tables' own ensure_column for it no-ops on a
+    # fresh database (ensure_column refuses a missing table), so the column
+    # only existed from the SECOND boot on, and a fresh install's first
+    # sub-agent run failed with "no such column: todos_json".
+    ensure_column(conn, 'subagent_runs', 'todos_json', "TEXT DEFAULT ''")
     # 055: after the runner, for the same reason as the warm path above.
     _ensure_fact_signal_columns(conn)
     _ensure_episodes_source_index(conn)
