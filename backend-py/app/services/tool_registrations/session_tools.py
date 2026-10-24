@@ -775,6 +775,40 @@ async def _remember(
 # `rollback_store` restores it byte-for-byte.
 _FORGET_ALLOWED_SOURCES = ('model', 'user', 'harness', '')
 
+# A `forget` is destructive and irreversible from the model's seat, so it
+# executes only when the user's LATEST message asked for a deletion — the tool
+# description alone did not hold: a scripted turn whose user message never
+# mentioned forgetting deleted a fact and reported {"ok": true, "deleted":
+# true}. Verbs are matched broadly (a deletion can be phrased many ways) and
+# must be accompanied by something that can stand for the stored thing.
+_FORGET_INTENT_RE = re.compile(
+    r'\b(forget|delete|remove|erase|wipe|purge|clear|drop|unlearn)\b'
+    r'[\s\S]{0,40}?\b(memory|memories|fact|facts|entry|entries|note|notes|'
+    r'remembered|stored|saved|that|this|it|them)\b',
+    re.IGNORECASE,
+)
+
+
+def _userAskedForDeletion() -> bool:
+    """True when the current turn's latest user message asks to delete memory.
+
+    Reads the same list-safe text the alias pre-read uses, so a multipart
+    (image+text) message still contributes its words. No message at all —
+    a headless caller with no session — fails closed: a destructive delete
+    without a verifiable user ask is refused, not waved through.
+    """
+    try:
+        from app.services.workbench.turn_close import lastUserMessageText
+        from app.services.workbench.workbench import get_session
+
+        session = get_session()
+        if session is None:
+            return False
+        text = lastUserMessageText(session)
+    except Exception:
+        return False
+    return bool(_FORGET_INTENT_RE.search(text or ''))
+
 
 async def _forget(key: str) -> str:
     """Delete one durable memory entry by exact key.
@@ -820,6 +854,15 @@ async def _forget(key: str) -> str:
                         'ok': False,
                         'policy': 'model memory writes are disabled by the user. Do not retry; '
                         "tell the user you can't delete memories while this setting is off.",
+                    }
+                )
+            if not _userAskedForDeletion():
+                return _json.dumps(
+                    {
+                        'ok': False,
+                        'policy': "refused: the user's latest message does not ask to delete a "
+                        'memory, and forget is destructive. Ask the user to confirm, and only '
+                        'call forget again once they do.',
                     }
                 )
             entry = existing[0]
@@ -868,6 +911,15 @@ async def _forget(key: str) -> str:
                 'ok': False,
                 'policy': 'model memory writes are disabled by the user. Do not retry; '
                 "tell the user you can't delete memories while this setting is off.",
+            }
+        )
+    if not _userAskedForDeletion():
+        return _json.dumps(
+            {
+                'ok': False,
+                'policy': "refused: the user's latest message does not ask to delete a "
+                'memory, and forget is destructive. Ask the user to confirm, and only '
+                'call forget again once they do.',
             }
         )
     before = memory_store.get_fact(factKey)
@@ -1550,12 +1602,12 @@ def register() -> None:
     )
     tool_registry.register(
         'forget',
-        'Delete one durable memory fact by its exact key (call list_facts to see keys). Use when a '
-        'stored fact is wrong or outdated, or when the user asks to forget something. Only '
+        'Delete one durable memory fact by its exact key (call list_facts to see keys). Executes '
+        'only when the user\'s latest message asks for the deletion — if they did not, ask first '
+        'and call forget again only after they confirm. Only '
         'model/user/imported entries can be deleted; system-owned entries are refused. Inside a '
         'workspace, project-memory entries match by title (the key IS the entry title); prefix '
-        '"project:" to force the project store. IMPORTANT: never delete a memory the user did not '
-        'ask to remove or that is not clearly superseded.',
+        '"project:" to force the project store.',
         _forget,
         {
             'type': 'object',
