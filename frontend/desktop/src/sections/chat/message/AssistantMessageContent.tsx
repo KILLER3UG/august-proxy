@@ -4,6 +4,7 @@ import { CircuitArtifactCard } from '@/components/chat/CircuitArtifactCard';
 import { TurnProvenanceChip } from '@/components/chat/TurnProvenanceChip';
 import { SavePointChip } from '@/components/chat/SavePointChip';
 import { SkillReceiptChip } from '@/components/chat/SkillReceiptChip';
+import { MemorySaveChip } from '@/components/chat/MemorySaveChip';
 import type { WorkbenchCheckpoint } from '@/api/workbench';
 import type { ChatMessage, MessageBlock } from '@/types/chat';
 import type { GitDiffResult } from '@/api/git';
@@ -325,6 +326,7 @@ export function AssistantMessageContent({
           <SavePointChip checkpoints={savePoints ?? []} sessionId={sessionId} />
         )}
         {!(isLast && streaming) && <SkillReceiptChip tools={message.tools} />}
+        {!(isLast && streaming) && <MemorySaveChip tools={message.tools} />}
       </div>
       <AssistantMessageActions
         showActions={showActions}

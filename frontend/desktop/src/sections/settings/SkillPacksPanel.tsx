@@ -10,6 +10,29 @@ import { Download, Loader2, Package, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
+
+interface PackFinding {
+  severity: string;
+  reason: string;
+  skill?: string;
+}
+interface PackPreview {
+  pack: string;
+  skills: Array<{ name: string; files: number; bytes: number; findings: PackFinding[] }>;
+  refused: string[];
+}
+interface PackInstallResponse {
+  ok: boolean;
+  pack?: string;
+  skills?: string[];
+  refused?: string[];
+  error?: string;
+  requiresConfirmation?: boolean;
+  preview?: PackPreview;
+  findings?: PackFinding[];
+}
 
 interface PackInfo {
   pack: string;
@@ -23,6 +46,7 @@ export function SkillPacksPanel() {
   const queryClient = useQueryClient();
   const [source, setSource] = useState('');
   const [busy, setBusy] = useState(false);
+  const { state: confirmState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
 
   const packsQ = useQuery<{ packs: PackInfo[] }>({
     queryKey: ['skill-packs'],
@@ -40,13 +64,30 @@ export function SkillPacksPanel() {
     if (!s) return;
     setBusy(true);
     try {
-      const r = await api.post<{
-        ok: boolean;
-        pack?: string;
-        skills?: string[];
-        refused?: string[];
-        error?: string;
-      }>('/api/skills/packs', { source: s });
+      const post = (confirmInstall: boolean) =>
+        api.post<PackInstallResponse>('/api/skills/packs', {
+          source: s,
+          confirm: confirmInstall,
+        });
+      let r = await post(false);
+      if (r.requiresConfirmation) {
+        const p = r.preview;
+        const names = (p?.skills ?? []).map((x) => x.name).join(', ');
+        const findings = (r.findings ?? [])
+          .slice(0, 4)
+          .map((f) => `${f.severity}: ${f.reason}`)
+          .join('; ');
+        const proceed = await confirm({
+          title: `Install ${p?.pack ?? 'skill pack'}?`,
+          message:
+            `${p?.skills.length ?? 0} skill(s): ${names || 'none'}. ` +
+            `Files are scanned; scripts are copied, never run.` +
+            (findings ? ` Findings: ${findings}` : ''),
+          confirmLabel: 'Install',
+        });
+        if (!proceed) return;
+        r = await post(true);
+      }
       if (r.ok) {
         toast.success(`Installed ${r.pack} — ${(r.skills ?? []).length} skill(s)${r.refused?.length ? ` · ${r.refused.length} refused` : ''}`);
         setSource('');
@@ -130,6 +171,15 @@ export function SkillPacksPanel() {
           ))}
         </ul>
       )}
+      <ConfirmDialog
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        cancelLabel={confirmState.cancelLabel}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
     </div>
   );
 }

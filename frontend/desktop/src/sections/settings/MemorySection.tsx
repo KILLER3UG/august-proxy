@@ -70,7 +70,8 @@ interface StorePage {
 
 interface BrainConfigResponse {
   source?: string;
-  config?: { modelMemoryRead?: boolean; memoryAutoInject?: boolean; memoryReview?: boolean; modelMemoryWrites?: boolean; memorySensitiveTopics?: boolean } & Record<string, unknown>;
+  tag?: string;
+  config?: { memoryEnabled?: boolean; modelMemoryRead?: boolean; memoryAutoInject?: boolean; memoryReview?: boolean; modelMemoryWrites?: boolean; memorySensitiveTopics?: boolean } & Record<string, unknown>;
   defaults?: Record<string, unknown>;
 }
 
@@ -1546,38 +1547,45 @@ export function MemorySection({ active }: { active: { id: string } }) {
         {/* Model-memory toggles: one line each, separated by rules. */}
         <div className="divide-y divide-border/60">
         <SettingsToggle
+          checked={Boolean(cfg?.memoryEnabled ?? true)}
+          onCheckedChange={(next) => configMut.mutate({ memoryEnabled: next })}
+          label="Memory enabled — reads, writes and injection"
+          disabled={configQ.isLoading || configMut.isPending}
+          data-testid="memory-master-toggle"
+        />
+        <SettingsToggle
           checked={Boolean(cfg?.modelMemoryRead ?? true)}
           onCheckedChange={(next) => configMut.mutate({ modelMemoryRead: next })}
           label="Model can read memories on demand"
-          disabled={configQ.isLoading || configMut.isPending}
+          disabled={configQ.isLoading || configMut.isPending || cfg?.memoryEnabled === false}
           data-testid="memory-model-read-toggle"
         />
         <SettingsToggle
           checked={Boolean(cfg?.memoryAutoInject ?? false)}
           onCheckedChange={(next) => configMut.mutate({ memoryAutoInject: next })}
           label="Auto-inject relevant memories each turn"
-          disabled={configQ.isLoading || configMut.isPending}
+          disabled={configQ.isLoading || configMut.isPending || cfg?.memoryEnabled === false}
           data-testid="memory-auto-inject-toggle"
         />
         <SettingsToggle
           checked={Boolean(cfg?.modelMemoryWrites)}
           onCheckedChange={(next) => configMut.mutate({ modelMemoryWrites: next })}
           label="Model can save memories"
-          disabled={configQ.isLoading || configMut.isPending}
+          disabled={configQ.isLoading || configMut.isPending || cfg?.memoryEnabled === false}
           data-testid="memory-model-writes-toggle"
         />
         <SettingsToggle
           checked={Boolean(cfg?.memoryReview)}
           onCheckedChange={(next) => configMut.mutate({ memoryReview: next })}
           label="Learn from finished conversations (off by default)"
-          disabled={configQ.isLoading || configMut.isPending}
+          disabled={configQ.isLoading || configMut.isPending || cfg?.memoryEnabled === false}
           data-testid="memory-review-toggle"
         />
         <SettingsToggle
           checked={Boolean(cfg?.memorySensitiveTopics)}
           onCheckedChange={(next) => configMut.mutate({ memorySensitiveTopics: next })}
           label="Include sensitive topics in memory (off by default)"
-          disabled={configQ.isLoading || configMut.isPending}
+          disabled={configQ.isLoading || configMut.isPending || cfg?.memoryEnabled === false}
           data-testid="memory-sensitive-toggle"
         />
       </div>
@@ -2580,6 +2588,15 @@ function FlatEntryRow({
           </span>
         )}
       </button>
+      {entry.store === 'facts' && str(entry.row.tag) ? (
+        <span
+          className="shrink-0 text-2xs text-muted-foreground/60"
+          title={`Provenance: ${str(entry.row.tag)}`}
+          data-testid="memory-tag-badge"
+        >
+          {str(entry.row.tag)}
+        </span>
+      ) : null}
       {/* State, not decoration: a parked or expiring row must not read as
           live. One small word each, not a chip family. */}
       {entry.retired ? (
@@ -2831,6 +2848,7 @@ function DetailView({
   const details = meta.details?.(row);
   const category = meta.category?.(row);
   const source = meta.source?.(row);
+  const provenanceTag = str(row.tag);
   const updated = meta.updated?.(row);
   const created = str(row.createdAt);
   const confidence = str(row.confidence);
@@ -2844,6 +2862,16 @@ function DetailView({
    * below, where the reference puts it, and this line carries the rest. */
   const metaBits: Array<{ key: string; node: ReactNode }> = [];
   if (category) metaBits.push({ key: 'category', node: <span>{category}</span> });
+  if (provenanceTag) {
+    metaBits.push({
+      key: 'tag',
+      node: (
+        <span data-testid="memory-detail-tag" title="How this fact was learned">
+          {provenanceTag}
+        </span>
+      ),
+    });
+  }
   if (meta.legacy) metaBits.push({ key: 'legacy', node: <span>retired writer</span> });
   if (retired) {
     metaBits.push({
