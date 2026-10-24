@@ -39,6 +39,22 @@ def _tokenize(text: str) -> list[str]:
     return [w.lower() for w in _WORDRe.findall(text) if len(w) > 1]
 
 
+# Query-side function words. BM25's IDF handles these on a large corpus, but on
+# the small corpora a personal harness actually ranks (a fact store, a skill
+# catalogue) "the" rides in nearly every document and gives every row a
+# positive score — which is how an unrelated question surfaced the whole store
+# as relevant memory, and five skill descriptions as relevant skills. Corpus
+# tokens are untouched; only the QUERY is stripped. One set, two rankers.
+QUERY_STOPWORDS: frozenset[str] = frozenset({
+    'a', 'an', 'and', 'are', 'as', 'at', 'be', 'been', 'but', 'by', 'can',
+    'did', 'do', 'does', 'for', 'from', 'had', 'has', 'have', 'he', 'her',
+    'his', 'how', 'i', 'in', 'is', 'it', 'its', 'me', 'my', 'not', 'of', 'on',
+    'or', 'our', 'she', 'so', 'that', 'the', 'their', 'them', 'there', 'these',
+    'they', 'this', 'to', 'was', 'we', 'were', 'what', 'when', 'where', 'which',
+    'who', 'why', 'will', 'with', 'you', 'your',
+})
+
+
 class BM25:
     """BM25 ranking function (Okapi BM25 variant).
 

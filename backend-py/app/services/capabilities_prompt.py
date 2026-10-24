@@ -712,7 +712,7 @@ def render_relevant_skills(
         return '', detail
     try:
         from app.services import skill_service
-        from app.services.tools.retrieval import BM25, _tokenize
+        from app.services.tools.retrieval import BM25, QUERY_STOPWORDS, _tokenize
 
         catalogue = skill_service.catalogue(workspace, agent_id)
         if not catalogue:
@@ -723,7 +723,7 @@ def render_relevant_skills(
             # A pin alone: no query to rank against (or the auto lane is off),
             # so render exactly what was asked for and stop.
             return _render_skill_lines(chosen, wantPinned, detail)
-        queryTokens = _tokenize(q)
+        queryTokens = [t for t in _tokenize(q) if t not in QUERY_STOPWORDS]
         if not queryTokens:
             return _render_skill_lines(chosen, wantPinned, detail)
         # The tokenize+BM25-index build is cached per (workspace, agent_id)

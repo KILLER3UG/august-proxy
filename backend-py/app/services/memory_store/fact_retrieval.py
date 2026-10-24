@@ -35,6 +35,7 @@ from typing import Any
 from app.services.memory_conn import conn as _conn
 from app.services.memory_store.rest import PROFILE_FACT_KIND
 from app.services.sensitive_topics import sensitiveMemoryReason
+from app.services.tools.retrieval import QUERY_STOPWORDS as _QUERY_STOPWORDS
 
 # ~400 tokens at ~4 chars/token.
 _BLOCK_CHAR_CAP = 1600
@@ -709,19 +710,8 @@ def retrieve_relevant_facts(
 _DISTILLED_SOURCE = 'harness'
 _DISTILLED_MARK = '[distilled] '
 
-# Query-side function words. BM25's IDF handles these on a large corpus, but
-# on the small stores a personal memory actually has, "the" rides in nearly
-# every fact's prose and gives every row a positive score — which is how an
-# unrelated question surfaced the whole store as "Relevant memory".
-# Corpus tokens are untouched; only the query is stripped.
-_QUERY_STOPWORDS = frozenset({
-    'a', 'an', 'and', 'are', 'as', 'at', 'be', 'been', 'but', 'by', 'can',
-    'did', 'do', 'does', 'for', 'from', 'had', 'has', 'have', 'he', 'her',
-    'his', 'how', 'i', 'in', 'is', 'it', 'its', 'me', 'my', 'not', 'of', 'on',
-    'or', 'our', 'she', 'so', 'that', 'the', 'their', 'them', 'there', 'these',
-    'they', 'this', 'to', 'was', 'we', 'were', 'what', 'when', 'where', 'which',
-    'who', 'why', 'will', 'with', 'you', 'your',
-})
+# Query-side function words are shared with the skill ranker — one authority
+# decides what a query means (see ``tools/retrieval.QUERY_STOPWORDS``).
 
 
 memoryStateOverride: ContextVar[str] = ContextVar('memory_state_override', default='')
