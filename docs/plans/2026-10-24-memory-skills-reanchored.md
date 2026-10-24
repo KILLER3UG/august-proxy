@@ -77,7 +77,7 @@ Hermes-style renames.
 | edit-in-place with history; forget = delete + derived lines | **met, except the derivation cascade** | `remember` updates by key and `record_rollback(type='restore_memory_item', before=<the prior row>, after=<the new one>)` snapshots both sides, so history is kept and the write is byte-exactly undoable — just not inlined into the fact body as "now X, previously Y". That omission is deliberate: the body is what BM25 ranks and what rides into every later turn, so prose about a superseded value would recall AS the current value. `_forget` DELETES (`session_tools.py:779` → `memory_store.delete_fact` at `:906` → `DELETE FROM facts` at `rest.py:584`), it does not retire — `status='retired'` belongs to consolidation, not to this door — and `delete_fact` first calls `restore_superseded_losers`, so a winner the user forgets does not leave the facts it replaced parked forever. Gated by `_FORGET_ALLOWED_SOURCES` so system-owned rows survive model cleanup, and snapshotted first. **Still missing, and not cheap**: "plus anything derived solely from it" has no edge to follow — `supersedes`/`contradicts` record succession between facts, not derivation from a source row, and the distiller's lessons carry `source='harness'` but no parent key. Adding a `derived_from` column plus the cascade is a schema change, so it is deferred rather than ported. |
 | subagents and cron read-only for memory | **exists** | AGENTS.md: "Sub-agents read and recall but never write; the parent turn is the only MODEL-facing memory write door." Verified this session that the deny-set path, not the offered surface, is what enforces it. |
 | write-time filters (secrets, IDs, sensitive flag, reject "never disagree") | **done** | Present before: `isSensitiveMemory`, a secret scanner (`hooks/secret_guard.scan_secrets`) refused at the `save_fact` door, `_REMEMBER_MIN_FACT_CHARS`, and `memoryIsJunk` on the distiller path. Added now: `memory_quality.coercivePreferenceReason` at the `remember` door — honesty-suppressing, flattery-requiring and self-elevating text is refused with the matched phrase named. Calibrated before it was allowed to refuse: **28/28 gold accepted, 18/18 coercive refused**, and proved end to end through the scripted loop (refusal arrives as an ERROR tool result, `facts` stays empty). Deliberately NOT behind `memorySensitiveTopics`: a rule the model installed cannot be argued away from the inside, and a human writing it from Settings is their own choice about their own assistant — the same split the sensitive gate uses. **`memoryIsJunk` was NOT wired onto `remember`**: measured, its `MIN_STATEMENT_CHARS = 24` refuses the spec's own example ("I use bun." → "statement is under 24 chars"). It is a bar for distilled lessons, not for user-stated facts. |
-| compact write/recall trigger block in the prompt | **partial** | `<memory_policy>` exists and is kept in step with the frozen boot index. Not yet compared line-by-line against spec C4/C5 — **do that before adding text**, since the trimming goal applies and a duplicate block costs tokens on every turn. |
+| compact write/recall trigger block in the prompt | **met — no text to add** | Compared 2026-10-24. The inbound spec text is not in the tree, so the comparison ran against this file's own record of C4/C5 ("compact write/recall trigger block"). **C4 (write triggers)**: `<memory_policy>` (`prompt_segments_cache.py` `MEMORY_BLOCK`) already carries every trigger — the four save categories, the description-first shape with `details` + `[[key]]` cross-refs, the anti-triggers (task steps, code structure, git-derivable), the necessity bar with "when in doubt, save nothing" (that IS the trimming goal, present verbatim in effect), update-don't-duplicate with the frozen-index honesty note, self-correction, and the sensitive-refusal notice. ~1.6k chars, no duplication inside it. **C5 (recall triggers)**: met by MECHANISM, not prompt text — the per-turn BM25 tail (auto-inject, armed by default), the boot index in `<intake>` whose own header line says "read via brain_query store=facts", the memory-delta block, and the read tools. The model needs no instruction to RECEIVE deterministic injection; the only recall instruction is the on-demand pointer, and the intake line + harness guide already carry it. Adding C5 text to `<memory_policy>` would duplicate the intake line on every turn for behaviour the harness already performs — exactly the duplicate-block cost this row warned about. Verdict: **add nothing**. One wording check: the block's "your memory index (in context at session start)" makes no completeness claim, so A1's partial slice at small windows does not contradict it. |
 
 ### Step 2 item 1 verified live (no network, no credit, throwaway `AUGUST_DATA_DIR`)
 
@@ -158,61 +158,108 @@ exactly today's caps and smaller windows get less — measured: 8192 →
 surface too. mypy 349 files, smoke 20/20, prompt byte-stable. Until a renderer
 reads the var, nothing changes — every surface keeps its shipped cap.
 
-### A1 remaining wiring, in order
+**WIRING SHIPPED 2026-10-24** — all seven items below are done and verified live;
+the numbers in each row are from the runs, not from reading the code.
 
-1. **`format_skill_index` is unbounded** (`capabilities_prompt.py:385`): it prints
-   every discovered name with no cap. Bound it by the skills slice
-   (`currentIndexBudget()[1]`), cutting at a line boundary with a visible
-   `… +N more` like the intake line already does.
-2. **`brain_index_snippet`'s bare `2400`** (`memory_store/brain.py:843`): take
-   `currentIndexBudget()[0]` instead. Keep the line-boundary cut.
-3. **The intake name list** (`workbench.py` `shownSkills = skillNames[:40]`, a bare
-   literal): take `currentIndexBudget()[2]`. The intake count and the index bound
-   MUST come from the same `currentIndexBudget()` call — one budget, two consumers,
-   or the two surfaces drift.
-4. **`_caps_block_cache` key** (`workbench.py`, `capsKey = workspacePath + tool
-   names`): append the budget triple. Without it, a session that starts on 128k
-   caches the large index and a switch to an 8k local model serves the cached big
-   one — the budget would be real on paper only.
-5. **Subagent surface is unbudgeted**: `subagent.py:750` renders the DESCRIPTIVE
-   catalogue (`format_skills_by_category`, `_SKILLS_INDEX_BYTE_BUDGET = 24 KiB`,
-   `capabilities_prompt.py:181`). Decide: bind it to the same combined budget, or
-   document subagents as out of scope. Default recommendation: bind it — a worker
-   inherits the parent's context var, so it is one line.
-6. **Live proof**: `august-bench --context-window 128000` vs `8192` (same script),
-   assert `skillsBytes` + `memoryBytes` from the `context/pressure` event
-   (`tailSectionSizes` `workbench.py:245-277`, emitted `:3428-3447`) shrink on the
-   small window and are unchanged on the big one.
-7. **Document the frozen-index tradeoff**: `_frozen_mem_index` is decided by the
-   window at the session's FIRST build, so a later switch to a smaller model does
-   not shrink it — re-slicing after a switch would bust the byte-stable prefix the
-   freeze exists to protect. State this in the A1 docstring, not just here.
+1. **`format_skill_index` bounded** (`capabilities_prompt.py`): the NAME lines
+   draw on `currentIndexBudget()[1]`, stop-packing at the first line that
+   would overflow (same rule as the descriptive renderer) with a visible
+   `… +N more (list_skills for all)` receipt. The fixed header prose is exempt
+   on purpose — it is the same bytes on every build regardless of window.
+   With the 9-skill bundled catalogue the 128k render is byte-identical to
+   the unbounded legacy (726 chars, 9 names); at the 8k slice it packs 7
+   names + the receipt.
+2. **`brain_index_snippet` takes the memory slice** (`memory_store/brain.py`):
+   the bare `2400` is now `currentIndexBudget()[0]` (the unscaled fallback IS
+   2400, so an unpublished read is unchanged). Line-boundary cut kept.
+3. **The intake name list** takes `_indexBudget[2]` from the ONE
+   `publishTier1IndexBudget` call at the top of `buildSystemPrompt` — the
+   intake count and the index bound cannot drift.
+4. **`_caps_block_cache` key** carries the budget triple, so a 128k→8k model
+   switch rebuilds at the small window instead of serving the cached big
+   index.
+5. **The subagent descriptive index is bound**: `subagent.py` passes
+   `skills_max_bytes=sum(currentIndexBudget()[:2])` — the combined envelope,
+   whole, because a worker has no memory boot index to share it with. The
+   worker inherits the PARENT's published var (context vars copy into spawned
+   tasks); a worker routed to a different model inherits the parent's window,
+   an accepted limit stated in the call site. The shipped 24 KiB cap remains
+   the fallback for direct callers. **This is the one surface where 128k
+   changes deliberately**: a catalogue big enough to hit 24 KiB now packs at
+   ~4.4k chars with the renderer's own truncation receipt and warning.
+6. **Live proof** (`august-bench`, scripted provider, throwaway data dir,
+   12-fact corpus, same script both arms): `context/pressure` now carries
+   `indexMemoryBytes` / `indexSkillsBytes` inside `contextSections` (the
+   build records the rendered byte sizes on the session; the tail keys
+   `memoryBytes`/`skillsBytes` keep meaning the per-turn tail, which this
+   budget does not touch). Measured: **128k → index memory 1245 B / skills
+   730 B; 8k → 103 B (−92%, cut at a line boundary) / 728 B** — the skills
+   delta is small only because the 9-name bundled catalogue's name lines
+   fit the 129-char slice; a larger catalogue packs harder. Tail blocks are
+   flat across arms (796/792 memory, 1403/1403 skills), confirming the
+   budget targets the Tier-1 index. `trajectory.json` steps record the pair
+   as `index_bytes`. The smoke's byte-stable prompt (7839 chars across
+   rebuilds) still holds — the default build is unchanged.
+7. **The frozen-index tradeoff is a stated decision**, not a silent one: the
+   boot index is frozen as TEXT at the session's FIRST build, so a mid-session
+   switch to a smaller window does NOT shrink it — re-slicing would rewrite
+   bytes inside the prefix-cached system block, the exact bust the freeze
+   exists to prevent. Stated at the freeze site in `buildSystemPrompt` and in
+   the `tier1IndexBudget` docstring. The skills index DOES follow a switch
+   (its cache key carries the budget); the boot index does not, on purpose.
 
-### C6 — deterministic pre-read (not started)
+### C6 — deterministic pre-read (SHIPPED 2026-10-24, proven end-to-end)
 
-- Use the list-safe `lastUserMessageText` (`turn_close.py:167`) for the user
-  message. The extractor at `workbench.py:3173` returns `''` when content is a
-  list, so a pre-read built on it silently never fires on multipart messages.
-- Match against fields that exist — facts have NO aliases column (DDL
-  `memory_schema.py:33-74`): fact `key` + `title` + `description`; skills already
-  carry `trigger` + `keywords`. The per-scope fact corpus is already cached
-  (`fact_retrieval.py:129`), so the match adds zero I/O at `workbench.py:3173`,
-  before any DB call.
-- Attach at most 2 records; skip any row whose text trips
-  `sensitiveMemoryReason` — there is no `sensitive` column, so the read-time check
-  reuses the write-door pattern.
-- Skills: on a match add a ONE-LINE hint to call `load_skill`. Never auto-load a
-  body.
-- Whatever is attached counts against the A1 budget, or A1 is decorative.
-- Prove: an alias match attaches; no match attaches nothing; a matched
-  sensitive-shaped row is skipped; first token is not delayed (the match is
-  in-process string work on a cached corpus).
+- `alias_preread_facts` (`fact_retrieval.py`): substring-matches the message
+  against `key`, `title`, `description` — plus the key's own SEGMENTS and
+  their spaced forms, because keys are namespaced by convention
+  (`bench:gpu-setup`, the `feedback:<topic>` shape `<memory_policy>`
+  recommends) and a message that names the subject almost never contains the
+  full key. No aliases column, no migration. At most 2 records, newest first,
+  each carrying `matched_field` for audit. A row whose text trips
+  `sensitiveMemoryReason` is dropped at READ time (there is no `sensitive`
+  column; this reuses the write-door detector, so rows written before that
+  rule or by another door are caught). `exclude_keys` drops what the turn
+  already rendered.
+- `alias_preread_skills` (`capabilities_prompt.py`): matches `name` (raw,
+  spaced), `keywords` (≥4 chars) and the whole `trigger`; hint-only by
+  contract — the caller renders ONE line pointing at `load_skill`, never a
+  body. Skills the Relevant-skills tail already rendered (or the user pinned)
+  are excluded, so one skill is never shown twice.
+- The message text comes from the list-safe `messageText`
+  (`turn_close.py`), not the `''`-on-list extractor — a multipart
+  (image+text) message gets its text blocks joined instead of silently never
+  matching. (`lastUserMessageText` now shares the same helper. The tail
+  patch itself still replaces a list content with a string — latent, not
+  live: current senders normalize to strings; flagged here, not fixed.)
+- **No second budget**: the memory attachment's byte cap IS
+  `currentIndexBudget()[0]` and the skill hints' IS `currentIndexBudget()[1]`
+  — at the 8k slice the attachment shrinks with the boot index; at 128k the
+  ≤2-record count bound does the work. Gated by `memoryAutoInject` exactly
+  like the BM25 lane beside it (a user who turned per-turn injection off
+  opted out of tail memory); the skill hints are ungated (the skills tail has
+  no opt-out to honour).
+- **Zero added I/O**: the match reads the same per-scope cached corpus
+  `build_memory_block` loads for the turn, and the catalogue is
+  mtime-memoized. Measured (Test 23): **20 µs/call facts, 16 µs/call skills**
+  on a 2-row store / 9-skill catalogue — in-process string scans, no
+  round-trip on the first-token path.
+- **Proven through the real loop** (scripted provider): a task naming
+  `gpu-setup` attaches `bench:gpu-setup` to the `recalledMemories` event in
+  both window arms — BM25 alone never surfaced it (it is absent from the
+  first five ranked rows). No-match tasks attach nothing. A task naming a
+  skill whose tail line already rendered attaches nothing (exclusion); with
+  the relevance gate off (`skillRelevanceMatch: false`) the tail renders
+  nothing and the hint block fires verbatim: `Aliased skills (matched this
+  message — bodies load via load_skill): - anatomy`. A sensitive-shaped row
+  is skipped; its non-sensitive sibling in the same match still attaches.
 
 ### Step 2/3 leftovers, recorded with recommendations
 
 - **One-level glob census: CLEAN.** Repo-wide grep finds no other `*/SKILL.md`
-  glob — recursive discovery and the memo key were the only two. Still open: the
-  walker's `_SKILL_WALK_MAX_FILES = 400` cap truncates SILENTLY; log when it fires.
+  glob — recursive discovery and the memo key were the only two. The walker's
+  `_SKILL_WALK_MAX_FILES = 400` cap now LOGS when it fires (warning naming the
+  root), so a silent truncation can no longer read as "that is every skill".
 - **Symlink descent**: implemented (`_iterSkillMd` never follows a symlinked
   directory), unproven — creating a directory symlink needs a privilege this shell
   does not have.
@@ -231,28 +278,41 @@ reads the var, nothing changes — every surface keeps its shipped cap.
   the install tree.
 - **`name`/`description` required at discovery** would hide existing learned skills
   that lack a description — census the user's own skills before tightening.
-- **Part D save chip**: memory writes surface as generic `memoryWrite`-classified
-  tool receipts (`AssistantBlockTimeline.tsx:461/1056`), not a dedicated chip, and
-  there is no one-click undo in the transcript. Undo exists as DATA (rollback
-  snapshots in `rollback_store`; Settings → Memory delete). Decide: build the chip
-  with undo, or accept the receipt + a Settings-side undo.
-- **`stated`/`inferred` UI marker**: recommended against — `facts.source` is
-  machine-set by the code path, which a model-declared tag cannot be. If a marker
-  is wanted anyway, the honest fields are `source`/`verified_at`, and
-  `_recalled_row` (`fact_retrieval.py:685`) deliberately emits only 4 keys — adding
-  one is a documented-contract change.
+- **Part D save chip** — RECOMMENDATION (owner ruling needed): accept the
+  receipt + the Settings-side undo. Memory writes already surface as
+  `memoryWrite`-classified receipts (`AssistantBlockTimeline.tsx:461/1056`),
+  the undo already exists as data (rollback snapshots in `rollback_store`,
+  Settings → Memory delete), and a chip with in-transcript undo is new UI
+  surface for a low-frequency, low-risk action. Revisit only if the usage
+  counters show users actually reaching for the Settings path after a write.
+  A `stated`/`inferred` marker is recommended against — `facts.source` is
+  machine-set by the code path, which a model-declared tag cannot be; if a
+  marker is wanted anyway, the honest fields are `source`/`verified_at`, and
+  `_recalled_row` (`fact_retrieval.py`) deliberately emits only 4 keys, so
+  adding one is a documented-contract change.
 - **Forget + derived lines**: no derivation edge exists (`supersedes` records
   succession, not derivation); a cascade needs a `derived_from` column. Deferred.
-- **`<memory_policy>` vs spec C4/C5**: not yet compared line-by-line. Do that
-  BEFORE adding any prompt text — the trimming goal applies and a duplicate block
-  costs tokens every turn.
+
+### Verified after the discovery changes (spec test list)
+
+- **Test 7** (evolution pipeline): a fixture skill carrying unknown
+  frontmatter keys (`origin`, `supersedes`, `learned_from`, a flat unknown,
+  and the nested `metadata.hermes` block) round-trips parse →
+  `_renderSkillMd` → parse BYTE-IDENTICALLY, and is still discovered with
+  `created_by: agent`. `renderSkillBody` emits the canonical sections from a
+  distiller-shaped draft (`steps` as do-pairs), `bodySubstance` passes the
+  substantive draft and refuses a thin one (it refused this probe's own
+  first, wrongly-keyed draft), and the pipeline's output parses back with
+  valid name/description/body.
+- **Test 21** is the A1 live proof in item 6 above (both surfaces survive a
+  window switch; the small window shrinks).
+- **Test 23** is the C6 timing line above.
 
 ### Process
 
 Eight commits unpushed (`8dde3c0d` bench schema bootstrap through the A1
 foundation). The final report (Phase 0 findings, what shipped, what was verified
-live, what was deferred) is outstanding and should be written when this list is
-empty or explicitly parked.
+live, what was deferred) is delivered in-session; this file is its durable copy.
 
 ## Sequencing and rules carried forward
 
