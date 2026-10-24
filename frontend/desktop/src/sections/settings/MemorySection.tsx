@@ -995,11 +995,22 @@ export function MemorySection({ active }: { active: { id: string } }) {
   const [budgetDraft, setBudgetDraft] = useState('');
   const effectiveBudget = budgetDraft === '' ? savedBudget : Number(budgetDraft) || 0;
   const budgetDirty = budgetDraft !== '' && effectiveBudget !== savedBudget;
-  const unifiedLoading = storeQueries.some((q) => q.isLoading);
-  const unifiedError = storeQueries.reduce<unknown>(
-    (acc, q) => acc ?? (q.isError ? q.error : null),
-    null,
-  );
+  // `some(isLoading)` blocked the whole merged list behind the SLOWEST of three
+  // independent stores, and one query that never settles pinned the page to a
+  // skeleton forever — the failure mode reported on Settings → Memory, where
+  // "Loading entries…" was still up at 12 s with no store request ever issued.
+  // The full-page loader answers "is there anything to show yet?", which is
+  // `every`, not `some`.
+  const unifiedLoading = storeQueries.every((q) => q.isPending);
+  // A partial failure is not a page failure. Replacing two good lists with one
+  // error card throws away what loaded and hides which store is actually at
+  // fault, so the page takes over only when ALL three failed; otherwise the
+  // failed names go in an inline notice above the rows.
+  const failedStores = GLOBAL_STORES.filter((_, i) => storeQueries[i]?.isError);
+  const unifiedError =
+    failedStores.length === storeQueries.length
+      ? storeQueries.reduce<unknown>((acc, q) => acc ?? (q.isError ? q.error : null), null)
+      : null;
   const workspaces = workspacesQ.data?.workspaces ?? [];
   // The Project group's empty state distinguishes "nothing has memory yet" from
   // "pick one" — the first is a fact about August, the second is a prompt.
@@ -1340,6 +1351,19 @@ export function MemorySection({ active }: { active: { id: string } }) {
         </div>
       ) : (
         <div className="pt-1">
+          {/* One store down while two answered: keep the rows that DID load and
+              name the one that did not. A full-page error here would hide good
+              data, and silence would read as "this store is empty". */}
+          {failedStores.length > 0 && (
+            <div
+              className="mb-3 rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning-fg"
+              role="alert"
+              data-testid="memory-partial-failure"
+            >
+              Could not load {failedStores.join(', ')}. The entries below are from
+              the {storeQueries.length - failedStores.length} that answered.
+            </div>
+          )}
           {/* The spacing between sections is the HEADER's (the reference's
               "generous space above"), not a second margin on the container —
               two gaps stacked read as a hole. */}
