@@ -32,6 +32,7 @@ import { ComposerAttachmentChips } from './composer/ComposerAttachmentChips';
 import { ComposerMentionsDropdown } from './composer/ComposerMentionsDropdown';
 import { ComposerCommandsDropdown } from './composer/ComposerCommandsDropdown';
 import { ComposerToolbar } from './composer/ComposerToolbar';
+import { FontChooserToast } from './composer/FontChooserToast';
 import { ComposerWorkspaceChips } from './composer/ComposerWorkspaceChips';
 import { ComposerVoiceListening } from './composer/ComposerVoiceListening';
 import { ContextUsageReadout } from './composer/ContextUsageReadout';
@@ -422,6 +423,8 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
       <div className="flex justify-center mb-1.5">
         <TaskProgressPill sessionId={sessionId} />
       </div>
+
+      <FontChooserToast />
 
       <div
         className={cn(

@@ -56,8 +56,14 @@ interface PreferencesState {
    *  comes back, and the user who said no is asked again by a background
    *  task they never asked for. */
   cancelledUpdateVersions: string[];
+  /** The composer's font-chooser hint has been closed. Persisted for the same
+   *  reason the cancelled updates are: a dismissal the app forgets by the next
+   *  launch is a dismissal that did not happen, and the hint comes back to ask
+   *  again. */
+  fontHintDismissed: boolean;
   setProfile: (patch: Partial<ProfilePrefs>) => void;
   setChatFont: (font: ChatFont) => void;
+  dismissFontHint: () => void;
   setReduceMotion: (on: boolean) => void;
   setVoice: (patch: Partial<VoicePrefs>) => void;
   setNotifyResponseComplete: (on: boolean) => void;
@@ -72,6 +78,7 @@ const DEFAULTS: Omit<
   PreferencesState,
   | 'setProfile'
   | 'setChatFont'
+  | 'dismissFontHint'
   | 'setReduceMotion'
   | 'setVoice'
   | 'setNotifyResponseComplete'
@@ -81,6 +88,7 @@ const DEFAULTS: Omit<
 > = {
   profile: { callYou: '', workDescription: '', instructions: '' },
   chatFont: 'default',
+  fontHintDismissed: false,
   reduceMotion: false,
   voice: { language: 'en', style: 'Neutral', speed: 'normal' },
   notifyResponseComplete: false,
@@ -120,6 +128,7 @@ function load(): typeof DEFAULTS {
     return {
       profile: { ...DEFAULTS.profile, ...(parsed.profile ?? {}) },
       chatFont: parsed.chatFont ?? DEFAULTS.chatFont,
+      fontHintDismissed: parsed.fontHintDismissed ?? DEFAULTS.fontHintDismissed,
       reduceMotion: parsed.reduceMotion ?? osPrefersReducedMotion(),
       voice: { ...DEFAULTS.voice, ...(parsed.voice ?? {}) },
       notifyResponseComplete:
@@ -142,6 +151,7 @@ function persist(state: PreferencesState): void {
       JSON.stringify({
         profile: state.profile,
         chatFont: state.chatFont,
+        fontHintDismissed: state.fontHintDismissed,
         reduceMotion: state.reduceMotion,
         voice: state.voice,
         notifyResponseComplete: state.notifyResponseComplete,
@@ -178,6 +188,10 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => ({
   setChatFont: (font) => {
     set({ chatFont: font });
     applyPreferenceAttributes(get());
+    persist(get());
+  },
+  dismissFontHint: () => {
+    set({ fontHintDismissed: true });
     persist(get());
   },
   setReduceMotion: (on) => {

@@ -327,13 +327,20 @@ input::placeholder {
 
 /* Chat font preference (General → Preferences → Chat font). Applied via
    data attribute on <html> by @/lib/preferences. Serif reads like the
-   reference provider's serif option; mono is for code-heavy chats. */
-:root[data-chat-font='serif'] .chat-message-text {
+   reference provider's serif option; mono is for code-heavy chats.
+
+   The `.chat-font-*` classes share these declarations rather than restating
+   the stacks: the font-chooser hint above the composer draws a swatch in each
+   face, and a swatch with its own copy of a stack is a preview that can drift
+   from what clicking actually applies. */
+:root[data-chat-font='serif'] .chat-message-text,
+.chat-font-serif {
   font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia,
     'Times New Roman', serif;
   letter-spacing: 0;
 }
-:root[data-chat-font='mono'] .chat-message-text {
+:root[data-chat-font='mono'] .chat-message-text,
+.chat-font-mono {
   font-family: ui-monospace, 'Cascadia Code', 'JetBrains Mono', Menlo,
     Consolas, monospace;
   font-size: 0.875rem;
