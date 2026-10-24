@@ -68,6 +68,7 @@ boolKeys: tuple[str, ...] = (
     'projectMemory',
     'projectSkills',
     'fileMemory',
+    'externalSkillRoots',
     'contextReliefRotate',
     # Whether `record_decision` is promoted into the CORE tool set
     # (`workbench._coreToolNames` reads it). It had a fieldTable entry and a
@@ -394,6 +395,7 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # introducing any new apply path. 'full' remains the mode where a skill
     # draft is treated as trustworthy enough to act on; 'off' still stops the
     # pass before a verdict is applied.
+    ('externalSkillRoots', 'external_skill_roots', '', 'str'),
     ('skillLearning', 'skill_learning', 'propose', 'str'),
     # Dedicated judge model for the episode distiller
     # (empty = fall back to the background-review memory model, then the

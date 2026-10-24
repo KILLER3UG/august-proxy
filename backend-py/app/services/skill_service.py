@@ -15,9 +15,12 @@ from __future__ import annotations
 import json
 import logging
 import re
+import sys
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Iterable, Optional
+
+import yaml
 
 from app.json_narrowing import as_int, as_str
 
@@ -81,6 +84,24 @@ def _skillRoots(
         except Exception:
             pass
     roots.append(('agent', _agentSkillsDir()))
+    # Optional operator roots, read-only: the skill doors copy-on-write into
+    # the agent/project root, so an external skill is never mutated in place.
+    # Listed before bundled so an operator's catalogue can override a shipped
+    # skill; a same-named agent/project skill still wins (the spec's user >
+    # external ordering).
+    try:
+        from app.services.brain_config_service import getRuntimeConfig
+
+        rawExternal = str(getRuntimeConfig().get('externalSkillRoots') or '')
+        for part in re.split(r'[;,\n]', rawExternal):
+            rawPath = part.strip()
+            if not rawPath:
+                continue
+            candidate = Path(rawPath).expanduser()
+            if candidate.is_dir():
+                roots.append(('external', candidate.resolve()))
+    except Exception:
+        pass
     roots.append(('bundled', SKILLS_DIR))
     return roots
 
@@ -276,7 +297,28 @@ def _bust_catalogue_cache() -> None:
 # analysis B5). 500 chars is room for "what it does + when to use it + when not
 # to", bounded because the skills index packs whole entries against a byte
 # budget and this string rides the BM25 corpus verbatim.
-_DESCRIPTIONMax = 500
+_DESCRIPTIONMax = 1024
+# The main goal's body ceilings: a hard refusal above 100k chars, and a soft
+# ~200-line warning that names references/ as the place for long material.
+_MAX_SKILL_BODY_CHARS = 100_000
+_SOFT_SKILL_BODY_LINES = 200
+
+
+def skill_authoring_warnings(description: str, body: str) -> list[str]:
+    """Non-blocking authoring warnings for a create/patch (item 5)."""
+    out: list[str] = []
+    if 'use when' not in (description or '').lower():
+        out.append(
+            'description has no "Use when" trigger — a future agent sees only name + '
+            'description before deciding to load this skill'
+        )
+    lines = len((body or '').splitlines())
+    if lines > _SOFT_SKILL_BODY_LINES:
+        out.append(
+            f'body is {lines} lines (soft cap ~{_SOFT_SKILL_BODY_LINES}) — move long material '
+            'into references/'
+        )
+    return out
 _MARKETINGWords = [
     'revolutionary',
     'cutting-edge',
@@ -436,17 +478,59 @@ def _parseSkill(path: Path) -> Optional[dict[str, object]]:
             path,
         )
         return None
+    # The frontmatter is YAML by contract. Validate it with a real parser (the
+    # hand-rolled block parser below exists for BYTE-PRESERVING round-trips,
+    # not for deciding validity): a list, a scalar, an unquoted colon in a
+    # value, or a tab-indented block is not a mapping and must be skipped with
+    # a reason, not silently accepted as an empty skill.
+    try:
+        loaded = yaml.safe_load(m.group(1))
+    except Exception as exc:
+        logger.warning('skipping %s: frontmatter is not valid YAML (%s)', path, exc)
+        return None
+    if not isinstance(loaded, dict):
+        logger.warning('skipping %s: frontmatter is not a YAML mapping', path)
+        return None
     frontmatter = _parse_frontmatter_block(m.group(1))
+    _rawName = str(frontmatter.get('name') or '').strip()
+    if not _rawName:
+        logger.warning('skipping %s: frontmatter is missing the required `name`', path)
+        return None
+    _rawDescription = str(frontmatter.get('description') or '').strip()
+    if not _rawDescription:
+        logger.warning('skipping %s: frontmatter is missing the required `description`', path)
+        return None
+    if len(_rawDescription) > _DESCRIPTIONMax:
+        logger.warning(
+            'skipping %s: description exceeds %d chars (got %d)',
+            path,
+            _DESCRIPTIONMax,
+            len(_rawDescription),
+        )
+        return None
+    try:
+        _validateName(_rawName)
+    except SkillValidationError as exc:
+        logger.warning('skipping skill with invalid name %r (%s): %s', _rawName, path, exc)
+        return None
     body = m.group(2).strip()
     if not body:
         logger.warning('skipping %s: frontmatter present but the body is empty', path)
+        return None
+    if len(body) > _MAX_SKILL_BODY_CHARS:
+        logger.warning(
+            'skipping %s: body exceeds the hard cap (%d > %d chars)',
+            path,
+            len(body),
+            _MAX_SKILL_BODY_CHARS,
+        )
         return None
     stat = path.stat()
     known = ('name', 'description', 'trigger', 'category', 'disabled', 'created_by')
     meta = {k: v for k, v in frontmatter.items() if k not in known}
     return {
-        'name': frontmatter.get('name', path.parent.name),
-        'description': frontmatter.get('description', ''),
+        'name': _rawName,
+        'description': _rawDescription,
         'trigger': frontmatter.get('trigger', ''),
         'category': frontmatter.get('category', 'uncategorized'),
         'enabled': str(frontmatter.get('disabled', 'false')).lower() != 'true',
@@ -601,9 +685,12 @@ def search(
 ) -> list[dict[str, object]]:
     """Search skills by name, description, trigger, or category."""
     allSkills = list_all(workspace, agent_id)
+    toolNames = _registeredToolNames()
     q = query.lower().strip()
     results = []
     for s in allSkills:
+        if skillGateReason(s, toolNames):
+            continue
         if enabledOnly and (not s['enabled']):
             continue
         if category and s.get('category', '') != category:
@@ -661,6 +748,84 @@ def load_bodies(
     return '\n\n'.join(parts)
 
 
+def _metaValues(skill: dict[str, object], key: str) -> list[str]:
+    """One frontmatter list, from the top level or ``metadata.hermes``.
+
+    The parser keeps bracketed lists as their literal string (byte-preserving
+    writes depend on it), so accept both ``[a, b]`` and a real list.
+    """
+    meta = skill.get('meta')
+    if not isinstance(meta, dict):
+        return []
+    raw = meta.get(key)
+    if raw is None:
+        md = meta.get('metadata')
+        if isinstance(md, dict):
+            hermes = md.get('hermes')
+            block = hermes if isinstance(hermes, dict) else md
+            if isinstance(block, dict):
+                raw = block.get(key)
+    if isinstance(raw, (list, tuple)):
+        return [str(v).strip() for v in raw if str(v).strip()]
+    text = str(raw or '').strip()
+    if text.startswith('[') and text.endswith(']'):
+        text = text[1:-1]
+    return [p.strip().strip('"\'') for p in text.split(',') if p.strip()]
+
+
+def _platformKey() -> str:
+    return {
+        'win32': 'windows',
+        'cygwin': 'windows',
+        'darwin': 'macos',
+        'linux': 'linux',
+    }.get(sys.platform, sys.platform)
+
+
+def _registeredToolNames() -> set[str]:
+    try:
+        from app.services import tool_registry
+
+        return {str(t.get('name') or '') for t in tool_registry.listRaw() if t.get('name')}
+    except Exception:
+        return set()
+
+
+def skillGateReason(
+    skill: dict[str, object], tools: set[str] | None = None
+) -> str:
+    """Why this skill is hidden on THIS host, or ``''`` when it is visible.
+
+    Semantics the main goal asks for: ``platforms`` hides a skill on the wrong
+    OS; ``requires_tools`` / ``requires_toolsets`` hide it when a named tool is
+    not registered; ``fallback_for_*`` hides it when the primary tool IS
+    present. ``requires_toolsets`` is read as tool names because this repo has
+    no separate toolset registry to map through.
+    """
+    aliases = {
+        'win': 'windows',
+        'win32': 'windows',
+        'mac': 'macos',
+        'osx': 'macos',
+        'darwin': 'macos',
+    }
+    platforms = {aliases.get(p.lower(), p.lower()) for p in _metaValues(skill, 'platforms')}
+    if platforms and _platformKey() not in platforms:
+        return f"platform {_platformKey()} is not in {sorted(platforms)}"
+    names = tools if tools is not None else _registeredToolNames()
+    required = _metaValues(skill, 'requires_tools') + _metaValues(skill, 'requires_toolsets')
+    missing = [t for t in required if t not in names]
+    if missing:
+        return f"requires missing tool(s): {', '.join(missing)}"
+    fallback = _metaValues(skill, 'fallback_for_tools') + _metaValues(
+        skill, 'fallback_for_toolsets'
+    )
+    present = [t for t in fallback if t in names]
+    if present:
+        return f"fallback, but {', '.join(present)} is available"
+    return ''
+
+
 def catalogue(
     workspace: str | Path | None = None, agent_id: str = ''
 ) -> list[dict[str, object]]:
@@ -701,7 +866,13 @@ def catalogue(
         pairs = _skillRoots(workspace, agent_id)
         roots = tuple(f'{scope}:{r}' for scope, r in pairs)
         marks = tuple(_root_mtime(r) for _scope, r in pairs) + _skillMdMarks(pairs)
-        key: tuple | None = (wsKey, agent_id, roots, marks)
+        try:
+            from app.services import tool_registry as _tr
+
+            _gen = _tr.generation()
+        except Exception:
+            _gen = 0
+        key: tuple | None = (wsKey, agent_id, roots, marks, _platformKey(), _gen)
     except Exception:
         key = None
     if key is not None and key in _cat_cache:
@@ -712,8 +883,11 @@ def catalogue(
     # into the kept one and drops the `overrides` label.
     byName = {as_str(s['name'], ''): s for s in list_all(None, agent_id)}
     entries: list[dict[str, object]] = []
+    toolNames = _registeredToolNames()
     for s in list_all(workspace, agent_id):
         if not s.get('enabled'):
+            continue
+        if skillGateReason(s, toolNames):
             continue
         status = skill_status(s.get('status'))
         if status in SKILL_CATALOGUE_HIDDEN_STATUSES:
@@ -1455,6 +1629,11 @@ def createSkill(
     _validateDescription(description)
     if not body.strip():
         raise SkillValidationError('Skill body is required.')
+    if len(body) > _MAX_SKILL_BODY_CHARS:
+        raise SkillValidationError(
+            f'Skill body exceeds the hard cap ({len(body)} > {_MAX_SKILL_BODY_CHARS} chars); '
+            'move long material into references/.'
+        )
     if get(name, workspace):
         raise SkillValidationError(f"Skill '{name}' already exists.")
     wsStr = str(workspace or '').strip()
@@ -1502,7 +1681,11 @@ def createSkill(
     md.write_text(content, 'utf-8')
     parsed = _parseSkill(md)
     _bust_prompt_skills_cache()
-    return parsed or {'name': name, 'description': description}
+    result = dict(parsed or {'name': name, 'description': description})
+    warnings = skill_authoring_warnings(description, normalized)
+    if warnings:
+        result['warnings'] = warnings
+    return result
 
 
 def patchSkill(
@@ -1577,6 +1760,11 @@ def patchSkill(
     # An absent `status:` already means active, so materializing one here
     # would only add a byte-diff to every unrelated toggle. `setStatus` is
     # the single door that writes the field.
+    if body is not None and len(body.strip()) > _MAX_SKILL_BODY_CHARS:
+        raise SkillValidationError(
+            f'Skill body exceeds the hard cap ({len(body.strip())} > {_MAX_SKILL_BODY_CHARS} chars); '
+            'move long material into references/.'
+        )
     is_learned = frontmatter.get('created_by', 'agent') in ('agent', 'harness-proposal')
     if body is None:
         # PATCH didn't change the body — preserve verbatim so a single-field
@@ -1610,7 +1798,13 @@ def patchSkill(
     md.write_text(content, 'utf-8')
     parsed = _parseSkill(md)
     _bust_prompt_skills_cache()
-    return parsed or {'name': name, 'description': frontmatter.get('description', '')}
+    result = dict(parsed or {'name': name, 'description': frontmatter.get('description', '')})
+    warnings = skill_authoring_warnings(
+        as_str(frontmatter.get('description', ''), ''), new_body
+    )
+    if warnings:
+        result['warnings'] = warnings
+    return result
 
 
 def restoreVersion(name: str, ts: str, workspace: str | Path | None = None) -> dict[str, object]:

@@ -2,10 +2,49 @@
 
 from __future__ import annotations
 
+import re
+import urllib.parse
 from pathlib import Path
 
 from app.json_narrowing import as_str
 from app.services import tool_registry
+
+# L2 is ONE bundled file, contained to the skill's own directory. The generic
+# read_file door is machine-wide by design (folderless chats read anywhere);
+# this is the skill-scoped door the authoring spec promises.
+_MAX_SKILL_FILE_CHARS = 200_000
+
+
+def _loadSkillFile(skill: dict[str, object], rel: str) -> str:
+    """Read one file from a skill directory, refusing every escape."""
+    raw = str(rel or '').strip()
+    if not raw:
+        return ''
+    decoded = urllib.parse.unquote(raw)
+    if decoded.startswith(('/', '\\')) or re.match(r'^[A-Za-z]:', decoded):
+        return 'Error: skill files are read by a path relative to the skill directory.'
+    parts = decoded.replace('\\', '/').split('/')
+    if any(part == '..' for part in parts):
+        return 'Error: traversal is not allowed in a skill file path.'
+    skill_dir = Path(as_str(skill.get('path'), '')).resolve().parent
+    try:
+        candidate = (skill_dir / decoded).resolve()
+    except (OSError, ValueError):
+        return 'Error: invalid skill file path.'
+    if candidate != skill_dir and not candidate.is_relative_to(skill_dir):
+        return 'Error: that file is outside the skill directory.'
+    if candidate.is_dir() or not candidate.is_file():
+        return f'Error: no skill file {decoded!r}.'
+    try:
+        if candidate.stat().st_size > _MAX_SKILL_FILE_CHARS:
+            return (
+                f'Error: {decoded!r} exceeds the per-file cap '
+                f'({_MAX_SKILL_FILE_CHARS} chars).'
+            )
+        text = candidate.read_text('utf-8')
+    except (OSError, UnicodeDecodeError) as exc:
+        return f'Error reading {decoded!r}: {exc}'
+    return f'{decoded} ({len(text)} chars):\n\n{text}'
 
 
 def _currentWorkspacePath() -> str:
@@ -42,8 +81,8 @@ def _currentBotAgentId() -> str:
         return ''
 
 
-async def _loadSkill(name: str) -> str:
-    """Load a skill's full instructions."""
+async def _loadSkill(name: str, file: str = '') -> str:
+    """Load a skill's full instructions, or one bundled file (L2)."""
     from app.services import skill_service
 
     try:
@@ -55,6 +94,11 @@ async def _loadSkill(name: str) -> str:
                 f"Skill '{name}' is disabled. It cannot be loaded — "
                 'enable it in Settings → Skills first.'
             )
+        gate = skill_service.skillGateReason(skill)
+        if gate:
+            return f"Skill '{name}' is unavailable here: {gate}."
+        if file:
+            return _loadSkillFile(skill, file)
         trigger_path = as_str(skill.get('path'), '')
         # Trigger-hit telemetry (per-skill usage sidecar).
         skill_service.record_skill_use(trigger_path)
@@ -67,7 +111,7 @@ async def _loadSkill(name: str) -> str:
         # what makes them usable: the body stays the entry point and the model
         # opens only the one file it needs, instead of the whole directory
         # being invisible because nothing told it the files exist.
-        listing = _siblingFiles(trigger_path, _skillDirPosix(trigger_path))
+        listing = _siblingFiles(trigger_path)
         directory = _skillDirPosix(trigger_path)
         head = f'Skill directory: {directory}\n\n' if directory else ''
         body = _substituteSkillVars(body, directory)
@@ -116,7 +160,7 @@ def _substituteSkillVars(text: str, skill_dir: str) -> str:
     return out
 
 
-def _siblingFiles(skill_path: str, directory: str) -> str:
+def _siblingFiles(skill_path: str) -> str:
     """List the other files in a skill's directory, with sizes.
 
     `directory` is the same dir as `_skillDirPosix(skill_path)`, passed in so the
@@ -143,7 +187,7 @@ def _siblingFiles(skill_path: str, directory: str) -> str:
     # skill living under `<dataDir>/skills` or the bundled tree: "read
     # references/x.md relative to the skill directory" opened
     # `<workspace>/references/x.md` and reported it missing.
-    prefix = f'{directory}/' if directory else ''
+    prefix = ''
     lines: list[str] = []
     for entry in entries[:_MAX_SKILL_FILES]:
         try:
@@ -161,7 +205,8 @@ def _siblingFiles(skill_path: str, directory: str) -> str:
         note = f'\n(_{len(entries) - _MAX_SKILL_FILES} more not listed — list the directory for the full set_)'
     return (
         '\n\n## Files in this skill\n'
-        'Read one with read_file using the full path shown:\n'
+        'Read one with load_skill(name, file="<relative path>") — traversal and absolute paths '
+        'are refused:\n'
         + '\n'.join(lines)
         + note
     )
@@ -197,7 +242,15 @@ def register() -> None:
         _loadSkill,
         {
             'type': 'object',
-            'properties': {'name': {'type': 'string', 'description': 'The skill name to load.'}},
+            'properties': {
+                'name': {'type': 'string', 'description': 'The skill name to load.'},
+                'file': {
+                    'type': 'string',
+                    'description': 'Optional L2: one file inside the skill directory (e.g. '
+                    'references/notes.md), relative to it. Traversal and absolute paths are '
+                    'refused.',
+                },
+            },
             'required': ['name'],
         },
     )

@@ -635,11 +635,20 @@ def _apply_skill_write(row: dict[str, Any]) -> dict[str, Any]:
         return {'ok': False, 'error': 'skill_patch proposals need payload.body'}
     try:
         from app.services.skill_service import (
+            _MAX_SKILL_BODY_CHARS,
             _agentSkillsDir,
             _ensure_canonical_body,
             _validateDescription,
             _validateName,
+            skill_authoring_warnings,
         )
+
+        if len(body) > _MAX_SKILL_BODY_CHARS:
+            return {
+                'ok': False,
+                'error': f'skill body exceeds the hard cap ({len(body)} > '
+                f'{_MAX_SKILL_BODY_CHARS} chars); move long material into references/.',
+            }
 
         _validateName(name)
         root = _agentSkillsDir()
@@ -795,6 +804,7 @@ def _apply_skill_write(row: dict[str, Any]) -> dict[str, Any]:
             _bust_prompt_skills_cache()
         except Exception:
             pass
+        _warnings = skill_authoring_warnings(description, body)
         return {
             'ok': True,
             'action': 'patched' if kind == 'skill_patch' else 'created',
@@ -802,6 +812,7 @@ def _apply_skill_write(row: dict[str, Any]) -> dict[str, Any]:
             'version': version,
             'status': status,
             'superseded': supersededResult,
+            'warnings': _warnings,
             # The snapshot this write took. Auto-apply records it so probation can
             # name the exact bytes to put back; '' when there was nothing to
             # snapshot (a create), which is probation's signal to ask a human.

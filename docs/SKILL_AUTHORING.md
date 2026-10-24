@@ -22,7 +22,9 @@ Only `SKILL.md` is required. Sibling folders are load-bearing, not decorative:
 `load_skill` ends its output with a bounded listing of every file in the skill
 directory, so a reader can see what exists before paying to open it. The
 canonical `## Reference files` section is where the body says WHEN to open each
-one.
+one. L2 reads exactly one file with `load_skill(name, file="references/x.md")`:
+the path is relative to the skill directory, and absolute paths, `..` (after
+URL-decoding) and symlink escapes are refused.
 
 ## Frontmatter
 
@@ -42,14 +44,29 @@ metadata:
 | Field | Required | Notes |
 |-------|----------|-------|
 | `name` | yes | Lowercase letters, digits, hyphens; max 64 chars. The id. |
-| `description` | yes | **The trigger.** ≤ 500 chars. See below. |
+| `description` | yes | **The trigger.** ≤ 1024 chars. See below. |
 | `trigger` | optional | Legacy short phrase; still matched, but the description is authoritative. |
 | `category` | optional | Grouping label (`harness`, `engineering`, `learning`, `artifacts`, …). |
 | `version` | recommended | Hermes-style; learned skills bump one per approved patch. |
 | `platforms` | optional | Keep the bracketed-list string form (`[linux, macos]`). |
-| `metadata.hermes.*` | optional | `tags`, `related_skills`. Unknown frontmatter round-trips through every patch, so the block survives edits. |
+| `metadata.hermes.*` | optional | `tags`, `related_skills`, `requires_tools`, `requires_toolsets`, `fallback_for_tools`, `fallback_for_toolsets`. Unknown frontmatter round-trips through every patch, so the block survives edits. |
 
-### The description is the trigger (why the cap is 500)
+### Gating
+
+A skill can be hidden from the catalogue, the Settings list and `load_skill`
+without deleting it:
+
+- `platforms: [linux, macos, windows]` hides it on any other OS.
+- `requires_tools` / `requires_toolsets` hide it when a named tool is not
+  registered. This repo has no separate toolset registry, so both read tool
+  names.
+- `fallback_for_tools` / `fallback_for_toolsets` hide it when the primary tool
+  IS available (a fallback is only for its absence).
+
+A hidden skill still exists on disk; `list_all` sees it, and the reason is
+returned by `load_skill`.
+
+### The description is the trigger (why the cap is 1024)
 
 A future agent sees **only** `name` + `description` before it decides to load a
 skill — that pair is what the skills index renders and what the per-turn BM25
@@ -67,7 +84,7 @@ about a failed build, timing closure, or the fitter report; do not use it for
 an FPGA bitstream flash.
 ```
 
-The 500-char ceiling is finite because the description rides the BM25 corpus
+The 1024-char ceiling is finite because the description rides the BM25 corpus
 and the index packs whole entries against a byte budget (over-long entries are
 dropped with a named overflow warning, not silently truncated). The marketing
 word denylist (`powerful`, `seamless`, `robust`, `advanced`, `intuitive`, …)
@@ -101,6 +118,24 @@ instead of a skill, because a rule wearing skill headings is worse than no
 skill. Bundled (hand-written) skills pass through the normalizer untouched:
 the canonical set is a contract for machine-authored skills, and a curated
 prose skill keeps its structure.
+
+## Size and authoring warnings
+
+The hard body cap is 100,000 characters: a larger SKILL.md is skipped at
+discovery and refused at every write door, with the reason logged. A body over
+~200 lines, or a description with no "Use when" trigger, is a **warning**, not a
+block — the authoring result carries `warnings` so a human can fix it. Long
+material belongs in `references/`, not the body.
+
+## Install / import
+
+A local folder, a GitHub repo/subdir, an https `.zip`, or a raw `.md` URL is
+fetched and **previewed** first: the response names every skill, its file count
+and size, and any content-scan finding, and nothing is written. Installing
+requires a second call with `confirm: true`. Shell, URL and credential text in a
+skill body refuses the install; a memory-instruction phrase is reported as a
+warning. Scripts are copied, never executed. Install targets collide-check
+against existing skills and never overwrite a directory the pack does not own.
 
 ## How learned skills are produced
 
