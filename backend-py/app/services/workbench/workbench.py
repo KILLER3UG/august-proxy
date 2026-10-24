@@ -1000,20 +1000,34 @@ def buildSystemPrompt(
         # old size rides until a new session. The skills index DOES follow a
         # switch (the caps memo key carries the budget); the boot index does
         # not, on purpose. Stated in tier1IndexBudget too.
-        frozen = getattr(session, '_frozen_mem_index', None)
-        if frozen is None:
-            try:
-                from app.services import session_scope as _ss
-                from app.services.memory_store import brain_index_snippet as _brain_index
+        try:
+            from app.services import brain_config_service as _mem_cfg
 
-                frozen = _brain_index(_ss.resolve_scope(session)).strip()
-            except Exception:
-                frozen = ''
-            try:
-                session._frozen_mem_index = frozen
-            except Exception:
-                pass
-        memIdx = frozen
+            _memReadAllowed = bool(_mem_cfg.getRuntimeConfig().get('modelMemoryRead', True))
+        except Exception:
+            _memReadAllowed = True
+        frozen: object
+        if not _memReadAllowed:
+            # The boot index is a READ of every stored fact. With memory reads
+            # switched off it must not ride the system prompt either — otherwise
+            # "off" still injects the store on every turn, and the switch only
+            # hides the explicit read tools.
+            frozen = ''
+        else:
+            frozen = getattr(session, '_frozen_mem_index', None)
+            if frozen is None:
+                try:
+                    from app.services import session_scope as _ss
+                    from app.services.memory_store import brain_index_snippet as _brain_index
+
+                    frozen = _brain_index(_ss.resolve_scope(session)).strip()
+                except Exception:
+                    frozen = ''
+                try:
+                    session._frozen_mem_index = frozen
+                except Exception:
+                    pass
+        memIdx = '' if frozen is None else str(frozen)
         bootIndexText = memIdx
         if memIdx:
             memParts.append('  Memory index (one line per fact and note — title/key — recall '
@@ -1179,7 +1193,7 @@ def buildSystemPrompt(
             'indexSkillsBytes': len(_skillsIndexText.encode('utf-8')),
         }
     except Exception:
-        pass
+        logger.debug('tier-1 index byte telemetry failed', exc_info=True)
     # Conditional policy blocks: only when the matching tools are offered.
     # `<clarify_policy>` names `submit_clarify`, which is registered
     # (system_tools.py:498) but in NEITHER `_BARE_TOOL_ALLOW` NOR
