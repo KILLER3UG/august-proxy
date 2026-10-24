@@ -83,8 +83,8 @@ _MAX_SKILL_FILES = 25
 # given. August's own spellings lead; the Hermes ones are accepted because a
 # ported SKILL.md arrives with them and `${HERMES_SKILL_DIR}` in a procedure the
 # agent cannot resolve is a step that silently fails.
-_SKILL_DIR_TOKENS = ('${AUGUST_SKILL_DIR}', '${HERMES_SKILL_DIR}')
-_SESSION_ID_TOKENS = ('${AUGUST_SESSION_ID}', '${HERMES_SESSION_ID}')
+_SKILL_DIR_TOKENS = ('${AUGUST_SKILL_DIR}', '${HERMES_SKILL_DIR}', '${SKILL_DIR}')
+_SESSION_ID_TOKENS = ('${AUGUST_SESSION_ID}', '${HERMES_SESSION_ID}', '${SESSION_ID}')
 
 
 def _skillDirPosix(skill_path: str) -> str:
