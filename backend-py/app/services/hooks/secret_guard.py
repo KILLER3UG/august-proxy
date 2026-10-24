@@ -17,6 +17,12 @@ logger = logging.getLogger('august.hooks.secret_guard')
 
 # Secret patterns (never log the matched value)
 _SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    # Project/service/admin keys carry a scope segment before the random
+    # part, so the generic `sk-[a-zA-Z0-9]{20,}` arm below stops at the
+    # hyphen after `sk-proj` and never matches them (measured: a stored
+    # `sk-proj-…` was accepted into durable memory). The random part may
+    # contain `-` and `_`.
+    ('OpenAI scoped API key', re.compile(r'sk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{20,}')),
     ('OpenAI API key', re.compile(r'sk-[a-zA-Z0-9]{20,}')),
     ('Anthropic API key', re.compile(r'sk-ant-[a-zA-Z0-9\-]{20,}')),
     ('AWS access key', re.compile(r'AKIA[0-9A-Z]{16}')),
