@@ -34,6 +34,7 @@ from typing import Any
 
 from app.services.memory_conn import conn as _conn
 from app.services.memory_store.rest import PROFILE_FACT_KIND
+from app.services.sensitive_topics import sensitiveMemoryReason
 
 # ~400 tokens at ~4 chars/token.
 _BLOCK_CHAR_CAP = 1600
@@ -180,14 +181,10 @@ def _load_index(scope: str = 'global') -> dict[str, Any]:
             # are caught here instead (the same read-time check the alias
             # pre-read already applied). Explicit reads stay unfiltered: a
             # model or human who asks brain_query/list_facts by name gets
-            # the row.
-            try:
-                from app.services.sensitive_topics import sensitiveMemoryReason
-
-                if sensitiveMemoryReason(title, key, desc, body):
-                    continue
-            except Exception:
-                pass
+            # the row. Module-level import (the module needs only `re`), so
+            # the filter cannot silently fail open on an import hiccup.
+            if sensitiveMemoryReason(title, key, desc, body):
+                continue
             # Title + description + key words + body: titles and the
             # ZCode-parity description hook carry the human phrasing the model
             # is most likely to echo back.

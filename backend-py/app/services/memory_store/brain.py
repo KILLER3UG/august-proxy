@@ -11,6 +11,7 @@ from app.services.memory_conn import conn as _conn
 from app.services.memory_store.kv import _fts_match_query
 from app.services.memory_store.timeutil import utc_now_text
 from app.services.memory_store.wire import _row_as_wire
+from app.services.sensitive_topics import sensitiveMemoryReason
 
 _BRAINStores: dict[str, dict[str, object]] = {
     'memory': {
@@ -769,16 +770,11 @@ def brain_index_snippet(scope: str = 'global') -> str:
                 # leak was a card number inside the index line. Same read-time
                 # check the recall corpus applies; explicit reads
                 # (brain_query / list_facts) stay unfiltered.
-                try:
-                    from app.services.sensitive_topics import sensitiveMemoryReason
-
-                    if sensitiveMemoryReason(
-                        str(r['title'] or ''), str(r['fact_key'] or ''),
-                        str(r['description'] or ''), str(r['fact_value'] or ''),
-                    ):
-                        continue
-                except Exception:
-                    pass
+                if sensitiveMemoryReason(
+                    str(r['title'] or ''), str(r['fact_key'] or ''),
+                    str(r['description'] or ''), str(r['fact_value'] or ''),
+                ):
+                    continue
                 label = str(r['title'] or '').strip() or str(r['fact_key'])
                 hook = ' '.join(str(r['description'] or '').split())
                 if not hook:
