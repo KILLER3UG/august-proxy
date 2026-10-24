@@ -896,6 +896,7 @@ def buildSystemPrompt(
     # model can answer "what did you receive at the start?" precisely —
     # the way strong assistants self-describe their intake.
     skillNames: list[str] = []
+    bootIndexText = ''
     try:
         from app.services import session_scope as _scope_svc
         from app.services import skill_service as _skill_service
@@ -913,7 +914,11 @@ def buildSystemPrompt(
         )
     except Exception:
         logger.debug('prompt: skill catalogue failed', exc_info=True)
-    shownSkills = skillNames[:40]
+    # The NAME count the budget granted this build — the same published triple
+    # the <skills> index bounds itself by, from the ONE publishTier1IndexBudget
+    # call at the top. A bare literal here would spend names the index just
+    # refused on a small window.
+    shownSkills = skillNames[: _indexBudget[2]]
     skillsLine = ', '.join(shownSkills)
     if len(skillNames) > len(shownSkills):
         skillsLine += f' … +{len(skillNames) - len(shownSkills)} more (list_skills for all)'
@@ -986,6 +991,15 @@ def buildSystemPrompt(
         # Fresh memory still reaches the model two ways: the per-turn memory
         # tail block (byte-stable system prompt, appended to the latest user
         # message) and brain_query on demand.
+        #
+        # A1 tradeoff, decided (do not "fix" by re-slicing): the freeze pins
+        # the TEXT, so it also pins the window this session first built under.
+        # A mid-session model switch to a smaller window does NOT shrink this
+        # index — re-slicing would rewrite bytes inside the prefix-cached
+        # system block, the exact bust the freeze exists to prevent — and the
+        # old size rides until a new session. The skills index DOES follow a
+        # switch (the caps memo key carries the budget); the boot index does
+        # not, on purpose. Stated in tier1IndexBudget too.
         frozen = getattr(session, '_frozen_mem_index', None)
         if frozen is None:
             try:
@@ -1000,6 +1014,7 @@ def buildSystemPrompt(
             except Exception:
                 pass
         memIdx = frozen
+        bootIndexText = memIdx
         if memIdx:
             memParts.append('  Memory index (one line per fact and note — title/key — recall '
                             'hook; read via brain_query store=facts or store=memory):')
@@ -1108,12 +1123,18 @@ def buildSystemPrompt(
                 parts.append(f'<agent>\n{agentContext}\n</agent>')
         except Exception:
             logger.debug('prompt: agent context failed', exc_info=True)
+    _skillsIndexText = ''
     if tool_names:
         # The capabilities memo is keyed by workspace path
         # TOO — per-workspace catalogues (project skills shadowing) must not
         # cross-contaminate sessions; a mutation still busts every key via
-        # clear_skill_prompt_caches().
-        capsKey = f'{workspacePath or ""}\n' + '\n'.join(sorted(tool_names))
+        # clear_skill_prompt_caches(). The budget triple is part of the key
+        # (A1): a session that starts on 128k caches the large index, and a
+        # switch to an 8k local model must rebuild at the small window
+        # instead of serving the cached big one.
+        capsKey = (
+            f'{workspacePath or ""}\n{_indexBudget}\n' + '\n'.join(sorted(tool_names))
+        )
         caps = _caps_block_cache.get(capsKey)
         if caps is None:
             try:
@@ -1144,6 +1165,21 @@ def buildSystemPrompt(
             # with `<capabilities>` and closes with `</capabilities>`. Wrapping it
             # here too put a nested duplicate in every prompt the app assembled.
             parts.append(caps)
+            # Tier-1 skills surface, as rendered, for the contextPressure
+            # event — the context meter reports what the index cost, not a
+            # client-side guess.
+            _skillsIndexText = caps.split('<skills>', 1)[-1].split('</skills>', 1)[0]
+    # Tier-1 index byte sizes for the contextPressure event: what the two
+    # cacheable index surfaces cost THIS build, in the same UTF-8 bytes the
+    # tail meter reports. The loop's pressure emit merges them into
+    # contextSections; a session that never built a prompt reports nothing.
+    try:
+        session._last_tier1_index_bytes = {  # type: ignore[attr-defined]
+            'indexMemoryBytes': len(bootIndexText.encode('utf-8')),
+            'indexSkillsBytes': len(_skillsIndexText.encode('utf-8')),
+        }
+    except Exception:
+        pass
     # Conditional policy blocks: only when the matching tools are offered.
     # `<clarify_policy>` names `submit_clarify`, which is registered
     # (system_tools.py:498) but in NEITHER `_BARE_TOOL_ALLOW` NOR
@@ -3386,6 +3422,13 @@ async def _sendWorkbenchMessageStreamImpl(
                 _skillsDetail,
                 _mapBlock,
             )
+            # The Tier-1 index surfaces (boot index + skills index) live in the
+            # cached system prompt, not the tail — the build recorded their
+            # rendered byte sizes on the session, and the meter carries them
+            # under their own keys so a client can see both layers.
+            _indexSizes = getattr(session, '_last_tier1_index_bytes', None)
+            if isinstance(_indexSizes, dict) and _indexSizes:
+                _contextSections = {**_contextSections, **_indexSizes}
             if _tailBlocks:
                 _patched = dict(_userMsg)
                 _patched['content'] = f'{_userText}\n\n{_tailBlocks}'

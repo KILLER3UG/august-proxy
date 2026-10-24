@@ -746,11 +746,20 @@ async def executeSubAgent(
             build_capabilities_block,
             skills_tools_allowed,
         )
+        from app.services.workbench.prompt_build import currentIndexBudget
 
         caps = build_capabilities_block(
             sorted(allowedNames),
             catalogue=_sk_svc.catalogue(_ws),
             include_skills=skills_tools_allowed(allowedNames),
+            # A1: the worker's descriptive index draws on the same combined
+            # Tier-1 envelope as every other surface — the worker has no
+            # memory boot index to share it with, so the whole slice is
+            # skills. The budget is the PARENT's published one (context vars
+            # copy into spawned tasks); a worker routed to a different model
+            # inherits the parent's window, an accepted limit, not a read of
+            # the shipped 24 KiB cap.
+            skills_max_bytes=sum(currentIndexBudget()[:2]),
         )
     except Exception:
         caps = ''

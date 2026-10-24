@@ -717,10 +717,12 @@ def brain_index_snippet(scope: str = 'global') -> str:
     where the hook is the fact's ``description`` (its one-line recall
     summary), falling back to the fact text's first clause. Lists up to 40
     active, unexpired facts (newest first) plus the last-5 episodic timeline
-    summaries, capped near 600 tokens. Injected at session start (frozen per
-    session) so the model always knows what it remembers and can pull or
-    update an entry by key without a ``list_facts`` round-trip — the same
-    contract as this environment's ``MEMORY.md`` index.
+    summaries, capped by the memory slice of the combined Tier-1 index budget
+    (A1: 2400 chars unscaled, smaller on a small-window model — see
+    ``workbench.prompt_build.tier1IndexBudget``). Injected at session start
+    (frozen per session) so the model always knows what it remembers and can
+    pull or update an entry by key without a ``list_facts`` round-trip — the
+    same contract as this environment's ``MEMORY.md`` index.
 
     Notes lane (2026-10-17): the KV store the Memory pane writes is listed
     too — up to 10 user notes (machine keys excluded), one line per key with
@@ -840,13 +842,19 @@ def brain_index_snippet(scope: str = 'global') -> str:
         pass
     if not lines:
         return ''
-    # ~600-token cap ≈ 2400 chars (index lines are short by construction).
-    # Cut at a LINE boundary: a mid-line slice leaves half a hook that reads
-    # like a complete fact — the exact lie this index exists to avoid.
+    # The cap is the memory slice of the combined Tier-1 index budget (A1) —
+    # read off the context var the prompt build published, so a small-window
+    # model gets a smaller boot index and the unscaled 2400 when no build is
+    # running. Cut at a LINE boundary: a mid-line slice leaves half a hook
+    # that reads like a complete fact — the exact lie this index exists to
+    # avoid.
+    from app.services.workbench.prompt_build import currentIndexBudget
+
+    capChars = currentIndexBudget()[0]
     text = '\n'.join(lines)
-    if len(text) > 2400:
-        cut = text.rfind('\n', 0, 2400)
-        text = text[:cut] if cut > 0 else text[:2400]
+    if len(text) > capChars:
+        cut = text.rfind('\n', 0, capChars)
+        text = text[:cut] if cut > 0 else text[:capChars]
     return text
 
 

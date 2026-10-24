@@ -78,6 +78,18 @@ class TrajectoryBuilder:
             step['context_tokens'] = total
             self.peak_context_tokens = max(self.peak_context_tokens, total)
             self.max_context = max(self.max_context, int(event.get('maxContext') or 0))
+            # Tier-1 index byte sizes (boot index + skills index, as rendered
+            # into the system prompt) — the sections the A1 budget scales, so
+            # a window-shrink run can prove the surfaces shrank.
+            sections = event.get('contextSections')
+            if isinstance(sections, dict):
+                index_bytes = {
+                    k: sections[k]
+                    for k in ('indexMemoryBytes', 'indexSkillsBytes')
+                    if k in sections
+                }
+                if index_bytes:
+                    step['index_bytes'] = index_bytes
         elif etype == 'step/tool_call':
             step = self._step()
             step['tool_calls'].append({

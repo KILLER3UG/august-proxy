@@ -287,11 +287,21 @@ _TIER1_SKILL_NAME_LINE_CHARS = 20
 _TIER1_SKILL_NAME_MIN = 4
 
 
-def tier1IndexBudget(contextWindowTokens: int) -> tuple[int, int, int]:
-    """(memory chars, skills-index chars, skills-index names) for this window."""
+def tier1IndexBudget(context_window_tokens: int) -> tuple[int, int, int]:
+    """(memory chars, skills-index chars, skills-index names) for this window.
+
+    Shrink-only per surface: 128k and up get exactly the unscaled caps, smaller
+    windows get less. One asymmetry is DECIDED, not an oversight: the memory
+    boot index is frozen as TEXT at a session's first build, so a mid-session
+    model switch to a smaller window does NOT shrink it — re-slicing would
+    rewrite bytes inside the prefix-cached system block, the exact bust the
+    freeze exists to prevent. The skills index follows a switch (its cache key
+    carries this budget). Both facts are stated at the freeze site in
+    ``buildSystemPrompt``; do not "fix" the boot index by re-slicing it.
+    """
     from app.services.workbench.token_budget import _CHARSPerTokenHeuristic
 
-    window = int(contextWindowTokens or 0)
+    window = int(context_window_tokens or 0)
     if window <= 0:
         return _TIER1_UNSCALED
     combined = min(

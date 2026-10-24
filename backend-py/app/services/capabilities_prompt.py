@@ -391,6 +391,17 @@ def format_skill_index(catalogue: list[dict[str, object]] | None = None) -> str:
     grouping. Descriptions for the entries relevant to the current request
     are injected per-turn in Tier 3 (``build_relevant_skills_block``);
     ``list_skills`` / ``search`` still return full descriptions on demand.
+
+    A1: the NAME lines are bounded by the skills slice of the combined Tier-1
+    index budget (`workbench.prompt_build.tier1IndexBudget`), read off the
+    context var the prompt build published — the unscaled cap when no build
+    is running. Packing stops at the first line that would overflow (same
+    rule as the descriptive renderer) and the receipt names what the cut
+    dropped, so a trimmed index never reads complete. The fixed header prose
+    is exempt: it is the same bytes on every build regardless of window, and
+    at the smallest windows the slice is a handful of names — which is the
+    point. ``<intake>`` prints the same names again under the budget's NAME
+    count, so the two surfaces cannot drift onto different lists.
     """
     if catalogue is None:
         try:
@@ -420,15 +431,46 @@ def format_skill_index(catalogue: list[dict[str, object]] | None = None) -> str:
         cat = as_str(s.get('category'), 'uncategorized') or 'uncategorized'
         by_cat[cat].append(s)
 
+    from app.services.workbench.prompt_build import currentIndexBudget
+
+    budgetChars = currentIndexBudget()[1]
+    total = sum(
+        1
+        for cat in by_cat
+        for s in by_cat[cat]
+        if as_str(s.get('name'), '')
+    )
+    body: list[str] = []
+    acc = 0
+    packed = 0
+    lastCat: str | None = None
+    stopped = False
     for cat in sorted(by_cat.keys()):
-        lines.append(f'### {cat}')
+        if stopped:
+            break
         for s in sorted(by_cat[cat], key=lambda x: as_str(x.get('name'), '')):
             name = as_str(s.get('name'), '')
             if not name:
                 continue
-            evolving = ' [evolving]' if as_str(s.get('created_by'), '') in _EVOLVING_CREATED_BY else ''
-            lines.append(f'- {name}{evolving}')
-        lines.append('')
+            line = f'- {name}' + (
+                ' [evolving]' if as_str(s.get('created_by'), '') in _EVOLVING_CREATED_BY else ''
+            )
+            if acc + len(line) + 1 > budgetChars:
+                stopped = True
+                break
+            if cat != lastCat:
+                header = f'### {cat}'
+                body.append(header)
+                acc += len(header) + 1
+                lastCat = cat
+            body.append(line)
+            acc += len(line) + 1
+            packed += 1
+    if stopped:
+        body.append(f'… +{total - packed} more (list_skills for all)')
+    elif lastCat is not None:
+        body.append('')
+    lines.extend(body)
     return '\n'.join(lines).rstrip()
 
 
@@ -459,13 +501,16 @@ def build_capabilities_block(
     include_skills: bool = True,
     compact_skills: bool = False,
     include_tool_names: bool = True,
+    skills_max_bytes: int | None = None,
 ) -> str:
     """Full ``<capabilities>`` XML block for main or subagent prompts.
 
     ``compact_skills=True`` renders the name-only index (main-agent Tier 1 —
     per-turn descriptions ride in the Relevant skills tail instead); the default
     descriptive catalogue stays for subagent prompts, which have no Tier-3
-    relevance pass.
+    relevance pass. ``skills_max_bytes`` overrides the descriptive renderer's
+    shipped cap — the subagent path passes the Tier-1 combined slice so a
+    worker's index scales with the window like every other surface.
     """
     parts = [
         '<capabilities>',
@@ -479,7 +524,16 @@ def build_capabilities_block(
     ]
     if include_skills:
         skills_inner = (
-            format_skill_index(catalogue) if compact_skills else format_skills_by_category(catalogue)
+            format_skill_index(catalogue)
+            if compact_skills
+            else format_skills_by_category(
+                catalogue,
+                max_bytes=(
+                    skills_max_bytes
+                    if skills_max_bytes is not None
+                    else _SKILLS_INDEX_BYTE_BUDGET
+                ),
+            )
         )
         parts.extend(['', '<skills>', skills_inner, '</skills>'])
     else:
