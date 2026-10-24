@@ -103,20 +103,29 @@ _DERIVABLE_RE = re.compile(
 
 # Instructions that compromise the assistant, refused at the model's write door
 # (spec C7: honesty-suppressing, flattery-requiring or permission-claiming text
-# "never persists as a preference"). Every arm is SECOND-PERSON and directed at
-# the assistant, because that is what makes it an instruction to the model rather
-# than a description of the person: "prefers blunt review feedback" and "never
+# "never persists as a preference"). Every arm is directed at the assistant,
+# because that is what makes it an instruction to the model rather than a
+# description of the person: "prefers blunt review feedback" and "never
 # sugarcoat my code review" are honest-favoring preferences and must not match,
 # while "always agree with me" must. Narrow on purpose — the door is a refusal the
 # model cannot argue with, so a false positive costs a real memory.
+#
+# The person arms accept third-person referents too, not just "me": the measured
+# bypass was "must always agree with the user", which is the same obedience rule
+# phrased about the assistant instead of to it. Referents are limited to the
+# person(s) the assistant serves, so "always agree with the spec when it is
+# newer" still stores.
 _COERCIVE_RE = re.compile(
     r'\b('
     # disagreement suppressed
-    r'always agree with me|never (disagree|push back|challenge|contradict|correct) ?(?:me)?'
-    r'|don\'?t ever (?:disagree|push back|correct|challenge)(?: me)?'
-    r'|stop (?:pushing back|disagreeing|correcting me)'
+    r'always agree with (?:me|us|the user|users|the human|him|her|them|people)'
+    r'|never (disagree|push back|challenge|contradict|correct) ?(?:me|the user|the human|him|her|them)?'
+    r'|don\'?t ever (?:disagree|push back|correct|challenge)(?: me| the user| the human| them)?'
+    r'|stop (?:pushing back|disagreeing|correcting me|correcting the user)'
     r'|never (?:say|tell(?: me)?) (?:that )?(?:i\'?m|i am) (?:wrong|incorrect|mistaken)'
     r'|(?:only|just) (?:say|tell me) what i want to hear'
+    r'|ignore (?:all )?(?:previous|prior|above) instructions'
+    r'|you must (?:always )?obey'
     # flattery required
     r'|always (?:praise|flatter|compliment)(?: me)?|require flattery'
     r'|start every (?:reply|answer|response) with a compliment'
