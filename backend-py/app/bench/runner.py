@@ -152,6 +152,26 @@ async def run_bench(opts: BenchOptions) -> int:
     # ── headless stance BEFORE anything session-related runs ─────────────
     os.environ['AUGUST_HEADLESS'] = '1'
 
+    # Create the brain schema the same way app startup does. The bench drives the
+    # loop in-process and never runs the app's lifespan, so on a throwaway data
+    # directory there is NO brain database schema at all — measured: a run that
+    # called `remember` and `list_facts` left the file with 0 tables while both
+    # tools returned ok. `list_facts` reported `count: 0` for a missing table,
+    # which is indistinguishable from an empty store, so a broken memory path
+    # looked like a memory that simply had nothing in it. Bootstrapping here
+    # makes the bench's isolated store behave like a real one.
+    try:
+        from app.services.memory_conn import conn as _mem_conn
+        from app.services.memory_schema import ensure_schema as _ensure_schema
+
+        with _mem_conn() as _schemaConn:
+            _ensure_schema(_schemaConn)
+    except Exception as exc:
+        # Loud, not swallowed: a bench that cannot build its own store must say
+        # so, or every later memory assertion is vacuous.
+        print(f'august-bench: brain schema bootstrap failed: {exc}', file=sys.stderr)
+        return EXIT_ERROR
+
     # The scripted provider is a test fixture, not a product setting: it is
     # installed for one run and the store it was armed in is put back in the
     # run's `finally`. Without the restore, running the bench rewrote the
