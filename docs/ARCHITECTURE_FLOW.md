@@ -242,7 +242,7 @@ flowchart TB
 
   subgraph tail["The memory tail attached to a turn"]
     direction TB
-    GATE{"brain_config memoryAutoInject<br/>app/services/brain_config_service.py:220<br/>DEFAULT OFF"}
+    GATE{"brain_config memoryAutoInject<br/>app/services/brain_config_service.py<br/>ARMED BY DEFAULT"}
     BM["fact_retrieval.py:build_memory_block :667<br/>BM25 over facts — only when invoked"]
     PROF["build_profile_block — ALWAYS-ON lane<br/>rendered even with auto-inject off"]
     DELTA["fact_retrieval.py:build_memory_delta_block :958<br/>facts updated after session.createdAt<br/>fixed-width microseconds, live projection"]
@@ -293,7 +293,8 @@ flowchart TB
 
 **Not what it looks like**
 
-- `memoryAutoInject` is **off by default**, but that gate only governs the
+- `memoryAutoInject` is **armed by default** (it shipped off; see
+  `AGENTS.md` "Durable memory"), but that gate only governs the
   recalled-facts lane: `build_profile_block` (the `kind='profile'` facts) is
   rendered on every turn regardless. That is what makes August remember *who
   you are* without a keyword coincidence.

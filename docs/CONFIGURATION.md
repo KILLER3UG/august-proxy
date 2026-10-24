@@ -272,7 +272,8 @@ What is real:
   and reports `total`/`hasMore`; `include_retired: true` also lists the rows
   consolidation parked, which recall skips.
 - **Automatic recall** is the BM25 `Relevant memory:` tail, gated by brain-config
-  `memoryAutoInject` (**default `false`**). Independently of that gate,
+  `memoryAutoInject` (**default `true`** since 0.18.20; it shipped OFF and was
+  armed after measuring the write door that feeds it). Independently of that gate,
   `kind='profile'` facts ride an always-in lane (~600-char budget) — that is what
   makes August remember who you are without a keyword coincidence. A fact dropped
   for budget is *named* in a `recall partial:` line rather than vanishing.

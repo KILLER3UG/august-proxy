@@ -605,8 +605,12 @@ inherit the parent retry policy, compact mid-run, and support `yieldSchema` for
 structured results.
 
 **Durable memory** — the `Relevant memory:` tail is BM25 over the brain `facts` table,
-gated by brain-config `memoryAutoInject` (**default OFF**: recall happens when
-the model calls `brain_query`). Three things are true regardless of that gate:
+gated by brain-config `memoryAutoInject` (**ARMED BY DEFAULT since 2026-10-24**;
+it was OFF, which was a trust decision rather than a measured one — the write
+door that feeds this lane, `memoryIsJunk`, refuses 0 of 14 durable rules and
+catches 5 of 5 junk cases, so the content is already filtered). An install that
+turned it off keeps it off: verified through the real `PUT /api/brain/config`
+door, a persisted `false` beats the new default. Three things are true regardless of that gate:
 `kind='profile'` facts are an always-in lane (rendered first, ~600-char budget,
 injected even with auto-inject off — this is what makes August remember *who
 you are* without a keyword coincidence), a fact dropped for budget is
@@ -726,8 +730,9 @@ return to A and A's message ids sit on both sides of B's, so a single cursor
 reviews B and then jumps past all of A, which is exactly the "only one session
 ever gets learned from" failure the pass exists to fix. An empty window still
 advances that session's cursor, so tool-ack-only rows are never re-read. Gated by
-brain-config `memoryReview` (**default OFF** — absent key = off, like the runaway
-backstop) and scheduled as the `review` job in `learning_scheduler`, so it has its
+brain-config `memoryReview` (**ARMED BY DEFAULT since 2026-10-24**; it was OFF,
+and "absent key = off" no longer describes it — an install that explicitly
+turned it off keeps it off) and scheduled as the `review` job in `learning_scheduler`, so it has its
 own ledger row, cadence (`reviewIntervalHours`) and run-now button. Its job
 adapter **must drop `results`** before returning: `_finish_run` truncates the
 serialized detail at 2000 chars, a 60-entry list measured 2994, and a half-JSON

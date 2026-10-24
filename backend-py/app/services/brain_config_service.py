@@ -266,10 +266,14 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     ('modelMemoryRead', 'model_memory_read', True, 'bool'),
     # Auto-inject gate: when on, the "Relevant memory:" section of facts relevant to the
     # latest turn is appended every turn (plus the names-only index in the
-    # system prompt). Default OFF — memory is recalled only when the model
-    # calls the read tool, per the user's design. modelMemoryRead must stay on
-    # for the tool to be available.
-    ('memoryAutoInject', 'memory_auto_inject', False, 'bool'),
+    # system prompt).
+    # ARMED BY DEFAULT (was OFF). The OFF default was a trust decision, not a
+    # measured one: the write door that feeds it, `memoryIsJunk`, refuses 0 of 14
+    # durable rules and catches 5 of 5 junk cases, so the content reaching this
+    # lane is already filtered. Cost is real and bounded — the block is capped by
+    # _BLOCK_CHAR_CAP and the profile lane by _PROFILE_CHAR_CAP.
+    # modelMemoryRead must stay on for the read tool to be available either way.
+    ('memoryAutoInject', 'memory_auto_inject', True, 'bool'),
     # Memory write door: the `remember` tool is offered to the model only while
     # this is on; sensitive-topic facts additionally need memorySensitiveTopics.
     ('modelMemoryWrites', 'model_memory_writes', True, 'bool'),
@@ -297,7 +301,12 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # its gate. Daily because it reads one session per pass and a longer interval
     # would leave whole days of conversation unread.
     ('reviewIntervalHours', 'review_interval_hours', 24, 'num'),
-    ('memoryReview', 'memory_review', False, 'bool'),
+    # ARMED BY DEFAULT (was OFF). This is the only positive trigger in the
+    # learning loop — every other pass starts from something going wrong — so
+    # with it off, a session that went well was never read by anything. It costs
+    # one model call per pass over one session, and it writes proposals, not
+    # facts: the skill doors still file to the inbox and a human still decides.
+    ('memoryReview', 'memory_review', True, 'bool'),
     # Second context-relief route (rotate onto a fresh handoff note instead of
     # stacking another summary). Off: it re-anchors what the provider cache sees
     # mid-chat, so it is armed deliberately, per install.
