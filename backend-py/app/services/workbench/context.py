@@ -67,6 +67,21 @@ currentSubagentDenied: ContextVar[frozenset[str]] = ContextVar('workbench_subage
 contextWindowOverride: ContextVar[int] = ContextVar('workbench_context_window_override', default=0)
 
 
+# The combined Tier-1 index budget for the prompt build now executing:
+# (memory boot-index chars, skills-index chars, skills-index names). Published by
+# `workbench.buildSystemPrompt` via `prompt_build.publishTier1IndexBudget` and read
+# by the two renderers that own those surfaces. None = never published, and each
+# renderer falls back to its own shipped cap.
+#
+# A ContextVar rather than an argument because the two surfaces render in packages
+# that must not import each other (`memory_store.brain` and `capabilities_prompt`),
+# and a subagent's task copies the context at creation — so one publish covers every
+# assembler instead of threading three numbers through six signatures.
+indexBudget: ContextVar[tuple[int, int, int] | None] = ContextVar(
+    'workbench_index_budget', default=None
+)
+
+
 def currentAgentId() -> str:
     """The agent the executing tool call belongs to, or '' outside an agent session.
 

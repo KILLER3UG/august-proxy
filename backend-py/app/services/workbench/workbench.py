@@ -769,6 +769,16 @@ def buildSystemPrompt(
     session._last_recalled_memories = None
     session._last_context_snapshot = None
     is_worker = int(getattr(session, 'subagent_depth', 0) or 0) > 0
+    # One budget for both Tier-1 index surfaces (skills name index + memory boot
+    # index), scaled to the model this build is for. Published here because this is
+    # the single assembly point every tier reads; the renderers pick it up from the
+    # context var instead of importing each other. Until a renderer reads it this
+    # changes nothing — every surface keeps its shipped cap via the fallback.
+    from app.services.workbench.prompt_build import (
+        publishTier1IndexBudget as _publishTier1IndexBudget,
+    )
+
+    _indexBudget = _publishTier1IndexBudget(session)
 
     if tools is None:
         tools = toolDefinitions(session)

@@ -145,17 +145,114 @@ needs a census of the user's own skills first); `list_skills` truncating every
 description to 60 chars while the index renders the whole trigger
 (`skill_tools.py:132`); the bundled root being writable by a migration.
 
-## Step 4 — the two confirmed gaps to build
+## Step 4 — A1 + C6 (A1 foundation committed; wiring listed below is the handoff)
 
-- **A1 combined budget.** One budget for skills catalogue + memory index, scaled
-  to the active model's window, injected at one point, surviving model switches
-  and handoffs. Today they are separately budgeted (`skillsBytes` and
-  `memoryBytes` are already measured independently in the bench's
-  `context/pressure` event — that instrumentation is the starting point).
-- **C6 deterministic alias pre-read.** String-match the user message against
-  memory subjects/aliases and skill names, no extra LLM call; attach a one-line
-  description or at most 2 non-sensitive records; for skills, hint only.
-  Negligible latency, must never delay first token.
+**Committed foundation** (`indexBudget` ContextVar in `workbench/context.py`,
+`tier1IndexBudget` / `publishTier1IndexBudget` / `currentIndexBudget` in
+`workbench/prompt_build.py`, published at the top of `buildSystemPrompt`).
+Shrink-only: `_TIER1_INDEX_MAX_CHARS` is today's combined spend, so 128k keeps
+exactly today's caps and smaller windows get less — measured: 8192 →
+`(157, 129, 6)`, 32000 → `(616, 504, 25)`, 128000 and 200000 → `(2400, 2000, 40)`
+(memory chars, skills chars, skills names). The window comes from the loop's own
+`_resolveModelContextWindow`, so `august-bench --context-window` drives this
+surface too. mypy 349 files, smoke 20/20, prompt byte-stable. Until a renderer
+reads the var, nothing changes — every surface keeps its shipped cap.
+
+### A1 remaining wiring, in order
+
+1. **`format_skill_index` is unbounded** (`capabilities_prompt.py:385`): it prints
+   every discovered name with no cap. Bound it by the skills slice
+   (`currentIndexBudget()[1]`), cutting at a line boundary with a visible
+   `… +N more` like the intake line already does.
+2. **`brain_index_snippet`'s bare `2400`** (`memory_store/brain.py:843`): take
+   `currentIndexBudget()[0]` instead. Keep the line-boundary cut.
+3. **The intake name list** (`workbench.py` `shownSkills = skillNames[:40]`, a bare
+   literal): take `currentIndexBudget()[2]`. The intake count and the index bound
+   MUST come from the same `currentIndexBudget()` call — one budget, two consumers,
+   or the two surfaces drift.
+4. **`_caps_block_cache` key** (`workbench.py`, `capsKey = workspacePath + tool
+   names`): append the budget triple. Without it, a session that starts on 128k
+   caches the large index and a switch to an 8k local model serves the cached big
+   one — the budget would be real on paper only.
+5. **Subagent surface is unbudgeted**: `subagent.py:750` renders the DESCRIPTIVE
+   catalogue (`format_skills_by_category`, `_SKILLS_INDEX_BYTE_BUDGET = 24 KiB`,
+   `capabilities_prompt.py:181`). Decide: bind it to the same combined budget, or
+   document subagents as out of scope. Default recommendation: bind it — a worker
+   inherits the parent's context var, so it is one line.
+6. **Live proof**: `august-bench --context-window 128000` vs `8192` (same script),
+   assert `skillsBytes` + `memoryBytes` from the `context/pressure` event
+   (`tailSectionSizes` `workbench.py:245-277`, emitted `:3428-3447`) shrink on the
+   small window and are unchanged on the big one.
+7. **Document the frozen-index tradeoff**: `_frozen_mem_index` is decided by the
+   window at the session's FIRST build, so a later switch to a smaller model does
+   not shrink it — re-slicing after a switch would bust the byte-stable prefix the
+   freeze exists to protect. State this in the A1 docstring, not just here.
+
+### C6 — deterministic pre-read (not started)
+
+- Use the list-safe `lastUserMessageText` (`turn_close.py:167`) for the user
+  message. The extractor at `workbench.py:3173` returns `''` when content is a
+  list, so a pre-read built on it silently never fires on multipart messages.
+- Match against fields that exist — facts have NO aliases column (DDL
+  `memory_schema.py:33-74`): fact `key` + `title` + `description`; skills already
+  carry `trigger` + `keywords`. The per-scope fact corpus is already cached
+  (`fact_retrieval.py:129`), so the match adds zero I/O at `workbench.py:3173`,
+  before any DB call.
+- Attach at most 2 records; skip any row whose text trips
+  `sensitiveMemoryReason` — there is no `sensitive` column, so the read-time check
+  reuses the write-door pattern.
+- Skills: on a match add a ONE-LINE hint to call `load_skill`. Never auto-load a
+  body.
+- Whatever is attached counts against the A1 budget, or A1 is decorative.
+- Prove: an alias match attaches; no match attaches nothing; a matched
+  sensitive-shaped row is skipped; first token is not delayed (the match is
+  in-process string work on a cached corpus).
+
+### Step 2/3 leftovers, recorded with recommendations
+
+- **One-level glob census: CLEAN.** Repo-wide grep finds no other `*/SKILL.md`
+  glob — recursive discovery and the memo key were the only two. Still open: the
+  walker's `_SKILL_WALK_MAX_FILES = 400` cap truncates SILENTLY; log when it fires.
+- **Symlink descent**: implemented (`_iterSkillMd` never follows a symlinked
+  directory), unproven — creating a directory symlink needs a privilege this shell
+  does not have.
+- **`platforms` / `requires_*` / `fallback_for_*` gating**: missing entirely; only
+  `disabled` and `status: retired` gate visibility (`skill_service.py:647/650`).
+  Cheap, low value on a single-user Windows desktop.
+- **Install/import**: remote pack install is solid (source + sha256, traversal
+  refused, 20 MB cap, collision refused) but has no confirmation step, no
+  exfiltration/destructive scan, and no local-folder import.
+  `harness_rails._content_check` exists and is wired ONLY to the proposal/auto-apply
+  lane — the wiring is the cheap half of this.
+- **`list_skills` truncates every description to 60 chars** (`skill_tools.py:132`)
+  while the index renders the whole 500-char trigger. The listing defeats the
+  trigger it exists to advertise.
+- **Bundled root is not read-only**: `migrate_flat_skills` writes/unlinks inside
+  the install tree.
+- **`name`/`description` required at discovery** would hide existing learned skills
+  that lack a description — census the user's own skills before tightening.
+- **Part D save chip**: memory writes surface as generic `memoryWrite`-classified
+  tool receipts (`AssistantBlockTimeline.tsx:461/1056`), not a dedicated chip, and
+  there is no one-click undo in the transcript. Undo exists as DATA (rollback
+  snapshots in `rollback_store`; Settings → Memory delete). Decide: build the chip
+  with undo, or accept the receipt + a Settings-side undo.
+- **`stated`/`inferred` UI marker**: recommended against — `facts.source` is
+  machine-set by the code path, which a model-declared tag cannot be. If a marker
+  is wanted anyway, the honest fields are `source`/`verified_at`, and
+  `_recalled_row` (`fact_retrieval.py:685`) deliberately emits only 4 keys — adding
+  one is a documented-contract change.
+- **Forget + derived lines**: no derivation edge exists (`supersedes` records
+  succession, not derivation); a cascade needs a `derived_from` column. Deferred.
+- **`<memory_policy>` vs spec C4/C5**: not yet compared line-by-line. Do that
+  BEFORE adding any prompt text — the trimming goal applies and a duplicate block
+  costs tokens every turn.
+
+### Process
+
+Eight commits unpushed (`8dde3c0d` bench schema bootstrap through the A1
+foundation). The final report (Phase 0 findings, what shipped, what was verified
+live, what was deferred) is outstanding and should be written when this list is
+empty or explicitly parked.
 
 ## Sequencing and rules carried forward
 

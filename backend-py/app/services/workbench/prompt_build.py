@@ -258,3 +258,81 @@ def memory_nudge_block(session: WorkbenchSession, memWritesOn: bool) -> str:
     from app.services.workbench import prompt_segments_cache
 
     return prompt_segments_cache.MEMORY_NUDGE_BLOCK
+
+
+# ── Tier-1 index budget (skills catalogue + memory boot index) ──────────────
+#
+# Two surfaces are "cheap descriptions always loaded, full content on demand": the
+# skills NAME index in <capabilities> (plus the same names listed again in
+# <intake>) and the memory boot index. They were budgeted apart from each other and
+# neither against the model actually running — the memory index by a 2400-char cut,
+# the skills name index by NOTHING, so it grew with the bundle. A 6k-token index
+# leaves an 8k local model 2k tokens of transcript, which is the failure this
+# closes. The tool set already scales this way
+# (`assembleToolDefs(contextLength=…)`), so this extends a rule the loop has.
+#
+# Shrink-only by construction: the cap is today's combined spend, so a 128k model
+# gets exactly what it gets now and a smaller window gets less. Growing a cached
+# prefix on a bigger model would cost tokens for no stated benefit.
+_TIER1_INDEX_WINDOW_FRACTION = 0.01
+_TIER1_INDEX_MAX_CHARS = 4400
+# Today's proportions, kept so scaling cannot starve one surface to feed the other:
+# 2400 chars of memory index, 2000 of skills name index.
+_TIER1_MEMORY_SHARE = 0.55
+_TIER1_UNSCALED: tuple[int, int, int] = (2400, 2000, 40)
+# The cost of one index line (`- some-skill-name [evolving]`), used to turn the
+# skills slice into a NAME count — because <intake> prints the same names a second
+# time, and an unscaled count there would spend what the index just refused.
+_TIER1_SKILL_NAME_LINE_CHARS = 20
+_TIER1_SKILL_NAME_MIN = 4
+
+
+def tier1IndexBudget(contextWindowTokens: int) -> tuple[int, int, int]:
+    """(memory chars, skills-index chars, skills-index names) for this window."""
+    from app.services.workbench.token_budget import _CHARSPerTokenHeuristic
+
+    window = int(contextWindowTokens or 0)
+    if window <= 0:
+        return _TIER1_UNSCALED
+    combined = min(
+        _TIER1_INDEX_MAX_CHARS,
+        int(window * _TIER1_INDEX_WINDOW_FRACTION * _CHARSPerTokenHeuristic),
+    )
+    memory = min(_TIER1_UNSCALED[0], int(combined * _TIER1_MEMORY_SHARE))
+    skillsChars = max(0, min(_TIER1_UNSCALED[1], combined - memory))
+    skillsNames = max(
+        _TIER1_SKILL_NAME_MIN,
+        min(_TIER1_UNSCALED[2], skillsChars // _TIER1_SKILL_NAME_LINE_CHARS),
+    )
+    return (memory, skillsChars, skillsNames)
+
+
+def publishTier1IndexBudget(session: WorkbenchSession) -> tuple[int, int, int]:
+    """Resolve the active model's window, publish the budget, and return it.
+
+    Called once per `buildSystemPrompt`. The window comes from the loop's own
+    resolver, so `august-bench --context-window` drives this surface too — the
+    measurement seam and the shipped behaviour cannot drift to different numbers.
+    """
+    from app.services.workbench.context import indexBudget
+
+    budget: tuple[int, int, int] = _TIER1_UNSCALED
+    try:
+        from app.json_narrowing import as_str
+        from app.services.workbench.workbench import _resolveModelContextWindow
+
+        window = _resolveModelContextWindow(
+            as_str(getattr(session, 'model', ''), ''), None
+        )
+        budget = tier1IndexBudget(window)
+    except Exception:
+        logger.debug('prompt: tier-1 index budget failed to resolve', exc_info=True)
+    indexBudget.set(budget)
+    return budget
+
+
+def currentIndexBudget() -> tuple[int, int, int]:
+    """The budget for the build now executing, or the shipped caps when unset."""
+    from app.services.workbench.context import indexBudget
+
+    return indexBudget.get() or _TIER1_UNSCALED
