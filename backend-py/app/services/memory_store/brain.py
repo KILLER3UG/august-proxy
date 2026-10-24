@@ -763,6 +763,22 @@ def brain_index_snippet(scope: str = 'global') -> str:
         if factRows:
             lines.append('Facts:')
             for r in factRows:
+                # Sensitive rows never ride the boot index. The index is
+                # injected into EVERY session, unrelated turns included, and
+                # a derived title carries the fact's own text — the measured
+                # leak was a card number inside the index line. Same read-time
+                # check the recall corpus applies; explicit reads
+                # (brain_query / list_facts) stay unfiltered.
+                try:
+                    from app.services.sensitive_topics import sensitiveMemoryReason
+
+                    if sensitiveMemoryReason(
+                        str(r['title'] or ''), str(r['fact_key'] or ''),
+                        str(r['description'] or ''), str(r['fact_value'] or ''),
+                    ):
+                        continue
+                except Exception:
+                    pass
                 label = str(r['title'] or '').strip() or str(r['fact_key'])
                 hook = ' '.join(str(r['description'] or '').split())
                 if not hook:

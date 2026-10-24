@@ -172,6 +172,22 @@ def _load_index(scope: str = 'global') -> dict[str, Any]:
             title = str(r['title'] or '').strip()
             key = str(r['fact_key'] or '')
             desc = ' '.join(str(r['description'] or '').split())
+            # Sensitive rows never ride the recall corpus — the tail, the
+            # always-on profile lane and the alias pre-read all read THIS
+            # list, and all three are surfaces an unrelated turn sees. The
+            # write door catches sensitive text when it is on; rows written
+            # before that rule, by another door, or while the gate was on
+            # are caught here instead (the same read-time check the alias
+            # pre-read already applied). Explicit reads stay unfiltered: a
+            # model or human who asks brain_query/list_facts by name gets
+            # the row.
+            try:
+                from app.services.sensitive_topics import sensitiveMemoryReason
+
+                if sensitiveMemoryReason(title, key, desc, body):
+                    continue
+            except Exception:
+                pass
             # Title + description + key words + body: titles and the
             # ZCode-parity description hook carry the human phrasing the model
             # is most likely to echo back.
@@ -611,9 +627,20 @@ def retrieve_relevant_facts(
     scored: list[tuple[float, dict[str, object]]] = []
     from app.services.tools.retrieval import _tokenize
 
-    queryTokens = _tokenize(q)
-    priorTokens = _tokenize((prior_turn or '').strip()) if (prior_turn or '').strip() else []
+    queryTokens = [
+        t for t in _tokenize(q) if t not in _QUERY_STOPWORDS
+    ]
+    priorTokens = [
+        t
+        for t in (_tokenize((prior_turn or '').strip()) if (prior_turn or '').strip() else [])
+        if t not in _QUERY_STOPWORDS
+    ]
     if not queryTokens:
+        # A query made only of function words ("what is the", "the is of")
+        # carries nothing to rank on. Measured on a 2-row store, keeping them
+        # matched EVERY row — "the" rides in nearly every fact's prose — so
+        # "What is the capital of France?" surfaced the whole store as
+        # "relevant memory". Nothing injected is the honest empty result.
         return []
     blocked = {str(x) for x in (exclude_keys or set())}
     for i, row in enumerate(rows):
@@ -684,6 +711,20 @@ def retrieve_relevant_facts(
 
 _DISTILLED_SOURCE = 'harness'
 _DISTILLED_MARK = '[distilled] '
+
+# Query-side function words. BM25's IDF handles these on a large corpus, but
+# on the small stores a personal memory actually has, "the" rides in nearly
+# every fact's prose and gives every row a positive score — which is how an
+# unrelated question surfaced the whole store as "Relevant memory".
+# Corpus tokens are untouched; only the query is stripped.
+_QUERY_STOPWORDS = frozenset({
+    'a', 'an', 'and', 'are', 'as', 'at', 'be', 'been', 'but', 'by', 'can',
+    'did', 'do', 'does', 'for', 'from', 'had', 'has', 'have', 'he', 'her',
+    'his', 'how', 'i', 'in', 'is', 'it', 'its', 'me', 'my', 'not', 'of', 'on',
+    'or', 'our', 'she', 'so', 'that', 'the', 'their', 'them', 'there', 'these',
+    'they', 'this', 'to', 'was', 'we', 'were', 'what', 'when', 'where', 'which',
+    'who', 'why', 'will', 'with', 'you', 'your',
+})
 
 
 memoryStateOverride: ContextVar[str] = ContextVar('memory_state_override', default='')
