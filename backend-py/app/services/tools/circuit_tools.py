@@ -372,6 +372,61 @@ async def _probe_binary(
     return {'installed': True, 'path': path, 'version': m.group(1) if m else None}
 
 
+# How long to wait for a killed child's pipes to reach EOF so its buffered
+# output can still be collected. Bounded because a child that ignored SIGKILL's
+# wake-up (a wedged driver, a zombie on Windows) must not turn one timeout into
+# an unbounded wait inside a tool round.
+_TIMEOUT_DRAIN_GRACE_S = 5.0
+
+
+async def _communicate_or_keep_output(
+    proc: asyncio.subprocess.Process,
+    stdin_data: bytes | None,
+    timeout: float,
+    note: str,
+) -> tuple[int | None, str]:
+    """`proc.communicate()` with a deadline that does not discard what the run
+    already printed.
+
+    A timed-out simulation is usually the run with the most to say: an ngspice
+    batch that hangs on its final write has still emitted the `.print` table it
+    was asked for, and returning bare `'(timeout after 60s)'` turned "here is
+    your answer, the tail hung" into nothing at all — the same defect the
+    firmware monitor had, found the same way.
+
+    `asyncio.wait_for(proc.communicate(), …)` cannot be salvaged after it fires,
+    and the first attempt here proved it: on timeout `wait_for` CANCELS the
+    communicate task, and communicate keeps the child's output in its own
+    protocol buffer rather than in `proc.stdout`, so the bytes go with it and a
+    follow-up `proc.stdout.read()` returns `b''`. A child that wrote
+    `PARTIAL-NO-NEWLINE` and then hung produced the note and nothing else.
+
+    So the deadline is a `wait()` on a task this function owns. `wait()` does
+    not cancel on timeout: the child is killed, EOF arrives, and the SAME task
+    hands back everything it had collected. `None` stays the return code on the
+    timeout path, because every caller already branches on it as "this run
+    failed" — changing that would make a killed run look like a clean exit.
+    """
+    task = asyncio.ensure_future(proc.communicate(input=stdin_data))
+    done, _ = await asyncio.wait({task}, timeout=timeout)
+    if not done:
+        proc.kill()
+        done, _ = await asyncio.wait({task}, timeout=_TIMEOUT_DRAIN_GRACE_S)
+        if not done:
+            task.cancel()
+            return None, note
+        if task.cancelled() or task.exception() is not None:
+            return None, note
+        out_b, _ = task.result()
+        body = out_b.decode('utf-8', errors='replace').rstrip()
+        return None, (f'{body}\n{note}' if body else note)
+    # Inside the deadline: byte-for-byte what the caller got before this
+    # existed, including an exception from communicate() propagating rather than
+    # being folded into a timeout note. A run that finished must not be
+    # described as one that was killed.
+    return proc.returncode, task.result()[0].decode('utf-8', errors='replace')
+
+
 def _versioned_dirs(roots: tuple[str, ...], sub: str) -> tuple[str, ...]:
     """Expand ``<root>/<version>/<sub>`` for versioned install trees
     (intelFPGA, KiCad), newest version first."""
@@ -402,14 +457,9 @@ async def _probe_ngspice() -> dict[str, object]:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
-        try:
-            out_b, _ = await asyncio.wait_for(
-                proc.communicate(input=deck.encode('utf-8')), timeout=timeout,
-            )
-        except asyncio.TimeoutError:
-            proc.kill()
-            return None, '(timeout)'
-        return proc.returncode, out_b.decode('utf-8', errors='replace')
+        return await _communicate_or_keep_output(
+            proc, deck.encode('utf-8'), timeout, '(timeout)',
+        )
 
     # Version: server mode + -v prints the banner ("** ngspice-45.2 : ...").
     _, banner = await _feed(['-s', '-v'], '* august env probe\n.end\n')
@@ -1798,6 +1848,10 @@ def _downsample(
 
 
 _EDGE_CAP = 400
+# Smallest voltage change that counts as the signal having moved. See
+# `_signal_edges`: the floor has to be absolute because on a rail that only
+# carries numerical noise, the swing IS the noise.
+_EDGE_DEADBAND_V = 1e-9
 
 
 def _bucket_extremes(
@@ -1852,7 +1906,20 @@ def _signal_edges(xs: list[float], ys: list[float]) -> dict[str, object]:
         return {'transitions': 0, 'points': []}
     pts: list[list[float]] = [[xs[0], ys[0]]]
     for x, y in zip(xs[1:], ys[1:]):
-        if y == pts[-1][1]:
+        # A deadband, not an equality test. Measured: a 5 V rail carrying only
+        # double-precision representation noise (±1e-12 V) came back with
+        # `transitions: 1999` on a 2000-sample window and filled the point cap,
+        # so a net that never moved was reported as the busiest thing in the
+        # run — and `transitions` is what a reader weighs before deciding a
+        # signal is clocked. Exact-equality dedup cannot catch that because the
+        # samples are not equal, they are merely indistinguishable.
+        #
+        # The floor is absolute, not a fraction of the swing, on purpose: the
+        # swing of a rail that only jitters IS the jitter, so any relative
+        # threshold scales itself out of existence exactly where it is needed.
+        # 1 nV is below any quantity ngspice prints meaningfully, and a real
+        # 0.2 mV ripple or a 2 mV small-signal swing still counts every step.
+        if abs(y - pts[-1][1]) <= _EDGE_DEADBAND_V:
             continue
         pts.append([x, y])
     truncated = len(pts) > _EDGE_CAP
@@ -1878,6 +1945,15 @@ def _signal_edges(xs: list[float], ys: list[float]) -> dict[str, object]:
             top = lo + swing * 0.7
             bottom = lo + swing * 0.3
             level = 0 if ys[0] <= (top + bottom) / 2 else 1
+            # The level at t=0, captured BEFORE the walk below, because the walk
+            # reassigns `level` on every edge. `edges[0]` is the level AFTER the
+            # first transition, so reading `level0` off it reports the opposite
+            # of what it names: measured, a trace starting LOW said
+            # `level0: False` and one starting HIGH said `level0: True`. Nothing
+            # in the app reads the field — the model does, straight out of the
+            # tool result — so an inversion here is a wrong fact delivered as a
+            # reading, not a broken render.
+            level_at_zero = level
             edges: list[list[float]] = []
             for x, y in zip(xs, ys):
                 if level == 0 and y >= top:
@@ -1889,7 +1965,7 @@ def _signal_edges(xs: list[float], ys: list[float]) -> dict[str, object]:
                 edges.append([x, float(level)])
             if edges:
                 out['logic'] = {
-                    'level0': edges[0][1] == 0,
+                    'level0': level_at_zero == 0,
                     'edges': edges[:_EDGE_CAP],
                     'count': len(edges),
                 }
@@ -2185,14 +2261,9 @@ async def simulate_circuit(
                     stderr=asyncio.subprocess.STDOUT,
                     cwd=tmpdir,
                 )
-                try:
-                    stdout_b, _ = await asyncio.wait_for(
-                        proc.communicate(input=stdin_data), timeout=60,
-                    )
-                except asyncio.TimeoutError:
-                    proc.kill()
-                    return None, '(timeout after 60s)'
-                return proc.returncode, stdout_b.decode('utf-8', errors='replace')
+                return await _communicate_or_keep_output(
+                    proc, stdin_data, 60, '(timeout after 60s)',
+                )
 
             mode = _NGSPICE_MODE_CACHE.get(exe, 'batch')
             if mode == 'batch':
@@ -2350,12 +2421,20 @@ async def simulate_circuit(
                         'unit': unit,
                         'points': total,
                     }
-                    # The transcript copy carries the summary of the edge view,
-                    # not the list: the panel reads `tracesFile` for the points,
-                    # and a 400-pair array per trace would push the tool result
-                    # over the transcript cap — where the UI vanishes rather than
-                    # degrading. A small logic lane is cheap and is the part a
-                    # reader actually wants inline.
+                    # The transcript copy carries the SUMMARY of the edge view,
+                    # not the list: `CircuitInstruments.tsx` reads this inline
+                    # `traces` object (its `TraceData` takes x/y/unit/points/
+                    # transitions), and a 400-pair array per trace would push the
+                    # tool result over the transcript cap — where the UI vanishes
+                    # rather than degrading. A small logic lane is cheap and is
+                    # the part a reader actually wants inline.
+                    #
+                    # So `edges.points` in the sidecar has no in-app reader. It is
+                    # there for the person who opens `<name>_traces.json` — the
+                    # change-sampled list is what a VCD/logic-analyser import
+                    # needs and the bucketed x/y arrays cannot be turned back into
+                    # it. That is a stated purpose, not an orphan: the panel is
+                    # NOT the consumer, and this comment used to claim it was.
                     lane = edges.get('logic')
                     inline[expr] = {
                         **entry,
@@ -3294,14 +3373,9 @@ async def circuit_annotate(
                 stderr=asyncio.subprocess.STDOUT,
                 cwd=tmpdir,
             )
-            try:
-                out_b, _ = await asyncio.wait_for(
-                    proc.communicate(input=stdin_data), timeout=60,
-                )
-            except asyncio.TimeoutError:
-                proc.kill()
-                return None, '(timeout after 60s)'
-            return proc.returncode, out_b.decode('utf-8', errors='replace')
+            return await _communicate_or_keep_output(
+                proc, stdin_data, 60, '(timeout after 60s)',
+            )
 
         mode = _NGSPICE_MODE_CACHE.get(exe, 'batch')
         log = ''
@@ -3493,14 +3567,9 @@ async def circuit_export_vcd(
                 stderr=asyncio.subprocess.STDOUT,
                 cwd=tmpdir,
             )
-            try:
-                stdout_b, _ = await asyncio.wait_for(
-                    proc.communicate(input=stdin_data), timeout=60,
-                )
-            except asyncio.TimeoutError:
-                proc.kill()
-                return None, '(timeout after 60s)'
-            return proc.returncode, stdout_b.decode('utf-8', errors='replace')
+            return await _communicate_or_keep_output(
+                proc, stdin_data, 60, '(timeout after 60s)',
+            )
 
         async def _run(deck_body: str) -> tuple[int | None, str]:
             """Batch if healthy, server-mode fallback — same rules as
