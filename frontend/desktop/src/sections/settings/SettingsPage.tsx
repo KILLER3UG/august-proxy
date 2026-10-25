@@ -344,6 +344,7 @@ const PromptTemplatesWrapper = lazySection(() => import('./PromptTemplatesSectio
 const PrivacyWrapper = lazySection(() => import('./PrivacySection'), 'PrivacySection');
 const PhonePairingWrapper = lazySection(() => import('./PhonePairingSection'), 'PhonePairingSection');
 const MemoryWrapper = lazySection(() => import('./MemorySection'), 'MemorySection');
+const GoalsWrapper = lazySection(() => import('./GoalsSection'), 'GoalsSection');
 const HealthSimulatorWrapper = lazySection(() => import('./HealthSimulatorSection'), 'HealthSimulatorSection');
 
 export const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
@@ -391,6 +392,7 @@ export const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps
   'prompt-templates': PromptTemplatesWrapper,
   privacy: PrivacyWrapper,
   'memory-knowledge': MemoryWrapper,
+  goals: GoalsWrapper,
   'memory-facts': MemoryWrapper,
   'health-simulator': HealthSimulatorWrapper,
 };

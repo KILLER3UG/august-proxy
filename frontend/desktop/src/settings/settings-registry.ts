@@ -62,6 +62,7 @@ import {
   Info,
   CheckCircle2,
   Zap,
+  Target,
 } from 'lucide-react';
 
 /** Visibility tier for the rail. `basic` items are shown in the rail;
@@ -351,7 +352,26 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     legacyAliases: ['ui-customization', 'theme-editor', 'design-ui'],
   },
 
-  /* ── Agent capabilities header ─────────────────────────────────── */
+  /* ── Goals — the environment an agent works inside ──────────────── */
+  {
+    id: 'goals',
+    label: 'Goals',
+    description: 'The goals an agent is working toward, the runs that carry them, the outputs it filed and the claims it has not proved.',
+    icon: Target,
+    category: 'capabilities',
+    tier: 'basic',
+    settingHints: [
+      'What the agent is working toward',
+      'Runs, their rounds and their ceilings',
+      'Filed outputs and their movement ledger',
+      'Claims versus marks',
+    ],
+    settingAliases: ['goal environments', 'work record', 'movement ledger'],
+    keywords: ['goal', 'goals', 'work record', 'goal environment', 'goal run'],
+    legacyAliases: [],
+  },
+
+/* ── Agent capabilities header ─────────────────────────────────── */
   {
     id: 'memory-knowledge',
     label: 'Memory',
