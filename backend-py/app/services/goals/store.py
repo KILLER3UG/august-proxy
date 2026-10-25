@@ -283,9 +283,14 @@ def open_or_resume_run(env_id: str, *, session_id: str, model: str = '', bot_id:
     for row in _rows('SELECT * FROM goal_runs WHERE env_id = ? AND session_id = ? AND status = \'parked\' '
                      'ORDER BY started_at DESC', (env_id, session_id)):
         parked = _run_of(row)
-        woken = R.move_run(parked, 'running', 'resumed by a new turn', _now())
+        # A wake opens a NEW window: the ceiling is per window, so the count starts again and the
+        # previous window's work is named in the reason. Keeping the count would print "round 5 of
+        # 4" forever after the first park — the impossible receipt this layer exists to avoid.
+        woken = R.Run(**{**parked.__dict__, 'status': 'running', 'round': 0,
+                         'reason': f'resumed after {parked.round} round(s) at the ceiling',
+                         'updated_at': _now()})
         _write_run(woken, insert=False)
-        return woken, [f'resumed the parked run at round {woken.round} — the ceiling is not a delete']
+        return woken, [f'resumed the parked run after {parked.round} round(s) at its ceiling — this window starts at round 0']
     run = R.open_run(env_id, _now(), session_id=session_id, model=model, bot_id=bot_id)
     _write_run(run, insert=True)
     return run, []

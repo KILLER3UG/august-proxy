@@ -222,8 +222,13 @@ class Env:
         return self.id != ROOT_ID and self.owner == 'agent'
 
 
-def root_bound(seat_tools: Iterable[str], context_chars: int = 1400, max_rounds: int = 150) -> Bound:
-    """What the root starts as: the seat's real surface, no refusals, and the app's own ceilings."""
+def root_bound(seat_tools: Iterable[str], context_chars: int = 1400, max_rounds: int = 10**6) -> Bound:
+    """What the root starts as: the seat's real surface, no refusals, and no round ceiling.
+
+    ``10**6`` is the "uncapped" sentinel the prompt block prints as uncapped. It is deliberately NOT
+    the per-turn round budget: a run counts rounds ACROSS turns, so reusing the turn budget here would
+    park a long, healthy conversation at its 150th total round and leave it parked forever.
+    """
     return Bound(tuple(dict.fromkeys(seat_tools)), (), max_rounds, context_chars)
 
 

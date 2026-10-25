@@ -424,6 +424,15 @@ async def turnTelemetry(
             )
         except Exception:
             logger.debug('decision ledger turn row failed (non-fatal)', exc_info=True)
+        # The goal layer's turn lifecycle rides the ONE place that already knows this turn's round
+        # count: it opens or resumes the session's run and settles the rounds it spent. A separate
+        # counter in the loop could disagree with the number this row records.
+        try:
+            from app.services.goals.turn import settle_turn
+
+            await settle_turn(sessionId, _roundsCount)
+        except Exception:
+            logger.debug('goal turn settlement skipped (non-fatal)', exc_info=True)
         # Surface the per-turn latency/cache numbers as one SSE event
         # (Observability; the transcript can show a cache-hit chip) — turns
         # the "feels slow" regression into visible numbers.
