@@ -52,6 +52,32 @@ system** — and one unknown decides whether the Undo half is cheap or needs new
    `tool_description`, asserts both applied, asserts the ledger holds the before state, then reverts and
    asserts the bytes came back byte-identical. `e2e:smoke` on a scratch dir, plus ruff/mypy.
 
+## Phase 1 corrections (measured after starting it)
+
+**Step 1 was already built, and my first attempt duplicated it.** `routers/skills.py` already serves
+`GET /{name}/versions`, `GET /{name}/versions/{ts}/diff` and `POST /{name}/versions/{ts}/restore`, and the
+restore routes through **`skill_service.restoreVersion`**, which is documented as "the ONLY path from a
+version id to file content" and refuses a bundled root (the install tree an update replaces). A new
+`skill_versions.restore_version` was a second, weaker path without that refusal; it was reverted in
+`abb3239c`. **No restore work is needed** — the panel's Undo has a door and a diff already.
+
+**The real remaining gap is the appliers, and it is a design decision, not wiring.** `tool_description`
+and `flow_map` sit in `OBSERVATION_KINDS`, and a grep of `tool_registry` finds **no description-override
+mechanism at all** — the registry stores the description it was registered with and nothing reads an
+override. So "the agent rewrites its own tool descriptions" needs, in this order:
+
+1. **Where an override lives.** `internal_state` KV (`toolDescriptions`: {tool: {text, actor, at,
+   original}}), not a new table — it is small, keyed config, and the store already exists.
+2. **A read-through in ONE place.** Every consumer of a description goes through the registry
+   (`listTools`/`getTool`), so the override is applied there — but the tools array is part of the
+   prompt prefix, so the override must be **in the assembly cache key** or a changed description would
+   only reach new sessions. That is the one hard consequence, and it is the reason this is a decision
+   rather than an edit.
+3. **The applier + its rail.** Write the override only when `armed_kinds()` includes the kind, scan the
+   new text with the same credential/URL/shell scans the skill kinds use, and record `original` so the
+   Undo is a delete of the override rather than a second diff engine.
+4. Then the panel: the applied-changes list and Undo, over `read_ledger()` + the override key.
+
 ## What this phase deliberately does NOT do
 
 - It does not touch `HARD_KINDS`, the credential/shell/URL scans, or the approval door for permissions and
