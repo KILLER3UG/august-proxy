@@ -41,6 +41,23 @@ logger = logging.getLogger(__name__)
 # worker fails per the retry policy.
 SUBAGENT_MODEL_TIMEOUT_S = 240
 
+# One child's round ceiling when no explicit `max_iterations` was passed. 50 is the number
+# subagent_fanout.py's aggregate budget was built on ("eight children at the default 50-round
+# depth would be 400 model calls with no ceiling; 240 still lets six children run"), so a child
+# that inherited the PARENT's 150 was outside the arithmetic the fan-out guard assumes.
+SUBAGENT_DEFAULT_ROUNDS = 50
+
+_idlessWarned = False
+
+
+def _idlessChargeWarned() -> bool:
+    """True once per process — the id-less notice is onboarding, not a per-round log line."""
+    global _idlessWarned
+    if _idlessWarned:
+        return True
+    _idlessWarned = True
+    return False
+
 # Sub-agent recursion guard: the spawn tool is excluded unless the configured
 # maxDepth still allows another level (see _blocked_tools) — subtracting it
 # unconditionally made `delegation.maxDepth` dead configuration above 1.
@@ -852,6 +869,18 @@ async def executeSubAgent(
                 if managedToolLoopCap <= 0
                 else min(managedToolLoopCap, max_iterations)
             )
+        elif managedToolLoopCap <= 0 or managedToolLoopCap > SUBAGENT_DEFAULT_ROUNDS:
+            # `0` used to mean "no per-child cap", so a child inherited the PARENT's cap (150).
+            # A child is a fleet member, not another turn: the fan-out arithmetic in
+            # subagent_fanout.py assumes 50 rounds per child (eight children at 50 is 400 calls,
+            # which is exactly why the shared budget is 240). Inheriting 150 silently tripled the
+            # number that arithmetic was built on, and the recurring-task and daemon dispatch paths
+            # pass `max_iterations=0`, so every one of those children took the tripled number.
+            managedToolLoopCap = (
+                SUBAGENT_DEFAULT_ROUNDS
+                if managedToolLoopCap <= 0
+                else min(managedToolLoopCap, SUBAGENT_DEFAULT_ROUNDS)
+            )
         # Same malformed-JSON discipline as the parent loop: consecutive
         # invalid tool arguments must never execute as a phantom arg.
         subInvalidCount = 0
@@ -894,6 +923,12 @@ async def executeSubAgent(
             # child never spends a round the fleet had already used. A child
             # outside a dispatch (no job/fanout id) is bounded only by its own
             # cap — which is exactly the pre-existing behaviour.
+            if not harness_job_id and not _idlessChargeWarned():
+                # No dispatch id means no shared budget to charge (the recurring-task and daemon
+                # paths pass none). The child is still bounded by SUBAGENT_DEFAULT_ROUNDS above,
+                # but a fleet of id-less children is bounded PER CHILD, not in aggregate — said
+                # out loud here rather than left to look like the 240-round guard is covering it.
+                logger.info('sub-agent launched without a dispatch id: bounded per child (%d rounds), not by the shared fan-out budget', SUBAGENT_DEFAULT_ROUNDS)
             if harness_job_id and not charge_fanout_round(harness_job_id):
                 budgetReached = True
                 break
