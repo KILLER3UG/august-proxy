@@ -304,7 +304,9 @@ def edit_env(
         raise GoalRefusal([f'"{env.title}" is the app\u2019s own environment — its bound is the ceiling every goal narrows from and the agent does not edit it'])
     if expected_version is not None and expected_version != env.version:
         raise GoalRefusal([f'"{env.title}" is at version {env.version}, your copy is {expected_version} — read it again, merge, and retry in this turn'])
-    editable = {'title', 'goal', 'inputs', 'outputs', 'bound', 'status'}
+    # `reason` is the close/receipt text a caller may attach; it is not an Env field, but it is a
+    # legitimate patch key — refusing it made every "close with an explanation" call fail.
+    editable = {'title', 'goal', 'inputs', 'outputs', 'bound', 'status', 'reason'}
     stray = [k for k in patch if k not in editable]
     if stray:
         raise GoalRefusal([f'{", ".join(stray)} is not editable on a goal (only {", ".join(sorted(editable))})'])
