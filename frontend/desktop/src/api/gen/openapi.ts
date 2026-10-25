@@ -14524,7 +14524,9 @@ export interface operations {
     };
     list_goals_api_goals_get: {
         parameters: {
-            query?: never;
+            query?: {
+                workspace?: string;
+            };
             header?: {
                 "X-August-Local-Token"?: string | null;
             };

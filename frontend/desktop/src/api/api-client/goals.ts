@@ -91,7 +91,8 @@ export interface GoalsSnapshot {
   marks: GoalMarkRow[];
 }
 
-export const listGoals = (): Promise<GoalsSnapshot> => api.get<GoalsSnapshot>('/api/goals');
+export const listGoals = (workspace?: string): Promise<GoalsSnapshot> =>
+  api.get<GoalsSnapshot>(`/api/goals${workspace ? `?workspace=${encodeURIComponent(workspace)}` : ''}`);
 
 export const abandonGoal = (envId: string): Promise<{ id: string; status: string }> =>
   api.post<{ id: string; status: string }>(`/api/goals/${encodeURIComponent(envId)}/abandon`, {});

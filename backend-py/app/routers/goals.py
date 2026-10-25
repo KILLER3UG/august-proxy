@@ -20,11 +20,15 @@ router = APIRouter(prefix='/api/goals')
 
 
 @router.get('')
-async def list_goals(_: str = Depends(require_local_token)) -> dict[str, object]:
+async def list_goals(workspace: str = '', _: str = Depends(require_local_token)) -> dict[str, object]:
     """Every goal, its runs, its artifacts with their movements, and claims versus marks."""
 
     def _read() -> dict[str, object]:
-        envs = S.load_envs()
+        # A project's goals are its own. Filtering the ENVELOPE matters as much as the list: an
+        # unfiltered artifacts/claims/marks call would put another project's work in this one's
+        # panel, which is the exact rule the workspace column exists to keep.
+        envs = S.load_envs(workspace or None)
+        ids = {e.id for e in envs}
         runs: list[dict[str, object]] = []
         for env in envs:
             runs.extend(S.runs_for(env.id))
@@ -38,9 +42,9 @@ async def list_goals(_: str = Depends(require_local_token)) -> dict[str, object]
                 'depth': e.depth, 'readOnly': not e.writable,
             } for e in envs],
             'runs': runs,
-            'artifacts': S.load_artifacts(),
-            'claims': S.load_claims(),
-            'marks': S.load_marks(),
+            'artifacts': [a for a in S.load_artifacts() if str(a.get('env_id') or '') in ids],
+            'claims': [c for c in S.load_claims() if str(c.get('env_id') or '') in ids],
+            'marks': [m for m in S.load_marks() if str(m.get('env_id') or '') in ids],
         }
 
     return await asyncio.to_thread(_read)

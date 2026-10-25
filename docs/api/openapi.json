@@ -10007,6 +10007,16 @@
         "operationId": "list_goals_api_goals_get",
         "parameters": [
           {
+            "in": "query",
+            "name": "workspace",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
             "in": "header",
             "name": "X-August-Local-Token",
             "required": false,

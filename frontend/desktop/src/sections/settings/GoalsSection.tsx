@@ -18,6 +18,7 @@ import {
   type GoalMarkRow,
   type GoalsSnapshot,
 } from '../../api/api-client/goals';
+import { getCurrentWorkspace } from '../../store/workspaces';
 
 const STATUS_TONE: Record<string, string> = {
   active: 'text-info-fg',
@@ -86,18 +87,23 @@ const ArtifactRow: React.FC<{ art: GoalArtifactRow }> = ({ art }) => {
 };
 
 export const GoalsSection: React.FC = () => {
+  // A goal belongs to a PROJECT. The panel asks for the one the app is in, so another
+  // project's work never appears here — and when no project is open it says so instead of
+  // quietly showing everything.
+  const project = getCurrentWorkspace();
+  const projectPath = project?.path ?? '';
   const [snap, setSnap] = useState<GoalsSnapshot | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
 
   const refresh = useCallback(async () => {
     try {
-      setSnap(await listGoals());
+      setSnap(await listGoals(projectPath || undefined));
       setError('');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not read the goals.');
     }
-  }, []);
+  }, [projectPath]);
 
   useEffect(() => {
     void refresh();
@@ -135,6 +141,9 @@ export const GoalsSection: React.FC = () => {
 
   return (
     <div data-testid="goals-section">
+      <p className="mt-2 text-2xs text-muted-foreground/60" data-testid="goals-scope">
+        {projectPath ? `showing this project — ${project?.name ?? projectPath}` : 'no project open — showing every project'}
+      </p>
       <Group title="Goals" hint={`${active} active of ${snap.envs.length}`} testId="goals-list">
         <ul>
           {snap.envs.map(env => {

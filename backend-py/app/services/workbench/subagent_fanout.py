@@ -518,7 +518,7 @@ _SESSION_BUDGETS: dict[str, _SessionBudget] = {}
 _SESSION_KEEP = 200
 
 
-def charge_session_round(session_id: str, roundBudget: int = FANOUT_ROUND_BUDGET_DEFAULT) -> bool:
+def charge_session_round(session_id: str, round_budget: int = FANOUT_ROUND_BUDGET_DEFAULT) -> bool:
     """One id-less child round against its parent session's shared budget. True = allowed."""
     key = str(session_id or '')
     if not key:
@@ -526,7 +526,7 @@ def charge_session_round(session_id: str, roundBudget: int = FANOUT_ROUND_BUDGET
         return True
     rec = _SESSION_BUDGETS.get(key)
     if rec is None:
-        rec = _SessionBudget(roundBudget=int(roundBudget))
+        rec = _SessionBudget(roundBudget=int(round_budget))
         _SESSION_BUDGETS[key] = rec
         while len(_SESSION_BUDGETS) > _SESSION_KEEP:
             _SESSION_BUDGETS.pop(next(iter(_SESSION_BUDGETS)))
