@@ -70,7 +70,6 @@ interface StorePage {
 
 interface BrainConfigResponse {
   source?: string;
-  tag?: string;
   config?: { memoryEnabled?: boolean; modelMemoryRead?: boolean; memoryAutoInject?: boolean; memoryReview?: boolean; modelMemoryWrites?: boolean; memorySensitiveTopics?: boolean } & Record<string, unknown>;
   defaults?: Record<string, unknown>;
 }
@@ -645,6 +644,7 @@ export function MemorySection({ active }: { active: { id: string } }) {
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ['brain-stores'] });
     void qc.invalidateQueries({ queryKey: ['brain-store'] });
+    void qc.invalidateQueries({ queryKey: ['memory-fact-history'] });
   };
 
   const configMut = useMutation({
@@ -2843,6 +2843,20 @@ function DetailView({
   // labels rows with their text via rowTitle; the pane uses the same thing and
   // keeps the key underneath, where it is still quotable.
   const title = rowTitle(store, row);
+  const rowId = str(row.id);
+  const historyQ = useQuery<{
+    entries: Array<{ at?: string; before?: string; after?: string }>;
+  }>({
+    queryKey: ['memory-fact-history', rowId],
+    queryFn: () =>
+      api.get<{ entries: Array<{ at?: string; before?: string; after?: string }> }>(
+        `/api/brain/stores/facts/${encodeURIComponent(rowId)}/history`,
+      ),
+    enabled: store === 'facts' && !!rowId && !editing,
+    retry: false,
+  });
+  const previousValue = historyQ.data?.entries?.[0]?.before ?? '';
+  const currentValue = str(row.factValue);
   const entryKey = store === 'facts' ? str(row.factKey) : store === 'memory' ? str(row.key) : '';
   const summary = meta.summary(row);
   const details = meta.details?.(row);
@@ -3082,6 +3096,15 @@ function DetailView({
               <div className="mt-0.5">
                 <Markdown content={details} demoteHeadings />
               </div>
+            </div>
+          )}
+
+          {previousValue && previousValue !== currentValue && (
+            <div data-testid="memory-detail-previous">
+              <p className="text-[0.75rem] font-medium text-muted-foreground/60">Previously</p>
+              <p className="mt-0.5 text-[0.8125rem] leading-relaxed text-muted-foreground/80">
+                {previousValue}
+              </p>
             </div>
           )}
 
