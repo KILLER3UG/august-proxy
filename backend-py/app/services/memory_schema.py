@@ -538,8 +538,55 @@ def _create_core_schema_locked(conn: sqlite3.Connection) -> None:
         logging.warning('heuristics column migration failed: %s', exc)
 
 
+_GOAL_SCHEMA_SQL = """
+-- 057: goal environments — the harness as the place the agent works. Kept byte-identical in intent
+-- to app/migrations/057_goal_environments.sql: this path serves a database born after the file, the
+-- migration serves one that predates it.
+CREATE TABLE IF NOT EXISTS goal_envs (
+    id TEXT PRIMARY KEY, parent_id TEXT, title TEXT NOT NULL, goal TEXT NOT NULL,
+    inputs TEXT NOT NULL DEFAULT '[]', outputs TEXT NOT NULL DEFAULT '[]',
+    bound TEXT NOT NULL DEFAULT '{"allow":[],"deny":[],"maxRounds":0,"contextChars":0}',
+    status TEXT NOT NULL DEFAULT 'active', owner TEXT NOT NULL DEFAULT 'agent',
+    version INTEGER NOT NULL DEFAULT 1, depth INTEGER NOT NULL DEFAULT 0,
+    close_reason TEXT NOT NULL DEFAULT '', created_at REAL NOT NULL, updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_goal_envs_parent ON goal_envs(parent_id);
+CREATE INDEX IF NOT EXISTS idx_goal_envs_status ON goal_envs(status);
+CREATE TABLE IF NOT EXISTS goal_runs (
+    id TEXT PRIMARY KEY, env_id TEXT NOT NULL, session_id TEXT NOT NULL DEFAULT '',
+    bot_id TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'running',
+    round INTEGER NOT NULL DEFAULT 0, model TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '',
+    started_at REAL NOT NULL, updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_goal_runs_env ON goal_runs(env_id);
+CREATE INDEX IF NOT EXISTS idx_goal_runs_session ON goal_runs(session_id, status);
+CREATE TABLE IF NOT EXISTS goal_artifacts (
+    id TEXT PRIMARY KEY, env_id TEXT NOT NULL, kind TEXT NOT NULL, ref TEXT NOT NULL,
+    summary TEXT NOT NULL, produced_by TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_goal_artifacts_env ON goal_artifacts(env_id);
+CREATE TABLE IF NOT EXISTS goal_movements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, artifact_id TEXT NOT NULL, at REAL NOT NULL,
+    actor TEXT NOT NULL, from_env TEXT NOT NULL, to_env TEXT NOT NULL,
+    ok INTEGER NOT NULL, reason TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_goal_movements_artifact ON goal_movements(artifact_id, id);
+CREATE TABLE IF NOT EXISTS goal_claims (
+    id TEXT PRIMARY KEY, env_id TEXT NOT NULL, text TEXT NOT NULL,
+    about_artifact_id TEXT NOT NULL DEFAULT '', made_by TEXT NOT NULL, made_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_goal_claims_env ON goal_claims(env_id);
+CREATE TABLE IF NOT EXISTS goal_marks (
+    id TEXT PRIMARY KEY, env_id TEXT NOT NULL, claim_id TEXT NOT NULL, text TEXT NOT NULL,
+    verdict TEXT NOT NULL, evidence TEXT NOT NULL, by TEXT NOT NULL, at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_goal_marks_claim ON goal_marks(claim_id);
+"""
+
+
 def create_extended_tables(conn: sqlite3.Connection) -> None:
     """Create extended tables (timeline, blackboard, exams, pending skills) and their indexes."""
+    conn.executescript(_GOAL_SCHEMA_SQL)
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS episodic_timeline (
@@ -720,7 +767,9 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
 # v16: messages.client_message_id column + unique index (048) — client-authored
 #      message identity; the FTS UPDATE trigger is narrowed to the indexed
 #      columns so blocks-only enrichment writes never re-index.
-_SCHEMA_USER_VERSION = 16
+# v17: goal_envs / goal_runs / goal_artifacts / goal_movements / goal_claims /
+#      goal_marks (057) — the harness as the environment the agent works inside.
+_SCHEMA_USER_VERSION = 17
 
 
 def _ensure_messages_fts(conn: sqlite3.Connection) -> None:
