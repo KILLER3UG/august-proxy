@@ -5,7 +5,7 @@
 
 # API Index — every route
 
-422 routes across 349 paths,
+425 routes across 352 paths,
 grouped by family. **This file is generated.** For the prose that explains what
 these are for and when to reach for them, read
 [`API_REFERENCE.md`](./API_REFERENCE.md) — it covers the families that matter in
@@ -499,7 +499,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `GET` | `/api/desktop-automation/config` | Return the effective desktop-automation configuration. |
 | `GET` | `/api/desktop-automation/health` | Report desktop-automation capability and a live probe. |
 
-## Other (32)
+## Other (35)
 
 > Routes not yet assigned a family. Naming these is a small doc task;
 > leaving them here is what keeps the index honest.
@@ -523,6 +523,9 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `GET` | `/api/exam/{examId}/question/{position}` | Fetch one question. NEVER leaks correct_index or rationale (the authoring invariant). |
 | `POST` | `/api/exam/{examId}/questions` | Add a user-requested question. The model authors it (origin='user-requested'). |
 | `POST` | `/api/exam/generate` | Generate a new exam via Prefrontal. Topic can be a string or derived from uploaded files. |
+| `GET` | `/api/goals` | Every goal, its runs, its artifacts with their movements, and claims versus marks. |
+| `POST` | `/api/goals/{env_id}/abandon` | Stop a goal from the UI. Filed outputs and marks stay; nothing the user wrote is deleted. |
+| `POST` | `/api/goals/runs/{run_id}/close` | Close a run the model left open. Only the run ends here — the goal keeps its state. |
 | `GET` | `/api/hooks` | Registry stats for every hook plus the user/workspace hook specs. |
 | `POST` | `/api/hooks/reload` | Force an immediate mtime re-check of every hook config. |
 | `POST` | `/api/hooks/revoke-workspace` | Withdraw that approval, and unregister the handlers it armed. |
@@ -541,4 +544,4 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 
 ---
 
-Generated from `docs/api/openapi.json` (422 operations).
+Generated from `docs/api/openapi.json` (425 operations).

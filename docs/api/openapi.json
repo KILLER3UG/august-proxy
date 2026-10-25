@@ -10001,6 +10001,171 @@
         "summary": "Git Status"
       }
     },
+    "/api/goals": {
+      "get": {
+        "description": "Every goal, its runs, its artifacts with their movements, and claims versus marks.",
+        "operationId": "list_goals_api_goals_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Goals Api Goals Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Goals"
+      }
+    },
+    "/api/goals/runs/{run_id}/close": {
+      "post": {
+        "description": "Close a run the model left open. Only the run ends here — the goal keeps its state.",
+        "operationId": "close_run_api_goals_runs__run_id__close_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Close Run Api Goals Runs  Run Id  Close Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Close Run"
+      }
+    },
+    "/api/goals/{env_id}/abandon": {
+      "post": {
+        "description": "Stop a goal from the UI. Filed outputs and marks stay; nothing the user wrote is deleted.",
+        "operationId": "abandon_goal_api_goals__env_id__abandon_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "env_id",
+            "required": true,
+            "schema": {
+              "title": "Env Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-August-Local-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-August-Local-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Abandon Goal Api Goals  Env Id  Abandon Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Abandon Goal"
+      }
+    },
     "/api/harness/proposals": {
       "get": {
         "description": "List harness proposals, newest first (optionally filtered by status).\n\nPart 16 Phase D step 3: ``origin`` groups self-improvement drafts\n(payload.origin: human | distilled | amended) so reviewable drafts are\nrecognizable at a glance.",

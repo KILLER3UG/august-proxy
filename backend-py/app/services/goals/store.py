@@ -192,6 +192,16 @@ def load_marks(env_id: str | None = None) -> list[dict[str, Any]]:
     return [dict(r) for r in _rows(sql, (env_id,) if env_id else ())]
 
 
+def runs_for(env_id: str) -> list[dict[str, object]]:
+    """Every run in a goal, for the API/UI read. Rounds and status only — the ledger of a run is
+    its reason field, and the artifacts carry the movements."""
+    return [{
+        'id': str(r['id']), 'envId': str(r['env_id']), 'sessionId': str(r['session_id']),
+        'status': str(r['status']), 'round': int(r['round']), 'model': str(r['model']),
+        'reason': str(r['reason']), 'startedAt': float(r['started_at']),
+    } for r in _rows('SELECT * FROM goal_runs WHERE env_id = ? ORDER BY started_at DESC', (env_id,))]
+
+
 def claim_env(claim_id: str) -> str | None:
     """The goal a claim belongs to. A mark rules on a CLAIM, so its environment is the claim's —
     resolving it from the session instead aimed the verdict at whatever goal the turn happened to be

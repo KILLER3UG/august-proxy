@@ -501,6 +501,7 @@ from app.routers import docs_state as docsStateRoutes  # noqa: E402
 from app.routers import exam as examRoutes  # noqa: E402
 from app.routers import gateway as gatewayRoutes  # noqa: E402
 from app.routers import git as gitRoutes  # noqa: E402
+from app.routers import goals as goalsRoutes  # noqa: E402
 from app.routers import harness_mcp as harnessMcpRoutes  # noqa: E402
 from app.routers import harness_proposals as harnessProposalsRoutes  # noqa: E402
 from app.routers import hooks as hooksRoutes  # noqa: E402
@@ -574,6 +575,7 @@ app.include_router(previewRoutes.router)
 app.include_router(securityRoutes.router)
 app.include_router(realtimeRoutes.router)
 app.include_router(whatsNewRoutes.router)
+app.include_router(goalsRoutes.router)
 _WEBDist = settings.webDist
 if _WEBDist.is_dir():
     app.mount('/assets', StaticFiles(directory=str(_WEBDist / 'assets')), name='assets')
