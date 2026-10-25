@@ -192,6 +192,14 @@ def load_marks(env_id: str | None = None) -> list[dict[str, Any]]:
     return [dict(r) for r in _rows(sql, (env_id,) if env_id else ())]
 
 
+def claim_env(claim_id: str) -> str | None:
+    """The goal a claim belongs to. A mark rules on a CLAIM, so its environment is the claim's —
+    resolving it from the session instead aimed the verdict at whatever goal the turn happened to be
+    in, and the app-owned root refused it."""
+    rows = _rows('SELECT env_id FROM goal_claims WHERE id = ?', (claim_id,))
+    return str(rows[0]['env_id']) if rows else None
+
+
 def add_claim(env_id: str, text: str, by: str, about_artifact_id: str = '') -> dict[str, Any]:
     if get_env(env_id) is None:
         raise R.GoalRefusal([f'no goal "{env_id}"'])
@@ -229,6 +237,19 @@ def live_run(env_id: str, session_id: str) -> R.Run | None:
                      "('running','woken') ORDER BY started_at DESC", (env_id, session_id)):
         return _run_of(row)
     return None
+
+
+def session_run(env_id: str, session_id: str) -> R.Run | None:
+    """The run this session has in a goal — live first, then PARKED.
+
+    A parked run is still the session's run: the digest that reported "no run open here" while one sat
+    parked at its ceiling told the model to open a new one, which is exactly how a ceiling gets reset."""
+    live = live_run(env_id, session_id)
+    if live is not None:
+        return live
+    rows = _rows('SELECT * FROM goal_runs WHERE env_id = ? AND session_id = ? AND status = \x27parked\x27 '
+                 'ORDER BY started_at DESC', (env_id, session_id))
+    return _run_of(rows[0]) if rows else None
 
 
 def env_of_session(session_id: str) -> str:

@@ -20,6 +20,7 @@ def register_all() -> None:
         decision_tools,
         desktop_tools,
         file_tools,
+        goal_tools,
         harness_tools,
         media_tools,
         module_tools,
@@ -62,6 +63,7 @@ def register_all() -> None:
     dm.register()
     # Harness self-inspection + proposals (read-only introspection; proposals
     # are filed for human review — never applied by the model).
+    goal_tools.register()
     harness_tools.register()
     # Bridge tools (tool_search / tool_describe / tool_call) execute real
     # handlers — advertised when progressive disclosure activates.

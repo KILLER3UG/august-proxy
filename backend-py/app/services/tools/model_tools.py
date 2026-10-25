@@ -35,6 +35,9 @@ AUGUST_CORE_TOOLS: frozenset[str] = frozenset(
         # all.
         'list_facts',
         'forget',
+        # The goal environment the turn works inside: the read door is core for the same
+        # reason remember/list_facts are — a write door whose context cannot be read is a trap.
+        'goal_read',
         'load_skill',
         'list_skills',
         'spawn_subagents',
