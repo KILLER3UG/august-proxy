@@ -1494,6 +1494,49 @@ def _sessionToolDefsCacheKey(
     )
 
 
+def _filterToolsByGoal(session: WorkbenchSession, tools: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Trim the offered surface to the goal this session is working in.
+
+    This is the ENFORCEMENT half of the goal layer: ``goal_read`` reports a bound, and this is what
+    makes the report true. The rule lives in ``goals.policy`` — allow lists intersect down the chain
+    and with the seat, denials union — and the meta door (``goal_*``) is governed by the DENY list
+    only, so a goal can never lock itself out of editing itself.
+
+    Applied at every exit of both builders, including the cached ones: the assembly cache is keyed by
+    session state, and a goal edit does not change that key, so a cached list would otherwise keep
+    offering a tool the goal had just refused.
+
+    At the ROOT nothing is trimmed. The root's allow list is the seat captured when it was seeded, and
+    trimming against it would silently drop tools registered later (MCP servers, plugins) — a bug that
+    would look like "the app lost its tools". Only explicit denials apply there.
+
+    Fails OPEN on a database error, deliberately: the bound scopes work, it is not a boundary against
+    the user, and locking someone out of their own session because a read failed is the worse failure.
+    """
+    try:
+        from app.services.goals import policy as goal_policy
+        from app.services.goals import records as goal_records
+        from app.services.goals import store as goal_store
+
+        envs = goal_store.load_envs()
+        if not any(e.id == goal_records.ROOT_ID for e in envs):
+            return tools  # the layer has not been seeded yet: nothing to enforce
+        session_id = as_str(getattr(session, 'id', ''), '')
+        env_id = goal_store.env_of_session(session_id)
+        # Resolve the name from EITHER shape: the Anthropic list carries `name`, the OpenAI one
+        # carries `function.name`, and reading only one of them emptied the other surface.
+        seat = [_toolDefName(t) for t in tools]
+        effective = goal_policy.effective(envs, env_id, seat)
+        denied = {name for name, _ in effective.denials}
+        if env_id == goal_records.ROOT_ID:
+            return [t for t in tools if _toolDefName(t) not in denied]
+        return [t for t in tools
+                if _toolDefName(t) in effective.allow and _toolDefName(t) not in denied]
+    except Exception:
+        logger.debug('goal tool filter skipped', exc_info=True)
+        return tools
+
+
 def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
     """Return tool definitions in Anthropic format for a session.
 
@@ -1561,7 +1604,7 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
     cacheKey = _sessionToolDefsCacheKey('anthropic', tools, session, contextWindow)
     cached = tool_defs_cache.get_session_cached(session, 'anthropic', cacheKey)
     if cached is not None:
-        return cached
+        return _filterToolsByGoal(session, cached)
     try:
         from app.services.tools.model_tools import assembleToolDefs
 
@@ -1606,7 +1649,7 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
         pass
     tools = _finalize_session_tools(session, tools)
     tool_defs_cache.store_session_cached(session, 'anthropic', cacheKey, tools)
-    return tools
+    return _filterToolsByGoal(session, tools)
 
 
 
@@ -1661,7 +1704,7 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
     cacheKey = _sessionToolDefsCacheKey('openai', tools, session, contextWindow)
     cached = tool_defs_cache.get_session_cached(session, 'openai', cacheKey)
     if cached is not None:
-        return cached
+        return _filterToolsByGoal(session, cached)
     # Run the same BM25-budgeted progressive disclosure as the
     # Anthropic builder. The OpenAI path previously shipped the full registry
     # (~80 KB JSON, ≈20k tokens) to every model without a capability profile —
@@ -1747,7 +1790,7 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
         pass
     tools = _finalize_session_tools(session, tools)
     tool_defs_cache.store_session_cached(session, 'openai', cacheKey, tools)
-    return tools
+    return _filterToolsByGoal(session, tools)
 
 
 
