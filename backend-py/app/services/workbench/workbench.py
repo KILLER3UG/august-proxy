@@ -3889,6 +3889,13 @@ async def _sendWorkbenchMessageStreamImpl(
     # made. `toolRound` keeps its meaning for the cap and the stall detector;
     # this is what telemetry and `turn_end` report.
     modelRounds = 0
+    # Provider DISPATCHES, not steps. `modelRounds` is the step ceiling Octopus defines ("a tool
+    # call continues the turn"): one step may be retried up to maxRetries and may cross a fallback
+    # chain, so a single round can be eleven dispatches. The money was summed afterwards and was
+    # right; the WORK COUNT was not, so a step that took eleven tries looked like one — and the
+    # runaway backstop and the usage chip both read it that way. Counted per dispatch, reported on
+    # turn_end beside `rounds`.
+    modelAttempts = 0
     try:
         from app.services.skill_service import begin_turn_skill_collection
 
@@ -4311,6 +4318,7 @@ async def _sendWorkbenchMessageStreamImpl(
             # not inflate the round count the user sees in the badge).
             modelRounds += 1
             for retryAttempt in range(retryPolicy['maxRetries'] + 1):
+                modelAttempts += 1
                 _llmT0 = time.monotonic()
                 # Stream text live: per-delta finalOutput/thinking events go
                 # straight to the SSE log so the UI paints incrementally.
@@ -6389,6 +6397,7 @@ async def _sendWorkbenchMessageStreamImpl(
                     'sessionId': sessionId,
                     'reason': _endReason,
                     'rounds': modelRounds,
+                    'attempts': modelAttempts,
                     'error': turnError is not None,
                 }
             )
