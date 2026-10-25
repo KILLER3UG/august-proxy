@@ -35,6 +35,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -129,6 +130,34 @@ def read_version(skill_dir: Path, ts: str) -> str | None:
     with best_effort('skill-versions.read-version'):
         text = path.read_text(encoding='utf-8')
     return text
+
+
+def restore_version(skill_dir: Path, ts: str, *, actor: str = 'user', rationale: str = '') -> dict[str, Any]:
+    """Put one retained snapshot back as the live ``SKILL.md``.
+
+    The write goes through :func:`snapshot_before_write` first, so an undo is ITSELF undoable and
+    the history cannot lose the bytes it just replaced. Restoring a version the skill is already
+    on is a no-op ("already on it") rather than a new revision — a click that changes nothing must
+    not mint history.
+
+    Refuses when the snapshot is not retained, and says so: a restore that reports success while
+    writing nothing is the failure this return shape exists to prevent. The live path is written
+    through a temp file + ``os.replace`` so a crash mid-restore cannot leave a half SKILL.md.
+    """
+    directory = Path(skill_dir)
+    text = read_version(directory, ts)
+    if text is None:
+        return {'ok': False, 'error': f'version {ts!r} is not retained for this skill'}
+    md = directory / 'SKILL.md'
+    current = md.read_text(encoding='utf-8') if md.is_file() else ''
+    if current == text:
+        return {'ok': True, 'restoredFrom': str(ts), 'snapshotTs': '', 'sha': _sha256(text), 'noop': True}
+    snapshotTs = snapshot_before_write(directory, text, actor=actor,
+                                       rationale=rationale or f'restored version {ts}')
+    tmp = directory / '.SKILL.md.restore'
+    tmp.write_text(text, encoding='utf-8')
+    os.replace(tmp, md)
+    return {'ok': True, 'restoredFrom': str(ts), 'snapshotTs': snapshotTs, 'sha': _sha256(text)}
 
 
 def snapshot_before_write(
