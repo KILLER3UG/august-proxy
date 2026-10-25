@@ -1232,6 +1232,18 @@ def buildSystemPrompt(
             memWritesOn = True
         if memWritesOn:
             parts.append(_seg_cache.MEMORY_BLOCK)
+    # The goal environment this session works inside: where it is, what that goal permits, and
+    # what it still owes. Composed per assembly rather than cached with the constant segments — a
+    # goal edit mid-session must reach the NEXT turn's prompt. A layer that has never been seeded
+    # contributes nothing, so a fresh install's prompt is byte-identical to before.
+    try:
+        from app.services.goals.prompt import goals_prompt_block
+
+        goals_block = goals_prompt_block(as_str(getattr(session, 'id', ''), ''))
+        if goals_block:
+            parts.append(goals_block)
+    except Exception:
+        logger.debug('goal prompt block skipped', exc_info=True)
     # The Bot roster + messaging protocol, offered ONLY where the
     # message_agent tool is (canonical Bot Chats — offeredTools already
     # reflects the filter_dm_tools gate, so bytes stay stable elsewhere).
