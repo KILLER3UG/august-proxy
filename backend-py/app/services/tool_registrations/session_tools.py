@@ -499,7 +499,10 @@ async def _remember(
     from app.services import brain_config_service, memory_store
     from app.type_aliases import JsonValue
 
-    text = str(fact or '').strip()
+    # One fact per line: the body is a single statement; depth belongs in
+    # `details`. Collapsing whitespace here also keeps the duplicate and
+    # title derivations stable across a multi-line paste.
+    text = ' '.join(str(fact or '').split())
     if not text:
         return _json.dumps({'ok': False, 'error': 'fact is required'})
     _masterRefusal = _memoryDisabledRefusal()
@@ -998,9 +1001,48 @@ async def _forget(key: str) -> str:
                 )
             except Exception:
                 pass
+            # Global facts promoted FROM this project entry are derived solely
+            # from it; forget the source and the copy has nothing left to stand
+            # on. Snapshot each derived row before deleting it.
+            _derivedProject: list[dict[str, object]] = []
+            try:
+                _derivedProject = [
+                    dict(d)
+                    for d in memory_store.dependent_facts(f'project:{entry.title}')
+                ]
+                for _dep in _derivedProject:
+                    _depKey = str(_dep.get('factKey') or _dep.get('key') or '')
+                    if not _depKey:
+                        continue
+                    try:
+                        from app.services.rollback_store import record_rollback
+
+                        record_rollback(
+                            type='restore_memory_item',
+                            target=_depKey,
+                            before=_dep,
+                            after=None,
+                        )
+                    except Exception:
+                        pass
+                    memory_store.delete_fact(_depKey)
+            except Exception:
+                import logging as _logging
+
+                _logging.getLogger(__name__).debug(
+                    'project forget cascade failed', exc_info=True
+                )
             _emitMemoryInvalidate()
             return _json.dumps(
-                {'ok': True, 'deleted': True, 'scope': 'project', 'key': entry.title}
+                {
+                    'ok': True,
+                    'deleted': True,
+                    'scope': 'project',
+                    'key': entry.title,
+                    'derivedDeleted': [
+                        str(d.get('factKey') or d.get('key') or '') for d in _derivedProject
+                    ],
+                }
             )
         if isProjectKey:
             return _json.dumps(

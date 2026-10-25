@@ -374,6 +374,10 @@ def apply_promotion(payload: dict[str, Any]) -> dict[str, Any]:
                     source='promoted-from:' + (origin or 'unknown'),
                     title=title,
                     kind='lesson',
+                    # The promoted global fact is DERIVED from the project entry
+                    # it copies. Forget the project entry and this row has no
+                    # source left, so the forget door follows this edge.
+                    derived_from=[f'project:{title}'] if matches else None,
                 )
             except ValueError as exc:
                 # Not a crash fix: the function-wide `except Exception` below
