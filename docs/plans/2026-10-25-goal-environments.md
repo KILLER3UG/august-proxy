@@ -67,3 +67,39 @@ Two consequences that decide the shape:
 - **A mark needs a verdict and an evidence ref**, re-checked when read out of the database.
 - **A refusal is a row** in the movement ledger, not a log line.
 - Nothing blocks the event loop; every store call is awaited or explicitly sync on a short connection.
+
+## Status (2026-10-25, end of the build pass)
+
+Everything below the panel is landed and pushed to `origin/master` — commits `73dd8c38` (rules +
+tables), `771f64b1` (store), `09133489` (four tools + policy), `a6be56e1` (enforcement),
+`4724abf9` (prompt block), `92a80c9e` (turn lifecycle), `03ccdbc4` (API + regenerated spec/client).
+Gates on each: ruff 0, mypy 0 over 356 files, `e2e:smoke` 20/20 on a fresh scratch data dir, and
+six probes totalling **106 checks, 0 failed**, every one on a temp `AUGUST_DATA_DIR`.
+
+### What the panel still needs (measured, so the next pass starts here)
+
+- Panels live in **`frontend/desktop/src/sections/settings/`** (e.g. `MemorySection.tsx`) and are
+  declared in **`frontend/desktop/src/settings/settings-registry.ts`**. That file is data plus an
+  **in-file audit** with hard rules: section ids are immutable, every icon must be unique across the
+  registry, every keyword must be owned by exactly one section, and each entry declares
+  `tier: 'basic' | 'hidden'`. A `goals` section has to satisfy all four, and
+  `docs/settings-audit.md` records the movement history the audit refers to.
+- `components/settings/SettingsTabs.tsx` is referenced only by its own module and
+  `settingsTabIds.ts` — the settings surface is **not** a simple tab→panel map, which is why an
+  assumed `sections/panel` path was wrong on the first look.
+- The API client belongs beside `frontend/desktop/src/api/api-client/brain-backup.ts` (it imports
+  `api` from `../client`); the typed schema is already regenerated for the three routes.
+- Gates for that change: `npm run check -w frontend/desktop` (tsc + eslint), `check:design`,
+  `check:naming`, `npm run build`.
+
+### Decisions taken while building (not in the original plan)
+
+- **The ceiling is per wake window.** A resumed run restarts its count and names the window it spent
+  ("resumed after 4 round(s) at the ceiling"); one accumulator printed `round 5 of 4` after the first
+  park.
+- **The root is uncapped** (the `10**6` sentinel): rounds accumulate across turns, so the per-turn
+  budget would park a healthy conversation at its 150th total round.
+- **The root is never trimmed by the allow list** — its allow list is the seat at seed time, and
+  trimming would drop tools registered later (MCP, plugins). Only denials apply there.
+- **No trigger table**: jobs and routines already wake work here.
+
