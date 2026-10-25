@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sqlite3
 from collections.abc import Sequence
 from typing import cast
@@ -190,6 +191,9 @@ def save_fact(
     subjectValue = (subject_type or '').strip().lower()
     if subjectValue not in _SUBJECT_TYPES:
         subjectValue = _deriveSubjectType(kind, category)
+    _valueTextForType = factValue if isinstance(factValue, str) else str(factValue or '')
+    if subjectValue != 'person' and _thirdPartyDetail(_valueTextForType, title or '', description or ''):
+        subjectValue = 'person'
     aliasesJson = _json(_normalizedStringList(aliases))
     derivedJson = _json(_normalizedStringList(derived_from, cap=8, item_cap=80))
     _valueText = factValue if isinstance(factValue, str) else str(factValue or '')
@@ -344,6 +348,25 @@ def touch_fact_usage(factKeys: list[str]) -> int:
 
 
 _TAG_VALUES = ('stated', 'observed', 'inferred')
+# Other people's details stay out of the automatic index/tail unless the user
+# raises them. A relation word is reliable; a possessive proper name is a
+# heuristic, with sentence-start/common words excluded so "Today's plan" or
+# "The user's editor" is not a person fact.
+_THIRD_PARTY_REL_RE = re.compile(
+    r'\b(?:my|our)\s+(?:friend|colleague|coworker|co-worker|boss|manager|partner|wife|husband|son|daughter|child|kid|mother|father|brother|sister|neighbor|neighbour|roommate)\b',
+    re.IGNORECASE,
+)
+_THIRD_PARTY_POSSESSIVE_RE = re.compile(
+    r"\b(?!Today|This|That|It|He|She|They|We|You|The|User)[A-Z][a-z]+'s\b"
+)
+
+
+def _thirdPartyDetail(*texts: object) -> str:
+    blob = ' '.join(str(t) for t in texts if t)
+    match = _THIRD_PARTY_REL_RE.search(blob) or _THIRD_PARTY_POSSESSIVE_RE.search(blob)
+    return match.group(0) if match else ''
+
+
 _SUBJECT_TYPES = ('profile', 'preference', 'topic', 'area', 'person')
 
 

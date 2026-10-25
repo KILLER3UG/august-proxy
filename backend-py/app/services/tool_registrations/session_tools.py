@@ -508,6 +508,22 @@ async def _remember(
     _masterRefusal = _memoryDisabledRefusal()
     if _masterRefusal:
         return _masterRefusal
+    # The record's tag is server-derived from the writer's code path. A model
+    # claiming `inferred`/`observed` (or a source) is refused rather than
+    # silently relabelled: only the user's stated memory is this door's job.
+    _claimedProvenance = str(
+        _extra.get('provenance') or _extra.get('tag') or _extra.get('source') or ''
+    ).strip().lower()
+    if _claimedProvenance and _claimedProvenance != 'stated':
+        return _json.dumps(
+            {
+                'ok': False,
+                'policy': 'refused: this door writes user-stated memory only. The provenance '
+                'tag is set by the code path, not by the model; observed/inferred facts come '
+                'from the distiller/import paths. Save the user statement as-is, or do not '
+                'save it.',
+            }
+        )
     detailsText = str(details or '').strip()
     if len(text) < _REMEMBER_MIN_FACT_CHARS:
         return _json.dumps(
