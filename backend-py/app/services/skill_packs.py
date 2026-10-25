@@ -267,16 +267,58 @@ def _planFromFolder(root: Path, source: str) -> dict[str, Any]:
     }
 
 
+_REF_PATH_RE = re.compile(r'\b(?:references|scripts|templates|assets)/[A-Za-z0-9._/-]+')
+
+
 def _planFromRawUrl(source: str) -> dict[str, Any]:
-    from urllib.parse import urlparse
+    """One raw SKILL.md URL plus the sibling files its body references.
+
+    A raw URL has no archive manifest, so the referenced support paths ARE the
+    manifest: only the four standard sibling dirs are fetched, up to 20 files,
+    same-origin, and each failure is reported as a warning rather than
+    silently installing a skill whose references/ links are broken.
+    """
+    from urllib.parse import urljoin, urlparse
 
     blob = _fetch(source)
     name = Path(urlparse(source).path).stem or 'skill'
+    text = blob.decode('utf-8', 'replace')
+    try:
+        import yaml
+
+        _fm = re.match(r'^---\s*\n(.*?)\n---', text, re.DOTALL)
+        if _fm:
+            _loaded = yaml.safe_load(_fm.group(1))
+            if isinstance(_loaded, dict) and _loaded.get('name'):
+                name = str(_loaded['name']).strip()
+    except Exception:
+        pass
+    files: dict[str, bytes] = {'SKILL.md': blob}
+    warnings: list[str] = []
+    refs: list[str] = []
+    for match in _REF_PATH_RE.finditer(text):
+        rel = match.group(0).rstrip('.,);:')
+        if '..' in Path(rel).parts or rel in refs:
+            continue
+        refs.append(rel)
+    total = len(blob)
+    for rel in refs[:20]:
+        try:
+            support = _fetch(urljoin(source, rel))
+        except Exception as exc:
+            warnings.append(f'{rel}: {str(exc)[:120]}')
+            continue
+        total += len(support)
+        if total > _MAX_BYTES:
+            warnings.append(f'{rel}: skipped (pack exceeds the {_MAX_BYTES} byte cap)')
+            continue
+        files[rel] = support
     return {
         'pack': _safeDirName(name, 'skill'),
         'source': source,
         'rev': hashlib.sha256(blob).hexdigest()[:12],
-        'skills': [{'dir': name, 'files': {'SKILL.md': blob}}],
+        'skills': [{'dir': name, 'files': files}],
+        'warnings': warnings,
     }
 
 
@@ -316,6 +358,7 @@ def _preview(plan: dict[str, Any]) -> dict[str, Any]:
         'rev': plan['rev'],
         'skills': skills,
         'refused': refused,
+        'warnings': plan.get('warnings') or [],
     }
 
 
@@ -344,6 +387,7 @@ def install_pack(source: str, *, confirm: bool = False) -> dict[str, Any]:
             'ok': False,
             'requiresConfirmation': True,
             'preview': preview,
+            'warnings': preview.get('warnings') or [],
             'findings': [f for sk in preview['skills'] for f in sk['findings']],
         }
     if unsafe:
@@ -400,7 +444,8 @@ def install_pack(source: str, *, confirm: bool = False) -> dict[str, Any]:
             shutil.rmtree(victim, ignore_errors=True)
     return {
         'ok': True, 'pack': packName, 'rev': plan['rev'], 'skills': installed,
-        'refused': refused, 'findings': [f for sk in preview['skills'] for f in sk['findings']],
+        'refused': refused, 'warnings': preview.get('warnings') or [],
+        'findings': [f for sk in preview['skills'] for f in sk['findings']],
         'note': 'skills appear in the catalogue next turn (load_skill by name)',
     }
 
