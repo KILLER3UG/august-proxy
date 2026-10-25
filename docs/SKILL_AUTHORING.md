@@ -130,7 +130,9 @@ material belongs in `references/`, not the body.
 ## Install / import
 
 A local folder, a GitHub repo/subdir, an https `.zip`, or a raw `.md` URL is
-fetched and **previewed** first: the response names every skill, its file count
+fetched and **previewed** first. A raw URL also fetches the `references/`,
+`scripts/`, `templates/` and `assets/` paths its body names (same origin, ≤20
+files), with missing ones reported as warnings: the response names every skill, its file count
 and size, and any content-scan finding, and nothing is written. Installing
 requires a second call with `confirm: true`. Shell, URL and credential text in a
 skill body refuses the install; a memory-instruction phrase is reported as a

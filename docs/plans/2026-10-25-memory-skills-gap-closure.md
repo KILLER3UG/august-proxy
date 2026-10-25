@@ -93,3 +93,14 @@ to load a skill) need a funded provider; the derived-fact producer is forward-lo
 cascade is proven, no current path writes `derived_from`); the bundled checkout remains writable by
 raw file tools (repo-wins deviation); the generic `read_file` remains machine-wide, so L2 must go
 through `load_skill(file=…)`.
+
+## Final addendum (same day)
+
+Closed after the first ship: a raw `SKILL.md` URL now fetches the referenced
+support files; the Memory detail renders the previous value from the history
+endpoint; `harness_promote` records the project entry as `derived_from`, so
+forgetting the project entry cascades to the promoted global fact; `remember`
+collapses multi-line facts to one line; a model-claimed provenance other than
+`stated` is refused; and untagged third-party facts (`my friend John`, `John's
+phone`) are classified `subject_type=person` so the automatic index/tail leave
+them alone. Core memory harness: all checks true. Gates green at `ddcd7a33`.
