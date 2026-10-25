@@ -38,6 +38,7 @@ def _env_of(row: sqlite3.Row) -> R.Env:
         version=int(row['version']), depth=int(row['depth']),
         created_at=float(row['created_at']), updated_at=float(row['updated_at']),
         close_reason=str(row['close_reason'] or ''),
+        workspace=str(row['workspace'] or ''),
     )
 
 
@@ -54,17 +55,21 @@ def _insert_env(env: R.Env) -> None:
     c = _conn()
     c.execute(
         'INSERT INTO goal_envs (id, parent_id, title, goal, inputs, outputs, bound, status, owner, '
-        'version, depth, close_reason, created_at, updated_at) '
-        'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        'version, depth, close_reason, created_at, updated_at, workspace) '
+        'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
         (env.id, env.parent_id, env.title, env.goal, json.dumps(env.inputs), json.dumps(env.outputs),
          env.bound.to_json(), env.status, env.owner, env.version, env.depth, env.close_reason,
-         env.created_at, env.updated_at),
+         env.created_at, env.updated_at, env.workspace),
     )
     brain_commit(c)
 
 
-def load_envs() -> list[R.Env]:
-    return [_env_of(r) for r in _rows('SELECT * FROM goal_envs ORDER BY depth, created_at')]
+def load_envs(workspace: str | None = None) -> list[R.Env]:
+    """Goals in one workspace (or every goal when ``workspace`` is None). A project's goals
+    are its own: the panel and the prompt read the workspace they are in, never the table."""
+    if workspace is None:
+        return [_env_of(r) for r in _rows('SELECT * FROM goal_envs ORDER BY depth, created_at')]
+    return [_env_of(r) for r in _rows('SELECT * FROM goal_envs WHERE workspace = ? ORDER BY depth, created_at', (workspace,))]
 
 
 def get_env(env_id: str) -> R.Env | None:
@@ -72,16 +77,16 @@ def get_env(env_id: str) -> R.Env | None:
     return _env_of(rows[0]) if rows else None
 
 
-def ensure_root(seat_tools: Iterable[str]) -> R.Env:
+def ensure_root(seat_tools: Iterable[str], workspace: str = "") -> R.Env:
     """The proxy's own environment, seeded once and never re-seeded.
 
     Never overwritten on a later call: a root that came back with fresh bounds would silently re-widen
     every goal under it, which is the one failure this layer exists to make impossible.
     """
-    existing = get_env(R.ROOT_ID)
+    existing = get_env(R.root_id_for(workspace))
     if existing is not None:
         return existing
-    root = R.seed_root(seat_tools, _now())
+    root = R.seed_root(seat_tools, _now(), workspace)
     _insert_env(root)
     return root
 
@@ -94,12 +99,17 @@ def create_env(*, parent_id: str, title: str, goal: str, inputs: object = None,
     return env, removed
 
 
-def edit_env(env_id: str, patch: Mapping[str, object], *, expected_version: int | None = None) -> tuple[R.Env, list[str]]:
+def edit_env(env_id: str, patch: Mapping[str, object], *, expected_version: int | None = None,
+             actor: str = 'agent') -> tuple[R.Env, list[str]]:
     env = get_env(env_id)
     if env is None:
         raise R.GoalRefusal([f'no goal "{env_id}"'])
     unmet = R.unmet_outputs(env, load_artifacts(env_id), str(patch.get('reason') or '')) if patch.get('status') == 'done' else []
-    next_env, clamped = R.edit_env(env, patch, unmet=unmet, expected_version=expected_version, now=_now())
+    # `actor='user'` is the human door: it may set a ROOT's bound (the global one and a
+    # workspace's), because a project's permissions are the trader/user's to decide. The MODEL
+    # still cannot, and the narrowing rules apply to a human edit exactly as they do to a goal.
+    next_env, clamped = R.edit_env(env, patch, unmet=unmet, expected_version=expected_version,
+                                   now=_now(), allow_root=(actor == 'user'))
     c = _conn()
     # Compare-and-set on the version the caller read: two turns editing the same goal cannot lose one
     # another's change, and a stale write is refused rather than silently overwriting.

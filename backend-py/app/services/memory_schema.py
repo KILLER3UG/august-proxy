@@ -548,10 +548,12 @@ CREATE TABLE IF NOT EXISTS goal_envs (
     bound TEXT NOT NULL DEFAULT '{"allow":[],"deny":[],"maxRounds":0,"contextChars":0}',
     status TEXT NOT NULL DEFAULT 'active', owner TEXT NOT NULL DEFAULT 'agent',
     version INTEGER NOT NULL DEFAULT 1, depth INTEGER NOT NULL DEFAULT 0,
-    close_reason TEXT NOT NULL DEFAULT '', created_at REAL NOT NULL, updated_at REAL NOT NULL
+    close_reason TEXT NOT NULL DEFAULT '', created_at REAL NOT NULL, updated_at REAL NOT NULL,
+    workspace TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_goal_envs_parent ON goal_envs(parent_id);
 CREATE INDEX IF NOT EXISTS idx_goal_envs_status ON goal_envs(status);
+CREATE INDEX IF NOT EXISTS idx_goal_envs_workspace ON goal_envs(workspace, status);
 CREATE TABLE IF NOT EXISTS goal_runs (
     id TEXT PRIMARY KEY, env_id TEXT NOT NULL, session_id TEXT NOT NULL DEFAULT '',
     bot_id TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'running',
@@ -767,9 +769,10 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
 # v16: messages.client_message_id column + unique index (048) — client-authored
 #      message identity; the FTS UPDATE trigger is narrowed to the indexed
 #      columns so blocks-only enrichment writes never re-index.
+# v18: goal_envs.workspace (058) — a workspace is a project with its own root and bound.
 # v17: goal_envs / goal_runs / goal_artifacts / goal_movements / goal_claims /
 #      goal_marks (057) — the harness as the environment the agent works inside.
-_SCHEMA_USER_VERSION = 17
+_SCHEMA_USER_VERSION = 18
 
 
 def _ensure_messages_fts(conn: sqlite3.Connection) -> None:

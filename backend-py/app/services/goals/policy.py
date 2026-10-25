@@ -59,7 +59,7 @@ def effective(envs: Iterable[R.Env], env_id: str, seat_tools: Iterable[str]) -> 
     """
     envs = list(envs)
     link = chain(envs, env_id)
-    if not link or link[0].id != R.ROOT_ID:
+    if not link or not R.is_root(link[0].id):
         return Effective(env_id=env_id, allow=frozenset(), denials=(), max_rounds=0,
                          context_chars=0, path=tuple(e.title for e in link))
     seat = {str(t).strip() for t in seat_tools if str(t).strip()}

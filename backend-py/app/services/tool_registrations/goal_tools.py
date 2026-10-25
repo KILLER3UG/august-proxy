@@ -35,6 +35,19 @@ def _seat_tools() -> list[str]:
     return [str(t.get('name') or '') for t in tool_registry.listTools()]
 
 
+def _workspace() -> str:
+    """The workspace this turn is in — the "project" a goal belongs to.
+
+    Read from the live session rather than from the path arguments, so a goal created inside a
+    project is filed under that project and the listing for another one never shows it.
+    """
+    from app.services.workbench.sessions import get_workbench_session
+
+    sid = _session_id()
+    sess = get_workbench_session(sid) if sid else None
+    return str(getattr(sess, 'workspacePath', '') or '')
+
+
 def _blocked(tool: str, reasons: list[str]) -> str:
     return f'Blocked: {tool} refused — ' + ' · '.join(reasons or ['the goal rules refused it'])
 
@@ -90,18 +103,18 @@ def _digest(envs: list[R.Env], session_id: str) -> str:
 
 
 async def _read(**kwargs: object) -> str:
-    envs = await asyncio.to_thread(S.load_envs)
+    envs = await asyncio.to_thread(S.load_envs, _workspace())
     if not envs:
-        await asyncio.to_thread(S.ensure_root, _seat_tools())
-        envs = await asyncio.to_thread(S.load_envs)
+        await asyncio.to_thread(S.ensure_root, _seat_tools(), _workspace())
+        envs = await asyncio.to_thread(S.load_envs, _workspace())
     return _digest(envs, _session_id())
 
 
 async def _edit(**kwargs: object) -> str:
     op = as_str(kwargs.get('op'), '').lower()
-    envs = await asyncio.to_thread(S.load_envs)
+    envs = await asyncio.to_thread(S.load_envs, _workspace())
     if not envs:
-        envs = [await asyncio.to_thread(S.ensure_root, _seat_tools())]
+        envs = [await asyncio.to_thread(S.ensure_root, _seat_tools(), _workspace())]
     session_id = _session_id()
     policy = effective(envs, S.env_of_session(session_id), _seat_tools())
 
@@ -177,7 +190,7 @@ async def _output(**kwargs: object) -> str:
     env = await asyncio.to_thread(S.get_env, env_id)
     if env is None:
         return _blocked('goal_output', [f'no goal "{env_id}"'])
-    envs = await asyncio.to_thread(S.load_envs)
+    envs = await asyncio.to_thread(S.load_envs, _workspace())
     policy = effective(envs, S.env_of_session(_session_id()), _seat_tools())
     refusal = meta_refusal(policy, 'goal_output', env)
     if refusal:
@@ -218,7 +231,7 @@ async def _run(**kwargs: object) -> str:
     op = as_str(kwargs.get('op'), '').lower()
     session_id = _session_id()
     env_id = as_str(kwargs.get('env_id'), '') or S.env_of_session(session_id)
-    envs = await asyncio.to_thread(S.load_envs)
+    envs = await asyncio.to_thread(S.load_envs, _workspace())
     env = next((e for e in envs if e.id == env_id), None)
     if env is None:
         return _blocked('goal_run', [f'no goal "{env_id}"'])

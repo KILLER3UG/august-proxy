@@ -23,6 +23,18 @@ from typing import Any, Iterable, Mapping
 
 ROOT_ID = 'goal:root'
 MAX_DEPTH = 3
+# A "project" in Octopus terms is a goal with its OWN permissions: "what an agent may do in one
+# project says nothing about another". A workspace gets its own root, so its ceiling is set
+# once and no goal in another workspace can narrow or widen it.
+def root_id_for(workspace: str = "") -> str:
+    """The root id for a workspace: the global root, or ``goal:root:<slug>``."""
+    ws = str(workspace or "").strip()
+    return ROOT_ID if not ws else f"{ROOT_ID}:{_slug(ws, 24)}"
+
+
+def is_root(env_id: str) -> bool:
+    """True for the global root and for any per-workspace root."""
+    return env_id == ROOT_ID or env_id.startswith(ROOT_ID + ":")
 MAX_OUTPUTS = 6
 MAX_LEDGER = 40
 ENV_STATUSES = ('active', 'done', 'abandoned')
@@ -215,6 +227,9 @@ class Env:
     created_at: float
     updated_at: float
     close_reason: str = ''
+    # The workspace ("project") this goal belongs to. '' is the global root; a workspace gets its
+    # own root and its own ceiling, and a goal in one workspace says nothing about another.
+    workspace: str = ''
 
     @property
     def writable(self) -> bool:
@@ -232,13 +247,13 @@ def root_bound(seat_tools: Iterable[str], context_chars: int = 1400, max_rounds:
     return Bound(tuple(dict.fromkeys(seat_tools)), (), max_rounds, context_chars)
 
 
-def seed_root(seat_tools: Iterable[str], now: float) -> Env:
+def seed_root(seat_tools: Iterable[str], now: float, workspace: str = "") -> Env:
     return Env(
-        id=ROOT_ID, parent_id=None,
+        id=root_id_for(workspace), parent_id=None,
         title='The app',
         goal='Work the user\u2019s own session: the app settings are the ceiling, and every goal under this one may only narrow them.',
         inputs=[], outputs=[], bound=root_bound(seat_tools), status='active', owner='system',
-        version=1, depth=0, created_at=now, updated_at=now,
+        version=1, depth=0, created_at=now, updated_at=now, workspace=workspace,
     )
 
 
@@ -267,7 +282,7 @@ def create_env(
         inputs=_as_list(inputs, MAX_OUTPUTS, 'inputs'),
         outputs=_as_list(outputs, MAX_OUTPUTS, 'outputs'),
         bound=clamped, status='active', owner='agent', version=1,
-        depth=parent.depth + 1, created_at=now, updated_at=now,
+        depth=parent.depth + 1, created_at=now, updated_at=now, workspace=parent.workspace,
     )
     bad = assert_narrower(parent.bound, env.bound)
     if bad:
@@ -302,10 +317,10 @@ def unmet_outputs(env: Env, artifacts: Iterable[Mapping[str, object]], close_rea
 
 def edit_env(
     env: Env, patch: Mapping[str, object], *, unmet: Iterable[str] = (), expected_version: int | None = None,
-    now: float,
+    now: float, allow_root: bool = False,
 ) -> tuple[Env, list[str]]:
     """Rewrite the fields of a goal the agent owns. Raises ``GoalRefusal`` with the reason per field."""
-    if not env.writable:
+    if not env.writable and not allow_root:
         raise GoalRefusal([f'"{env.title}" is the app\u2019s own environment — its bound is the ceiling every goal narrows from and the agent does not edit it'])
     if expected_version is not None and expected_version != env.version:
         raise GoalRefusal([f'"{env.title}" is at version {env.version}, your copy is {expected_version} — read it again, merge, and retry in this turn'])
