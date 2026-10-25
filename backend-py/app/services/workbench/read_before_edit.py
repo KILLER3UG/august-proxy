@@ -131,7 +131,12 @@ def _input_keys(
     return keys
 
 
-def _refusal(names: list[str], code: str, unseen: bool) -> str:
+def _refusal(
+    names: list[str],
+    code: str,
+    unseen: bool,
+    live: dict[str, str] | None = None,
+) -> str:
     shown = ', '.join(names[:3]) + (f' … +{len(names) - 3} more' if len(names) > 3 else '')
     if unseen:
         return (
@@ -141,10 +146,24 @@ def _refusal(names: list[str], code: str, unseen: bool) -> str:
         )
     verb = 'have' if len(names) > 1 else 'has'
     obj = 'them' if len(names) > 1 else 'it'
+    # pi's lesson: an edit failure that quotes the real state lets a straight retry succeed.
+    # A stale refusal used to say only "re-read", so the model paid a whole read to learn one
+    # hash — while `fileHash` is already a parameter of the tool it is calling. The live hash
+    # turns "unknown drift" into a precise retry; when the anchor text really did change,
+    # read_file is still the remedy and the text says so.
+    hint = ''
+    if live:
+        first = names[0] if names else ''
+        digest = live.get(first, '')
+        if digest:
+            hint = (
+                f' Current sha256 of {first}: {digest}. If your anchor text is still present, '
+                f'retry the same call with fileHash="{digest}"; otherwise call read_file first.'
+            )
     return (
         f'Error: {code} {shown} {verb} {STALE_WRITE_HEADLINE}. Read {obj} '
         f'again before attempting to write {obj}: call read_file on the '
-        'path, then retry the edit.'
+        f'path, then retry the edit.{hint}'
     )
 
 
@@ -192,7 +211,10 @@ def check_read_before_edit(
     if unseen:
         return _refusal(unseen, UNSEEN_CODE, unseen=True)
     if stale:
-        return _refusal(stale, STALE_CODE, unseen=False)
+        return _refusal(
+            stale, STALE_CODE, unseen=False,
+            live={Path(k).name: (_file_version(Path(k)) or '') for k in keys if Path(k).name in stale},
+        )
     return None
 
 
