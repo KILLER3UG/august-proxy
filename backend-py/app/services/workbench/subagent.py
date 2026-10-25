@@ -30,6 +30,7 @@ from app.services.tools.agent_registry import (
 from app.services.workbench.context import currentSessionId
 from app.services.workbench.subagent_fanout import (
     charge_fanout_round,
+    charge_session_round,
     fanout_snapshot,
     round_budget_message,
 )
@@ -845,6 +846,9 @@ async def executeSubAgent(
     finalText = ''
     # The round that produced no tool call holds the answer; see _subagent_answer.
     lastRoundText = ''
+    # The PARENT turn's session, captured before the child replaces the contextvar: it is the
+    # key an id-less child charges its fleet budget against.
+    parentBudgetKey = str(currentSessionId.get() or '')
     token = currentSessionId.set(getattr(session, 'id', 'default'))
     # Task-scoped id for per-agent state routing (todo lists). ContextVars are
     # copied per asyncio task, so concurrent workers each see their OWN value
@@ -923,13 +927,15 @@ async def executeSubAgent(
             # child never spends a round the fleet had already used. A child
             # outside a dispatch (no job/fanout id) is bounded only by its own
             # cap — which is exactly the pre-existing behaviour.
-            if not harness_job_id and not _idlessChargeWarned():
-                # No dispatch id means no shared budget to charge (the recurring-task and daemon
-                # paths pass none). The child is still bounded by SUBAGENT_DEFAULT_ROUNDS above,
-                # but a fleet of id-less children is bounded PER CHILD, not in aggregate — said
-                # out loud here rather than left to look like the 240-round guard is covering it.
-                logger.info('sub-agent launched without a dispatch id: bounded per child (%d rounds), not by the shared fan-out budget', SUBAGENT_DEFAULT_ROUNDS)
-            if harness_job_id and not charge_fanout_round(harness_job_id):
+            # One round of the shared budget, charged before the model call so a child never
+            # spends a round the fleet had already used. A child with no fan-out id charges its
+            # PARENT SESSION's ledger instead of being exempt: a fleet of id-less children is
+            # one fleet, and a nested one inherits the same key, so it cannot open a fresh budget.
+            budgetOk = (
+                charge_fanout_round(harness_job_id) if harness_job_id
+                else charge_session_round(parentBudgetKey)
+            )
+            if not budgetOk:
                 budgetReached = True
                 break
             try:

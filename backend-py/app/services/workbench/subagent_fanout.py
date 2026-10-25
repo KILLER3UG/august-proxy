@@ -501,6 +501,49 @@ def charge_fanout_round(fanout_id: str) -> bool:
     return True
 
 
+# ── session-keyed aggregate budget (children with no fan-out id) ──────────
+# A child launched with no fan-out id (recurring task, daemon, a direct tool call) had no
+# shared budget to charge, so a fleet of them was bounded PER CHILD and a nested fleet opened
+# a fresh budget per level. The parent session is the natural key: every id-less child of one
+# turn is one fleet, and a nested one charges the SAME ledger because it inherits the same
+# parent session. Same default and same refusal semantics as the fan-out budget above.
+@dataclass
+class _SessionBudget:
+    roundsUsed: int = 0
+    roundBudget: int = FANOUT_ROUND_BUDGET_DEFAULT
+    stoppedBy: str = ''
+
+
+_SESSION_BUDGETS: dict[str, _SessionBudget] = {}
+_SESSION_KEEP = 200
+
+
+def charge_session_round(session_id: str, roundBudget: int = FANOUT_ROUND_BUDGET_DEFAULT) -> bool:
+    """One id-less child round against its parent session's shared budget. True = allowed."""
+    key = str(session_id or '')
+    if not key:
+        # No identity to key on: fall back to the per-child cap rather than refusing anonymously.
+        return True
+    rec = _SESSION_BUDGETS.get(key)
+    if rec is None:
+        rec = _SessionBudget(roundBudget=int(roundBudget))
+        _SESSION_BUDGETS[key] = rec
+        while len(_SESSION_BUDGETS) > _SESSION_KEEP:
+            _SESSION_BUDGETS.pop(next(iter(_SESSION_BUDGETS)))
+    if rec.roundBudget <= 0:
+        rec.roundsUsed += 1
+        return True
+    if rec.roundsUsed >= rec.roundBudget:
+        if not rec.stoppedBy:
+            rec.stoppedBy = FANOUT_END_ROUND_BUDGET
+            logger.info(
+                '[Fanout] session %s shared round budget exhausted (%d/%d) — later id-less child rounds are refused',
+                key, rec.roundsUsed, rec.roundBudget,
+            )
+        return False
+    rec.roundsUsed += 1
+    return True
+
 def note_child_start(fanout_id: str) -> None:
     rec = _fanouts.get(fanout_id) if fanout_id else None
     if rec is None:
