@@ -46,6 +46,7 @@ export function ChatThreadMessagePane({
   onFork,
   onClarifyAnswer,
   footerSlot,
+  header,
   models,
   onReanswerWithModel,
   onCompare,
@@ -94,6 +95,8 @@ export function ChatThreadMessagePane({
   onClarifyAnswer: (msgId: string, answer: string) => void;
   /** Composer or plan banner under the list. */
   footerSlot: ReactNode;
+  /** Scroll-away thread intro above the transcript. */
+  header?: ReactNode;
   /** Visible model catalog for "answer this with another model" (A4). */
   models?: ModelItem[];
   onReanswerWithModel?: (model: ModelItem, index: number) => void;
@@ -238,6 +241,7 @@ export function ChatThreadMessagePane({
             smooth while the model reply grows (avoids per-token JS scroll snaps). */}
         <div className="chat-scroll-content">
         <VirtualizedMessageList
+          header={header}
           messages={messages}
           scrollParentRef={scrollRef}
           virtRef={virtRef}

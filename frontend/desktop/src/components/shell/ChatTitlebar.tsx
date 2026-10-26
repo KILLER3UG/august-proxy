@@ -230,9 +230,9 @@ export function ChatTitlebar({
           {workspaceName && (
             <div className="hidden lg:flex items-center gap-1.5 shrink-0 text-[0.75rem] text-muted-foreground/55">
               <Folder className="size-3 opacity-70" />
-              <span className="max-w-[10rem] truncate" title={session?.workspacePath || workspaceName}>
+              <div className="max-w-[10rem] truncate" title={session?.workspacePath || workspaceName}>
                 {workspaceName}
-              </span>
+              </div>
               <span className="text-muted-foreground/30">/</span>
             </div>
           )}

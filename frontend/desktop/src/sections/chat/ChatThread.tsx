@@ -14,6 +14,7 @@ import {
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '@/api/client';
+import { folderNameFromPath } from '@/api/folder';
 import { toast } from 'sonner';
 import { UploadCloud } from 'lucide-react';
 import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
@@ -1428,6 +1429,33 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     </div>
   );
 
+
+  const workspaceName = activeSession?.workspacePath
+    ? folderNameFromPath(activeSession.workspacePath)
+    : null;
+  const threadIntro = activeSession ? (
+    <div className="mx-auto w-full max-w-3xl px-4 pb-6 pt-10" data-testid="thread-intro">
+      <div className="flex items-center gap-3 font-mono text-[0.58rem] uppercase tracking-[0.16em] text-muted-foreground/40">
+        <span>Thread{workspaceName ? ` · ${workspaceName}` : ''}</span>
+        <span className="h-px flex-1 bg-border/50" />
+      </div>
+      <div className="mt-3 flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="font-editorial text-[clamp(1.8rem,2.6vw,2.5rem)] font-medium leading-[1.06] tracking-[-0.04em] text-foreground">
+            {activeSession.title || 'New chat'}
+          </h1>
+          <p className="mt-2 text-[0.8125rem] leading-relaxed text-muted-foreground/60">
+            {messages.length} {messages.length === 1 ? 'message' : 'messages'} ·{' '}
+            {workspaceName || 'No workspace'}
+          </p>
+        </div>
+        <span className="mt-1 inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border/50 px-2.5 py-1 font-mono text-[0.6rem] uppercase tracking-[0.1em] text-muted-foreground/55">
+          <span className="size-1.5 rounded-full bg-primary" />
+          {selectedModel?.name ?? 'Local'}
+        </span>
+      </div>
+    </div>
+  ) : null;
   const composerSlot = (
     <div className="august-composer-slot mx-auto w-full max-w-3xl px-4">{composer}</div>
   );
@@ -1603,6 +1631,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               </ChatEmptyState>
             ) : (
               <ChatThreadMessagePane
+          header={threadIntro}
           virtRef={messageVirtRef}
           onBeforeJump={() => setPinned(false)}
                 sessionId={sessionId}

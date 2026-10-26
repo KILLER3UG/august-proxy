@@ -5,7 +5,7 @@
  */
 
 import { useVirtualizer } from '@tanstack/react-virtual';
-import type { MutableRefObject } from 'react';
+import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import type { ChatMessage } from '@/types/chat';
 import type { ReactNode, RefObject } from 'react';
 
@@ -17,6 +17,8 @@ export interface VirtualizedMessageListProps {
   scrollParentRef: RefObject<HTMLDivElement | null>;
   renderMessage: (message: ChatMessage, index: number) => ReactNode;
   footer?: ReactNode;
+  /** A scroll-away intro above the transcript (thread title/subtitle). */
+  header?: ReactNode;
   /** Exposes the virtualizer for programmatic jumps (in-thread search). */
   virtRef?: MutableRefObject<{ scrollToIndex: (index: number, opts?: object) => void } | null>;
 }
@@ -26,11 +28,40 @@ export function VirtualizedMessageList({
   scrollParentRef,
   renderMessage,
   footer,
+  header,
   virtRef,
 }: VirtualizedMessageListProps) {
   const useVirt = messages.length >= VIRTUALIZE_AFTER;
+  const headerRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const [scrollMargin, setScrollMargin] = useState(0);
+
+  // A header inside the scroll element offsets the list. TanStack Virtual
+  // needs that offset as `scrollMargin`, or row transforms are measured from
+  // the scroll top while the list actually begins lower, so rows jump and
+  // search jumps land on the wrong message. Re-measure on resize and header
+  // height changes.
+  useEffect(() => {
+    const list = listRef.current;
+    const scroller = scrollParentRef.current;
+    if (!list || !scroller) return;
+    const update = () => {
+      const margin = list.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+      setScrollMargin(Math.max(0, margin));
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(list);
+    if (headerRef.current) observer.observe(headerRef.current);
+    window.addEventListener('resize', update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', update);
+    };
+  }, [scrollParentRef]);
 
   const virt = useVirtualizer({
+    scrollMargin,
     count: messages.length,
     getScrollElement: () => scrollParentRef.current,
     estimateSize: () => ESTIMATE_ROW_PX,
@@ -55,17 +86,22 @@ export function VirtualizedMessageList({
 
   if (!useVirt) {
     return (
-      <div className="august-message-list mx-auto w-full max-w-3xl px-4 py-8 space-y-5 relative">
-        {messages.map((m, i) => (
-          <div key={m.id}>{renderMessage(m, i)}</div>
-        ))}
-        {footer}
-      </div>
+      <>
+        {header ? <div ref={headerRef}>{header}</div> : null}
+        <div ref={listRef} className="august-message-list mx-auto w-full max-w-3xl px-4 py-8 space-y-5 relative">
+          {messages.map((m, i) => (
+            <div key={m.id}>{renderMessage(m, i)}</div>
+          ))}
+          {footer}
+        </div>
+      </>
     );
   }
 
   return (
-    <div className="august-message-list mx-auto w-full max-w-3xl px-4 py-8 relative" style={{ height: `${virt.getTotalSize() + 80}px` }}>
+    <>
+    {header ? <div ref={headerRef}>{header}</div> : null}
+    <div ref={listRef} className="august-message-list mx-auto w-full max-w-3xl px-4 py-8 relative" style={{ height: `${virt.getTotalSize() + 80}px` }}>
       {virt.getVirtualItems().map((row) => {
         const m = messages[row.index];
         return (
@@ -89,5 +125,6 @@ export function VirtualizedMessageList({
         </div>
       ) : null}
     </div>
+    </>
   );
 }
