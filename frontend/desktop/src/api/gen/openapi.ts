@@ -1467,6 +1467,13 @@ export interface paths {
          *
          *     Part 17 Phase C: ``sort``/``category``/``source``/``confidence`` move
          *     filtering and ordering server-side so they hold past the fetch cap.
+         *     ``scope`` and ``status`` join them for the same reason — the library's
+         *     scope picker and its retired count must be store facts, not facts about
+         *     the page currently in memory.
+         *
+         *     A filter whose column a store does not have is SKIPPED, not an error (the
+         *     documented behaviour of every filter here), so a caller must only ask a
+         *     store about a column it has: ``status`` and ``scope`` are facts columns.
          */
         get: operations["getBrainStore_api_brain_stores__name__get"];
         put?: never;
@@ -12231,6 +12238,10 @@ export interface operations {
                 source?: string;
                 /** @description Server-side confidence filter (C-3) */
                 confidence?: string;
+                /** @description Server-side scope filter: 'global' or 'bot:<id>' */
+                scope?: string;
+                /** @description Server-side status filter: 'active' or 'retired' (facts only) */
+                status?: string;
             };
             header?: never;
             path: {

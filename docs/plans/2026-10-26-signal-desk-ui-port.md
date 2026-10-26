@@ -66,9 +66,16 @@ copy/SVG/PNG actions.
 - The mobile companion loads the same SPA at phone width; keep the <760 tier.
 - No feature is deleted to make the mockup fit.
 
-## Status — 2026-10-26 (working tree, NOT committed)
+## Status — 2026-10-26
 
 **Done and verified in the running app:**
+
+Two backend doors the Library needed were wired rather than worked around:
+`GET /api/brain/stores/{name}` now forwards `scope` and `status` to
+`brain_browse` (the service accepted `scope` and no route passed it), and
+`description` joins the facts browse column list (written by the store, read by
+recall, patched by the whitelist, and selected by nobody — so the human browse
+rendered every fact with an empty description).
 
 - Phase 1 shell: serif editorial type, 276px sidebar with workspace card, New
   thread, search, Threads/Charts/Artifacts/Settings, a More group that keeps
@@ -85,6 +92,19 @@ copy/SVG/PNG actions.
 - Phase 5: Settings is a route page, not a dialog; the rail, search, grouping
   and every existing section are preserved; section changes no longer remount
   the page.
+- Phase 6 Library (Settings → Memory / Skills): the mockup's `#scaleDoc`
+  screen — tabs with counts, four stat cards, search + type chips + scope/sort,
+  hairline rows grouped under a sticky scope head, a sticky detail pane, a
+  range footer with paging, and a bulk bar. Every number is a server fact and
+  every gesture exists; see the file header of
+  `frontend/desktop/src/sections/settings/LibrarySection.tsx` for the four
+  mockup affordances that were CUT rather than faked (skill "Updates",
+  "Open folder", human-initiated Retire, Marketplace sources). The old panels
+  are not deleted: `memory-tools` and `skills-tools` are hidden registry doors
+  (searchable, deep-linkable) and each Library head carries an "All tools"
+  button to them.
+- Scroll-away thread intro above the transcript, virtualizer-safe through a
+  measured `scrollMargin`.
 - Composer handoff fix: `api/ui-events.ts` and the composer disagreed on the
   event name and the detail shape, so every seed action (launchpad cards,
   command-palette insert/focus, Charts actions) was silently dead. Fixed and
@@ -92,7 +112,6 @@ copy/SVG/PNG actions.
 
 **Still open:**
 
-- Memory/Skills library visual port (coordinate with the 2026-10-25 gap plan).
 - Interiors of Automations, Runs, Board, Live, History, Learning, Docs (they
   inherit the shell, serif page headers and nav now, but keep their old bodies).
 - The paper-light token pass (the mockup's #f4f1e8) and a focused-motion/a11y

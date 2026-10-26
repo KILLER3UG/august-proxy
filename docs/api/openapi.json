@@ -7199,7 +7199,7 @@
     },
     "/api/brain/stores/{name}": {
       "get": {
-        "description": "Read-only paginated browse of one brain store (Memory settings page).\n\nPart 17 Phase C: ``sort``/``category``/``source``/``confidence`` move\nfiltering and ordering server-side so they hold past the fetch cap.",
+        "description": "Read-only paginated browse of one brain store (Memory settings page).\n\nPart 17 Phase C: ``sort``/``category``/``source``/``confidence`` move\nfiltering and ordering server-side so they hold past the fetch cap.\n``scope`` and ``status`` join them for the same reason — the library's\nscope picker and its retired count must be store facts, not facts about\nthe page currently in memory.\n\nA filter whose column a store does not have is SKIPPED, not an error (the\ndocumented behaviour of every filter here), so a caller must only ask a\nstore about a column it has: ``status`` and ``scope`` are facts columns.",
         "operationId": "getBrainStore_api_brain_stores__name__get",
         "parameters": [
           {
@@ -7293,6 +7293,32 @@
               "description": "Server-side confidence filter (C-3)",
               "maxLength": 16,
               "title": "Confidence",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Server-side scope filter: 'global' or 'bot:<id>'",
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "Server-side scope filter: 'global' or 'bot:<id>'",
+              "maxLength": 96,
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Server-side status filter: 'active' or 'retired' (facts only)",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "Server-side status filter: 'active' or 'retired' (facts only)",
+              "maxLength": 24,
+              "title": "Status",
               "type": "string"
             }
           }

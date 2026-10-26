@@ -63,6 +63,8 @@ import {
   CheckCircle2,
   Zap,
   Target,
+  DatabaseBackup,
+  WandSparkles,
 } from 'lucide-react';
 
 /** Visibility tier for the rail. `basic` items are shown in the rail;
@@ -375,29 +377,21 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   {
     id: 'memory-knowledge',
     label: 'Memory',
-    description: 'Auto-captured memories and key-value notes August has learned, per project or global.',
+    description: 'The memory library: every fact, note and rule August holds, with the project layer beside them.',
     icon: BrainCircuit,
     category: 'capabilities',
     tier: 'basic',
     settingHints: [
-      'Model can read memories on demand',
-      'Auto-recall memories each session',
-      'Model can write memories',
-      'Learn from finished conversations',
-      'Sensitive topics excluded from memory',
-      'Backups & restore',
-      'Restore a save point',
-      'Purge memory',
+      'Add memory',
+      'Import memories',
+      'Restore a retired memory',
+      'Search facts, keys, or scope',
+      'Project memory entries',
     ],
     settingAliases: [
-      'memory auto inject',
-      'auto-inject memories',
-      'memoryAutoInject',
-      'memory review',
-      'conversation review',
-      'model memory read',
-      'model memory writes',
-      'sensitive topics',
+      'memory library',
+      'memory browser',
+      'retired facts',
     ],
     keywords: [
       'memory',
@@ -422,6 +416,50 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       'project-memories',
       'memory-timeline',
       'memory-sessions',
+    ],
+  },
+  {
+    // The switches are not browse controls, and the Library deliberately does
+    // not carry them: they live on one page so a setting is never edited from
+    // two surfaces. Hidden tier, so it is deep-linkable and searchable — the
+    // hints below are what a search for the switch lands on.
+    id: 'memory-tools',
+    label: 'Memory tools',
+    description: 'The memory switches, the store budget, the consolidation pass and the database backups.',
+    icon: DatabaseBackup,
+    category: 'capabilities',
+    tier: 'hidden',
+    settingHints: [
+      'Model can read memories on demand',
+      'Auto-recall memories each session',
+      'Model can write memories',
+      'Learn from finished conversations',
+      'Sensitive topics excluded from memory',
+      'Backups & restore',
+      'Restore a save point',
+      'Purge memory',
+      'Store budget',
+      'Run consolidation',
+    ],
+    settingAliases: [
+      'memory auto inject',
+      'auto-inject memories',
+      'memoryAutoInject',
+      'memory review',
+      'conversation review',
+      'model memory read',
+      'model memory writes',
+      'sensitive topics',
+      'fact budget',
+    ],
+    keywords: [
+      'memory switches',
+      'brain config',
+      'consolidation',
+      'store budget',
+      'memory backup',
+      'memory restore',
+      'integrity',
     ],
   },
   {
@@ -469,7 +507,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   {
     id: 'skills',
     label: 'Skills',
-    description: 'Create, edit, and manage agent skills and their lifecycle (active / stale / archived).',
+    description: 'The skill library: what is installed, what is enabled, and what each one actually says.',
     icon: BookOpen,
     category: 'capabilities',
     tier: 'basic',
@@ -477,12 +515,29 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       'Enable / disable a skill',
       'Skill scope project agent bundled',
       'Skill versions and history',
-      'Learning proposals',
       'Install skill packs',
+      'Search skills, tags, or authors',
+    ],
+    keywords: ['skill', 'skills', 'skill library', 'install skill'],
+    legacyAliases: ['skills-authoring'],
+  },
+  {
+    // The authoring half of Skills — the SKILL.md editor, the curator, the
+    // proposal queue and the trash roster — is a workbench, not a browse.
+    // The Library's "All tools" button is the way in.
+    id: 'skills-tools',
+    label: 'Skill tools',
+    description: 'Author and edit SKILL.md, run the curator, approve learning proposals, and restore a deleted skill.',
+    icon: WandSparkles,
+    category: 'capabilities',
+    tier: 'hidden',
+    settingHints: [
+      'Learning proposals',
+      'Approve a skill proposal',
+      'Skill trash and restore',
+      'Curator pass',
     ],
     keywords: [
-      'skill',
-      'skills',
       'author',
       'create',
       'edit',
@@ -493,8 +548,10 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       'pin',
       'project skills',
       'shadowing',
+      'skill trash',
+      'skill editor',
     ],
-    legacyAliases: ['skills-authoring', 'skill-curator'],
+    legacyAliases: ['skill-curator'],
   },
   {
     id: 'prompt-templates',

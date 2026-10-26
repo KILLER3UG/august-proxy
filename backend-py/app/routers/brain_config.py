@@ -118,11 +118,20 @@ async def getBrainStore(
     category: str = Query('', max_length=64, description='Server-side category filter (C-3)'),
     source: str = Query('', max_length=64, description='Server-side source filter (C-3)'),
     confidence: str = Query('', max_length=16, description='Server-side confidence filter (C-3)'),
+    scope: str = Query('', max_length=96, description="Server-side scope filter: 'global' or 'bot:<id>'"),
+    status: str = Query('', max_length=24, description="Server-side status filter: 'active' or 'retired' (facts only)"),
 ):
     """Read-only paginated browse of one brain store (Memory settings page).
 
     Part 17 Phase C: ``sort``/``category``/``source``/``confidence`` move
     filtering and ordering server-side so they hold past the fetch cap.
+    ``scope`` and ``status`` join them for the same reason — the library's
+    scope picker and its retired count must be store facts, not facts about
+    the page currently in memory.
+
+    A filter whose column a store does not have is SKIPPED, not an error (the
+    documented behaviour of every filter here), so a caller must only ask a
+    store about a column it has: ``status`` and ``scope`` are facts columns.
     """
     from app.services.memory_store.brain import brain_browse
 
@@ -135,6 +144,8 @@ async def getBrainStore(
         category=category,
         source=source,
         confidence=confidence,
+        scope=scope,
+        status=status,
     )
     if result.get('error') and not result.get('total') and 'not available' in str(result.get('error')):
         raise HTTPException(status_code=404, detail=result['error'])

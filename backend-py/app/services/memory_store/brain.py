@@ -33,7 +33,13 @@ _BRAINStores: dict[str, dict[str, object]] = {
         'fts': None,
         'columns': (
             'id, fact_key, fact_value, title, kind, category, source, confidence, '
+            # `description` is the one-line recall hook (fact_retrieval reads it,
+            # rest.py writes it, _EDITABLE below allows patching it) and it was
+            # absent from this list, so the human browse door — the one surface
+            # that shows a memory to a person — rendered every fact with an
+            # empty description while the model's lane had the real one.
             'use_count, last_used_at, status, expires_at, scope, created_at, updated_at, '
+            'description, '
             # 055: the supersession lineage (M-3) and the trust signals
             # (M-7, M-8). The Memory UI reads them to show "replaces N",
             # "superseded by X" and a conflict badge, and the detail view
@@ -594,6 +600,7 @@ def brain_browse(
     source: str = '',
     confidence: str = '',
     scope: str = '',
+    status: str = '',
 ) -> dict[str, object]:
     """Paginated browse over a brain store for the settings UI.
 
@@ -607,6 +614,10 @@ def brain_browse(
     Part 26 6.7: optional ``scope`` equality filter (the UI lists all
     scopes by design — the human door — but a per-scope view was
     impossible).
+    ``status`` is the same equality filter for the retirement flag, and it
+    exists because the library needs a RETIRED count: without it the number
+    on the card could only be counted off the fetched page, which is a claim
+    about a window and not about the store.
     """
     conn = _conn()
     resolved = _resolve_store(store)
@@ -652,7 +663,7 @@ def brain_browse(
                 params.extend([f'%{q}%'] * len(searchCols))
         # Server-side equality filters (only columns the table actually has,
         # so a filter on one store never 500s another).
-        for key, val in (('category', category), ('source', source), ('confidence', confidence)):
+        for key, val in (('category', category), ('source', source), ('confidence', confidence), ('status', status)):
             v = (val or '').strip()
             if not v:
                 continue

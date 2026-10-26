@@ -48,6 +48,17 @@ import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 import { loadLastModel } from '@/sections/chat/model-display';
 import { absoluteDate, cn, timeAgo } from '@/lib/utils';
+import {
+  FACTS_DETAILS_FIELD,
+  FACTS_VALUE_FIELD,
+  asUtc,
+  absoluteDay,
+  composeFactValue,
+  parseFactValue,
+  shortUpdated,
+  stampTime,
+  summarizeKvValue,
+} from '@/lib/memory-values';
 import { ImportMemoryDialog } from './ImportMemoryDialog';
 
 type Row = Record<string, unknown>;
@@ -191,40 +202,6 @@ function toCamel(key: string): string {
 
 /** facts.factValue is stored as JSON; the remember tool writes
  * {"fact","details"} when details are present. Unwrap for display. */
-function parseFactValue(raw: unknown): { summary: string; details?: string } {
-  const s = str(raw);
-  try {
-    const obj = JSON.parse(s) as unknown;
-    if (obj && typeof obj === 'object' && typeof (obj as Row).fact === 'string') {
-      const o = obj as Row;
-      return {
-        summary: str(o.fact),
-        details: typeof o.details === 'string' ? o.details : undefined,
-      };
-    }
-    return { summary: s };
-  } catch {
-    return { summary: s };
-  }
-}
-
-/** Part 27 C3: a KV note's summary is its first line, clamped — never the
- *  whole raw value (a legacy blob used to render 29 KB of JSON as one line).
- *  The full value (pretty-printed when it parses as JSON) rides in details. */
-function summarizeKvValue(raw: unknown): { summary: string; details: string } {
-  const s = str(raw);
-  const firstLine = (s.split('\n')[0] || '').trim();
-  const summary =
-    firstLine.length > 160 ? `${firstLine.slice(0, 160).trimEnd()}…` : firstLine || '(empty)';
-  let details = s;
-  try {
-    const parsed = JSON.parse(s);
-    if (parsed && typeof parsed === 'object') details = JSON.stringify(parsed, null, 2);
-  } catch {
-    /* not JSON — keep raw */
-  }
-  return { summary, details };
-}
 
 const STORE_META: Record<string, StoreMeta> = {
   facts: {
@@ -288,15 +265,8 @@ function deriveKind(store: string, r: Row): EntryKind {
 const KIND_EDITABLE_STORE = 'facts';
 
 /* SQLite's datetime('now') is UTC and serialises as "YYYY-MM-DD HH:MM:SS" with
- * no zone marker, which JS then reads as LOCAL time: on a UTC+8 machine a fact
- * learned two minutes ago rendered as "8h ago", and an expiry was judged eight
- * hours early. Tag the zone before parsing anything from the store wire. Only
- * that exact shape is touched — a date-only ISO or a real offset passes
- * through. */
-function asUtc(stamp: string): string {
-  const s = (stamp || '').trim();
-  return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/.test(s) ? `${s.replace(' ', 'T')}Z` : s;
-}
+ * no zone marker — the tagging rule lives in lib/memory-values.ts (asUtc),
+ * shared with the Library so the two doors cannot disagree about a date. */
 
 function hasExpiry(r: Row): boolean {
   return str(r.expiresAt).trim() !== '';
@@ -305,12 +275,12 @@ function hasExpiry(r: Row): boolean {
 /** C-8: a fact whose expiresAt is in the past — visually separated from
  *  live expiring rows (which still have time left). */
 function isExpired(r: Row): boolean {
-  const t = Date.parse(asUtc(str(r.expiresAt)));
+  const t = stampTime(r.expiresAt);
   return Number.isFinite(t) && t < Date.now();
 }
 
 function sortTime(r: Row, meta: StoreMeta | undefined): number {
-  const t = Date.parse(asUtc(meta?.updated?.(r) ?? ''));
+  const t = stampTime(meta?.updated?.(r) ?? '');
   return Number.isFinite(t) ? t : 0;
 }
 
@@ -350,38 +320,9 @@ interface FlatEntry {
   verifiedAt: string;
 }
 
-/** The row's right-hand date, the way the reference reads it: "Updated Aug 21"
- *  this year, "Updated Aug 21, 2025" when the memory is older. */
-function shortUpdated(stamp: string): string {
-  const t = Date.parse(asUtc(stamp));
-  if (!Number.isFinite(t)) return '';
-  const d = new Date(t);
-  const now = new Date();
-  // Every getter here is the UTC one ON PURPOSE. The store writes
-  // `YYYY-MM-DD HH:MM:SS`, which `asUtc` tags as UTC; formatting that instant in
-  // the machine's zone prints the previous calendar day for every user west of
-  // Greenwich (measured: a 02:00Z stamp read "Oct 16" in America/New_York).
-  const sameYear = d.getUTCFullYear() === now.getUTCFullYear();
-  const month = d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' });
-  return sameYear
-    ? `Updated ${month} ${d.getUTCDate()}`
-    : `Updated ${month} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
-}
-
-/** A day, not a timestamp: the detail view's "Last updated" field, where the
- *  reference shows "Aug 21, 2026". The store's own stamp is
- *  `YYYY-MM-DD HH:MM:SS` (UTC, no zone marker) and used to be printed raw into
- *  the header — a storage format in a place meant to read like a date. */
-function absoluteDay(stamp: string): string {
-  const t = Date.parse(asUtc(stamp));
-  if (!Number.isFinite(t)) return '';
-  return new Date(t).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    timeZone: 'UTC',
-  });
-}
+/** The row's right-hand date ("Updated Aug 21") and the detail view's day
+ *  ("Aug 21, 2026") are `shortUpdated` / `absoluteDay` from
+ *  lib/memory-values.ts — the same two the Library renders, UTC on purpose. */
 
 const UNIFIED_FETCH = 200;
 const UNIFIED_RENDER = 50;
@@ -409,11 +350,9 @@ const EDIT_FIELD_LABELS = new Map<string, string>([
   ['scope', 'Scope'],
 ]);
 
-/** The facts store's two boxes: the summary it stores, and the details it
- *  stores INSIDE the same value. Named once, because a snake_case column
- *  name in this file is a computed access, never a member expression. */
-const FACTS_VALUE_FIELD = 'fact_value';
-const FACTS_DETAILS_FIELD = 'fact_details';
+/** The facts store's two boxes — the summary column and the details composed
+ *  INSIDE it — are named in lib/memory-values.ts, where the Library reads the
+ *  same pair. */
 
 /* What a row says out loud in the merged list: the memory itself, not the slug
  * the store keys it by. Facts and KV notes both stored their text behind a
@@ -883,15 +822,14 @@ export function MemorySection({ active }: { active: { id: string } }) {
       patch[k] = k === 'confidence' ? Number(v || 0) : v;
     }
     // The shape the read side already understands, and the shape the
-    // model's own `remember` tool and the bulk-import door both write.
-    // A fact with no details stays a plain string - byte-identical to
-    // what the panel wrote before.
+    // model's own `remember` tool and the bulk-import door both write — so
+    // the composition is one function in lib/memory-values.ts, shared with
+    // the Library. A fact with no details stays a plain string.
     if (activeStore === 'facts') {
-      const summary = (editDraft[FACTS_VALUE_FIELD] ?? '').trim();
-      const details = (editDraft[FACTS_DETAILS_FIELD] ?? '').trim();
-      patch[FACTS_VALUE_FIELD] = details
-        ? JSON.stringify({ fact: summary, details })
-        : summary;
+      patch[FACTS_VALUE_FIELD] = composeFactValue(
+        editDraft[FACTS_VALUE_FIELD] ?? '',
+        editDraft[FACTS_DETAILS_FIELD] ?? '',
+      );
     }
     editMut.mutate({ store: activeStore, id, patch });
   };

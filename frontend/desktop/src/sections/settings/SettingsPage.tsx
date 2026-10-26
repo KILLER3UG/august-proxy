@@ -352,6 +352,7 @@ const PromptTemplatesWrapper = lazySection(() => import('./PromptTemplatesSectio
 const PrivacyWrapper = lazySection(() => import('./PrivacySection'), 'PrivacySection');
 const PhonePairingWrapper = lazySection(() => import('./PhonePairingSection'), 'PhonePairingSection');
 const MemoryWrapper = lazySection(() => import('./MemorySection'), 'MemorySection');
+const LibraryWrapper = lazySection(() => import('./LibrarySection'), 'LibrarySection');
 const GoalsWrapper = lazySection(() => import('./GoalsSection'), 'GoalsSection');
 const HealthSimulatorWrapper = lazySection(() => import('./HealthSimulatorSection'), 'HealthSimulatorSection');
 
@@ -381,7 +382,10 @@ export const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps
   // Merged: the old `tools-connections` door and the read-only plugin
   // roster are one door now, and it is the writable integrations panel.
   plugins: ToolsConnectionsWrapper,
-  skills: SkillsWrapper,
+  // The Library is the browse surface for both doors; the old panels stay
+  // mounted as the hidden `*-tools` doors so nothing they own is unreachable.
+  skills: LibraryWrapper,
+  'skills-tools': SkillsWrapper,
   'model-families': ModelFamiliesWrapper,
   'conversations-history': ConversationsHistoryWrapper,
   'agents-automation': AgentsAutomationWrapper,
@@ -399,9 +403,13 @@ export const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps
   'phone-pairing': PhonePairingWrapper,
   'prompt-templates': PromptTemplatesWrapper,
   privacy: PrivacyWrapper,
-  'memory-knowledge': MemoryWrapper,
+  'memory-knowledge': LibraryWrapper,
   goals: GoalsWrapper,
-  'memory-facts': MemoryWrapper,
+  'memory-facts': LibraryWrapper,
+  // The switches, the store budget, the consolidation pass and the backups
+  // still live on the old page — one implementation, reached from the
+  // Library's "All tools" button and from Settings search.
+  'memory-tools': MemoryWrapper,
   'health-simulator': HealthSimulatorWrapper,
 };
 
