@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowUpRight, Download, FileText, Image as ImageIcon, LineChart } from 'lucide-react';
+import { ArrowUpRight, Copy, Download, FileText, Image as ImageIcon, LineChart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { collectArtifacts, type SessionArtifact } from '@/lib/artifacts';
 import { useSessionStream } from '@/sections/chat/hooks/useSessionStream';
@@ -17,6 +17,8 @@ import { openFileInDrawer } from '@/lib/file-kind';
 import { closeRightDrawer } from './RightDrawerState';
 import { RightDrawerNotesSection } from './RightDrawerNotesSection';
 import { dispatchInsertComposerText } from '@/api/ui-events';
+import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { timeAgo } from '@/lib/utils';
 import type { FileAttachment } from '@/types/chat';
 
@@ -39,6 +41,7 @@ function downloadAttachment(file: FileAttachment): void {
 }
 
 export function RightDrawerCanvasSection({ sessionId }: { sessionId: string | null }) {
+  const navigate = useNavigate();
   const stream = useSessionStream(sessionId);
   const messages = useMemo(() => stream?.messages ?? [], [stream?.messages]);
   const artifacts = useMemo(() => collectArtifacts(messages), [messages]);
@@ -90,6 +93,18 @@ export function RightDrawerCanvasSection({ sessionId }: { sessionId: string | nu
 
   const openArtifact = (artifact: SessionArtifact) => {
     void openFileInDrawer(artifact.href, sessionId ?? undefined);
+  };
+
+  const copyPath = () => {
+    const path = preview?.path || chartArtifact?.href;
+    if (!path) {
+      toast.info('No chart file to copy yet.');
+      return;
+    }
+    void navigator.clipboard.writeText(path).then(
+      () => toast.success('Chart path copied.'),
+      () => toast.error('Could not copy the path.'),
+    );
   };
 
   return (
@@ -232,6 +247,39 @@ export function RightDrawerCanvasSection({ sessionId }: { sessionId: string | nu
             <RightDrawerNotesSection sessionId={sessionId} />
           </div>
         )}
+      </div>
+
+      <div className="flex items-center gap-1.5 border-t border-border/40 px-3 py-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 gap-1.5 px-2 text-[0.68rem] text-muted-foreground/65"
+          onClick={copyPath}
+        >
+          <Copy className="size-3" />
+          Copy path
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 gap-1.5 px-2 text-[0.68rem] text-muted-foreground/65"
+          onClick={() => preview && downloadAttachment(preview)}
+          disabled={!preview?.dataUrl}
+        >
+          <Download className="size-3" />
+          Download
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          className="ml-auto h-7 gap-1.5 px-2.5 text-[0.68rem]"
+          onClick={() => void navigate('/charts')}
+        >
+          Open in Charts
+          <ArrowUpRight className="size-3" />
+        </Button>
       </div>
     </div>
   );

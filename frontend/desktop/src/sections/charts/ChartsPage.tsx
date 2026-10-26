@@ -11,13 +11,15 @@
  * consume a ChartDef and nothing else.
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowUpRight, Plus, Upload } from 'lucide-react';
+import { ArrowUpRight, Copy, Download, Plus, Upload } from 'lucide-react';
+import { toast } from 'sonner';
 import { SectionHeader } from '@/components/SectionHeader';
 import { Button } from '@/components/ui/button';
 import { dispatchInsertComposerText } from '@/api/ui-events';
 import { createSession } from '@/store/sessions';
+import { copyFigurePng, downloadFigurePng } from '@/lib/svg-figure';
 import { cn } from '@/lib/utils';
 
 type ChartMode = 'line' | 'area' | 'bars';
@@ -410,6 +412,7 @@ export function ChartsPage() {
   const navigate = useNavigate();
   const [selectedKey, setSelectedKey] = useState(CHART_DEFS[0].key);
   const [mode, setMode] = useState<ChartMode>(CHART_DEFS[0].defaultMode);
+  const chartHostRef = useRef<HTMLDivElement>(null);
   const chart = useMemo(
     () => CHART_DEFS.find((item) => item.key === selectedKey) ?? CHART_DEFS[0],
     [selectedKey],
@@ -418,6 +421,22 @@ export function ChartsPage() {
   const selectChart = (next: ChartDef) => {
     setSelectedKey(next.key);
     setMode(next.defaultMode);
+  };
+
+  const chartSvg = () => chartHostRef.current?.querySelector('svg') as SVGSVGElement | null;
+  const downloadChart = () => {
+    const svg = chartSvg();
+    if (!svg) return;
+    void downloadFigurePng(svg, chart.title)
+      .then(() => toast.success('Chart downloaded as PNG.'))
+      .catch(() => toast.error('Could not export the chart.'));
+  };
+  const copyChart = () => {
+    const svg = chartSvg();
+    if (!svg) return;
+    void copyFigurePng(svg)
+      .then(() => toast.success('Chart copied as a PNG.'))
+      .catch(() => toast.error('Copy is blocked here — use Download instead.'));
   };
 
   const seed = (text: string) => {
@@ -481,8 +500,32 @@ export function ChartsPage() {
                 ))}
               </div>
             )}
+            <div className="flex items-center gap-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="size-7 text-muted-foreground/60"
+                onClick={downloadChart}
+                title="Download chart as PNG"
+                aria-label="Download chart as PNG"
+              >
+                <Download className="size-3.5" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="size-7 text-muted-foreground/60"
+                onClick={copyChart}
+                title="Copy chart as image"
+                aria-label="Copy chart as image"
+              >
+                <Copy className="size-3.5" />
+              </Button>
+            </div>
           </div>
-          <div className="px-1">
+          <div ref={chartHostRef} className="px-1">
             {chart.kind === 'donut' ? <DonutChart chart={chart} /> : <SeriesChart chart={chart} mode={mode} />}
           </div>
           <div className="mt-4 flex items-center gap-2 px-1 font-mono text-[0.65rem] text-muted-foreground/55">
