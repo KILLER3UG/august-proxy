@@ -358,7 +358,7 @@ details[open] > summary .disclosure-chevron {
 }
 
 .august-sidebar-nav {
-  padding-top: 0.9rem;
+  padding-top: 0;
 }
 
 .august-sidebar-brand {
@@ -554,9 +554,10 @@ details[open] > summary .disclosure-chevron {
  * screen's one loud element, still under the 44–72px `.hero-display` that
  * belongs to onboarding. */
 .august-empty-state .august-empty-title {
+  font-family: var(--font-editorial);
   font-size: var(--font-display);
-  font-weight: 650;
-  letter-spacing: -0.04em;
+  font-weight: 500;
+  letter-spacing: -0.03em;
   line-height: 1.1;
 }
 

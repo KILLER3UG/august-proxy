@@ -10,6 +10,7 @@ import { toast } from 'sonner';
  *  `RightDrawer.test.tsx` asserts the tab order and the "+" picker together
  *  cover it. */
 export const ALL_SECTION_IDS = [
+  'canvas',
   'preview',
   'diff',
   'terminal',
@@ -57,6 +58,7 @@ const MAX_SECTIONS = 4;
  *  (`toggleBottomTerminal`), it does not open a tab, and there is no drawer
  *  renderer for it. Do not add one back without retiring the dock. */
 export const SECTION_ORDER: RightDrawerSectionId[] = [
+  'canvas',
   'preview',
   'diff',
   'terminal',

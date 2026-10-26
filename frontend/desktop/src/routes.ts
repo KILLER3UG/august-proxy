@@ -4,6 +4,7 @@ import { type ReactNode, lazy, Suspense } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import {
   LayoutDashboard,
+  LineChart,
   MessageSquare,
   Mic,
   Bot,
@@ -45,6 +46,9 @@ const BoardPage = lazy(() =>
 );
 const ArtifactsPage = lazy(() =>
   import('@/sections/artifacts/ArtifactsPage').then((m) => ({ default: m.ArtifactsPage })),
+);
+const ChartsPage = lazy(() =>
+  import('@/sections/charts/ChartsPage').then((m) => ({ default: m.ChartsPage })),
 );
 const HistoryPage = lazy(() =>
   import('@/sections/history/HistoryPage').then((m) => ({ default: m.HistoryPage })),
@@ -127,6 +131,13 @@ export const SECTION_ROUTES: readonly SectionRoute[] = [
     label: 'Board',
     Icon: Kanban,
     element: React.createElement(LazySection, { name: 'Board' }, React.createElement(BoardPage)),
+    nav: true,
+  },
+  {
+    path: '/charts',
+    label: 'Charts',
+    Icon: LineChart,
+    element: React.createElement(LazySection, { name: 'Charts' }, React.createElement(ChartsPage)),
     nav: true,
   },
   {

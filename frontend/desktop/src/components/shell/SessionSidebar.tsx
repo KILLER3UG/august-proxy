@@ -13,8 +13,8 @@ interface SessionSidebarProps {
   onNavigate: (path: string) => void;
 }
 
-const SIDEBAR_WIDTH_KEY = "august-session-sidebar-width";
-const DEFAULT_WIDTH = 320;
+const SIDEBAR_WIDTH_KEY = "august-session-sidebar-width-v2";
+const DEFAULT_WIDTH = 276;
 const MIN_WIDTH = 220;
 const MAX_VIEWPORT_FRACTION = 0.33;
 

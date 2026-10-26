@@ -29,8 +29,8 @@ export function SectionHeader({ title, subtitle, actions, className }: Props) {
   return (
     <header className={cn('flex items-start justify-between gap-4 mb-6', className)}>
       <div className="min-w-0">
-        <h2 className="text-xl font-semibold tracking-tight text-foreground">{title}</h2>
-        {subtitle && <p className="mt-1 text-[0.8125rem] text-muted-foreground">{subtitle}</p>}
+        <h2 className="font-editorial text-[1.75rem] font-medium leading-[1.15] tracking-[-0.025em] text-foreground">{title}</h2>
+        {subtitle && <p className="mt-1.5 text-[0.8125rem] text-muted-foreground">{subtitle}</p>}
       </div>
       {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
     </header>

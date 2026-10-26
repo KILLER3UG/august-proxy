@@ -4,8 +4,7 @@
 /* the Settings overlay route. The previous `/workspace/*` routes were     */
 /* retired when Settings absorbed the panel.                                   */
 
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useFocusTrap } from '@/hooks/useFocusTrap';
+import { type ReactNode, useMemo, useRef, useState } from 'react';
 import { useSettingsFieldLink } from '@/hooks/useSettingsFieldLink';
 import {
   ArrowUpCircle,
@@ -13,17 +12,15 @@ import {
   Globe,
   LineChart,
   Settings2,
-  X,
   type LucideIcon,
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { WorkspaceNavLink } from './WorkspaceNavLink';
 import { SettingsSearch } from '@/components/settings/SettingsSearch';
 import {
-  SETTINGS_BACKDROP_CLASS,
   SETTINGS_COLUMN_CLASS,
   SETTINGS_CONTENT_CLASS,
-  SETTINGS_PANEL_CLASS,
+  SETTINGS_PAGE_CLASS,
   SETTINGS_RAIL_CLASS,
 } from '@/components/settings/SettingsFrame';
 import { useAppUpdate } from '@/hooks/useAppUpdate';
@@ -65,7 +62,6 @@ export function WorkspaceShell({
   active,
   children,
 }: WorkspaceShellProps) {
-  const trapRef = useFocusTrap<HTMLDivElement>(true);
   const navigate = useNavigate();
   const location = useLocation();
   const [query, setQuery] = useState('');
@@ -182,26 +178,8 @@ export function WorkspaceShell({
     return railRowCount;
   }, [railRowCount, filtered, isFiltering]);
 
-  const closeToWorkspace = useCallback(() => {
-    // Return to the exact chat the user came from (saved when navigating into
-    // /settings), not always "/".
-    const back = sessionStorage.getItem('pre-settings-path');
-    void navigate(back && back !== location.pathname ? back : '/');
-    sessionStorage.removeItem('pre-settings-path');
-  }, [navigate, location.pathname]);
-
-  // Escape closes the panel the way it does in Claude — the surface is
-  // transient, so it should leave the way a dialog does.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented) return;
-      const nestedDialogOpen = Array.from(document.querySelectorAll('[role="dialog"]'))
-        .some((dialog) => dialog !== trapRef.current);
-      if (!nestedDialogOpen) closeToWorkspace();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [location.pathname, location.search, closeToWorkspace, trapRef]);
+  // The page is a route now; the sidebar and the titlebar are the way out.
+  // The old Escape/click-outside dismiss belonged to the dialog.
 
   /** The CONTROL a query matched inside this section, if any: "auto inject" →
    *  Memory → "Auto-recall memories…". Only meaningful while filtering. */
@@ -280,49 +258,11 @@ export function WorkspaceShell({
 
 
   return (
-    /* Settings is a panel floating over the workspace rather than a page that
-     * replaces it: the chat stays behind, and the panel owns its own scroll so
-     * no section can stretch the frame.
-     *
-     * The frame's CLASSES come from `components/settings/SettingsFrame.tsx`,
-     * which is also what renders while this module's chunk is still loading —
-     * so the placeholder and the panel are the same box by construction. Read
-     * the sizing and scrim rationale there.
-     *
-     * Click-outside-to-close works because the dialog stops propagation, so
-     * only a click on the exposed app dismisses. */
-    <div
-      className={SETTINGS_BACKDROP_CLASS}
-      onClick={closeToWorkspace}
-      data-testid="settings-backdrop"
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Settings"
-        ref={trapRef}
-        className={SETTINGS_PANEL_CLASS}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Left rail — its width and the fixed panel height it stretches to
-            live with the classes in SettingsFrame. What belongs here is that
-            the rail's own `nav` is the
-            scroller: 17 section rows overflow any panel height, and a rail that
-            grows instead of scrolling pushes the profile footer out of a panel
-            with `overflow-hidden`. */}
-        <aside
-          className={SETTINGS_RAIL_CLASS}
-          aria-label="Settings sections"
-        >
-          <div className="px-3 pb-2 pt-3">
+    <div className={SETTINGS_PAGE_CLASS} data-testid="settings-page">
+      <aside className={SETTINGS_RAIL_CLASS} aria-label="Settings sections">
+        <div className="px-3 pb-2 pt-3">
           <SettingsSearch value={query} onChange={setQuery} />
           {isFiltering && (
-            /* Search reaches EVERY section, the 26 hidden ones included — that
-             * is deliberate, since they are deep-linkable and otherwise
-             * unreachable. So the honest denominator is the whole registry,
-             * not the 17 rows the rail draws: naming the rail count too is
-             * what stops "2 of 43" reading as a contradiction of a 17-row
-             * list. Announced because filtering a rail is otherwise silent. */
             <p
               className="mt-1.5 px-1 text-xs text-muted-foreground/70"
               role="status"
@@ -335,16 +275,9 @@ export function WorkspaceShell({
         <nav className="min-h-0 flex-1 overflow-y-auto pb-3 pt-1" aria-label="Settings">
           {isFiltering && totalShown === 0 ? (
             <div className="px-4 py-6 text-center text-xs text-muted-foreground">
-              No sections match{' '}
-              <span className="font-mono">&ldquo;{query}&rdquo;</span>.
+              No sections match <span className="font-mono">&ldquo;{query}&rdquo;</span>.
             </div>
           ) : (
-            /* One shape for both modes — a labelled group over its rows. The
-             * searching rail used to wrap each group in a tinted
-             * `bg-sidebar-accent/40` panel that the resting rail did not have,
-             * so the same list changed its grouping metaphor the moment you
-             * typed. The reference has borderless rows with a label above them
-             * in both states; this is that. */
             <div className="flex flex-col gap-1 px-2 py-1">
               {Array.from((isFiltering ? filtered : railGroups).entries()).map(
                 ([category, items]) => (
@@ -360,45 +293,17 @@ export function WorkspaceShell({
             </div>
           )}
         </nav>
-
-        {/* Bottom profile row — mirrors the reference design's pinned identity
-            footer. Routes to the local Accounts manager. */}
         <ProfileRailRow />
       </aside>
 
-      {/* The content region and its reading column: the widths and the
-         * centred-in-the-space-the-rail-leaves rule live with the classes in
-         * SettingsFrame, next to the placeholder that shares them.
-         *
-         * contentRef scopes the ?field= deep link to the section body, so a
-         * control search never resolves against the rail that listed it.
-         * overflow-x-hidden: wide children (tables, pre) must not give the
-         * whole settings pane a horizontal scrollbar. */}
-        <div
-          ref={contentRef}
-          className={SETTINGS_CONTENT_CLASS}
-          data-testid="settings-content-region"
-        >
-          <div
-            className={SETTINGS_COLUMN_CLASS}
-            data-testid="settings-content-column"
-          >
-            {children}
-          </div>
+      <div
+        ref={contentRef}
+        className={SETTINGS_CONTENT_CLASS}
+        data-testid="settings-content-region"
+      >
+        <div className={SETTINGS_COLUMN_CLASS} data-testid="settings-content-column">
+          {children}
         </div>
-
-        {/* Claude puts the dismiss control at the top-right of the content pane,
-            not in the nav rail — the rail is for moving around inside. */}
-        <button
-          type="button"
-          onClick={closeToWorkspace}
-          aria-label="Close settings"
-          title="Close settings (Esc)"
-          data-testid="settings-close"
-          className="absolute right-3 top-3 z-10 rounded-lg p-1.5 text-muted-foreground/70 transition hover:bg-muted/60 hover:text-foreground"
-        >
-          <X className="size-4" />
-        </button>
       </div>
     </div>
   );

@@ -50,9 +50,13 @@
     /* Shell chrome — one titlebar height, one drawer-header height.
        The CSS classes that used to hardcode 2.85rem !important next to the
        h-10 utility claimed to own this and disagreed by 5.6px. */
-    --shell-titlebar-h: 44px;
+    --shell-titlebar-h: 56px;
     --shell-drawer-header-h: 48px;
     --shell-inset-x: clamp(1rem, 3vw, 2rem);
+    /* Editorial display face — the Signal Desk mockup's serif. System fonts
+     * only: the desktop targets Windows and macOS, where Palatino/Iowan are
+     * present; Georgia is the cross-platform floor. */
+    --font-editorial: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
     /* Type sizes named by the Text size setting must be in `rem`: the setting
      * scales the ROOT font-size (see :root[data-text-size] below), so the two
      * sizes it is named after were the only two in the app that did NOT scale
@@ -146,6 +150,16 @@
     --dt-info-fg: #1d4ed8;
     --dt-danger: #d2503f;
     --dt-danger-fg: #b91c1c;
+
+    /* Chart series — the Signal Desk palette. Used by the Charts page and the
+     * Canvas; theme-paired so a chart's legend and lines stay legible on paper
+     * and on charcoal. */
+    --dt-chart-1: #2456d8;
+    --dt-chart-2: #a64f34;
+    --dt-chart-3: #a77e3e;
+    --dt-chart-4: #7d5a6e;
+    --dt-chart-5: #6f7b85;
+    --dt-chart-6: #5d7e70;
 
     /* RGB triplets so Tailwind alpha modifiers work on status colors
      * (bg-success/15, border-danger/30, …) without a per-step class. */
@@ -295,6 +309,14 @@
     --dt-danger: #f0766a;
     --dt-danger-fg: #fca5a5;
 
+    /* Chart series — see the :root pair. */
+    --dt-chart-1: #6f9bff;
+    --dt-chart-2: #e08a6a;
+    --dt-chart-3: #e0b35c;
+    --dt-chart-4: #c48aa9;
+    --dt-chart-5: #8fa3b8;
+    --dt-chart-6: #6fbfad;
+
     /* RGB triplets — see :root above. */
     --dt-success-rgb: 69 192 138;
     --dt-warning-rgb: 224 179 65;
@@ -362,6 +384,7 @@
   .august-chat-column pre,
   .august-chat-column code,
   .font-mono { font-size: var(--font-code); }
+  .font-editorial { font-family: var(--font-editorial); }
   .august-composer textarea { font-size: max(16px, var(--font-input)) !important; }
 
   h1 { font-size: 1.375rem;  line-height: 1.25; letter-spacing: -0.022em; font-weight: 600; }

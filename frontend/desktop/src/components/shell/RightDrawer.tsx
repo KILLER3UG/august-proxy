@@ -46,6 +46,7 @@ import { RightDrawerNotesSection } from './RightDrawerNotesSection';
 import { RightDrawerFileSection } from './RightDrawerFileSection';
 import { RightDrawerSubagentsSection } from './RightDrawerSubagentsSection';
 import { RightDrawerArtifactsSection } from './RightDrawerArtifactsSection';
+import { RightDrawerCanvasSection } from './RightDrawerCanvasSection';
 import { RightDrawerCircuitSection } from './RightDrawerCircuitSection';
 import { RightDrawerJobsSection } from './RightDrawerJobsSection';
 import { RoutinesPane } from '@/components/sidebar/RoutinesPane';
@@ -308,6 +309,7 @@ export function RightDrawer({
  *  so the pane names itself the same way wherever the user meets it. Typed as
  *  a full `Record` over the union, so a new section id cannot render blank. */
 const TAB_META: Record<RightDrawerSectionId, { label: string; Icon: typeof FileDiff }> = {
+  canvas: { label: 'Canvas', Icon: GalleryVertical },
   preview: { label: 'Preview', Icon: Play },
   diff: { label: 'Diffs', Icon: FileDiff },
   terminal: { label: 'Terminal', Icon: TerminalSquare },
@@ -482,6 +484,8 @@ function renderSection(
   },
 ) {
   switch (sectionId) {
+    case 'canvas':
+      return <RightDrawerCanvasSection sessionId={ctx.sessionId} />;
     case 'preview':
       return (
         <RightDrawerPreviewSection

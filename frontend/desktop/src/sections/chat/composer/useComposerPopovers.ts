@@ -15,6 +15,13 @@ import {
   type SetStateAction,
 } from 'react';
 import { api } from '@/api/client';
+import {
+  clearPendingComposerInsert,
+  FOCUS_COMPOSER_EVENT,
+  INSERT_COMPOSER_TEXT_EVENT,
+  takePendingComposerInsert,
+  type ComposerTextSeed,
+} from '@/api/ui-events';
 import { useSessionsStore } from '@/store/sessions';
 import { voiceCommandEvents } from '@/api/voice/registry-events';
 import { getDisplayCommands } from '@/api/voice/registry';
@@ -544,19 +551,54 @@ export function useComposerPopovers({
     [setInput, showCommandsDropdown, taRef, mentionQuery],
   );
 
-  // Insert-text custom event from other UI (e.g. cards) into the composer.
-  useEffect(() => {
-    const handleInsertText = (e: Event) => {
-      const customEvent = e as CustomEvent<string>;
-      if (customEvent.detail) {
-        insertText(customEvent.detail);
+  // Seeds fired while navigating (Charts/launchpad → a chat whose composer
+  // mounts after the event) are handed off through module state.
+  const applyComposerSeed = useCallback(
+    (seed: ComposerTextSeed) => {
+      if (!seed.text) return;
+      if (seed.replace) {
+        const current = taRef.current?.value ?? '';
+        if (!current.trim()) setInput(seed.text);
+        else setInput(`${current}${current.endsWith(' ') ? '' : ' '}${seed.text}`);
+      } else {
+        insertText(seed.text);
       }
+      taRef.current?.focus();
+    },
+    [insertText, setInput, taRef],
+  );
+
+  const pendingSeedRead = useRef(false);
+  useEffect(() => {
+    if (pendingSeedRead.current) return;
+    pendingSeedRead.current = true;
+    const pending = takePendingComposerInsert();
+    if (pending) applyComposerSeed(pending);
+  }, [applyComposerSeed]);
+
+  // Composer events from other UI (cards, command palette, layout actions).
+  // The names and the detail shape come from api/ui-events — this listener
+  // used a hyphenated name and a string detail while the dispatcher sent a
+  // colon name and `{ text }`, so every seed action was silently dead.
+  useEffect(() => {
+    const handleInsertText = (event: Event) => {
+      const detail = (event as CustomEvent<ComposerTextSeed>).detail;
+      if (!detail?.text) return;
+      clearPendingComposerInsert();
+      applyComposerSeed(detail);
     };
-    window.addEventListener('august-insert-composer-text', handleInsertText);
+    const handleFocus = () => taRef.current?.focus();
+    window.addEventListener(INSERT_COMPOSER_TEXT_EVENT, handleInsertText);
+    window.addEventListener(FOCUS_COMPOSER_EVENT, handleFocus);
+    // Close the narrow gap between the mount effect and this listener: a seed
+    // dispatched between them would otherwise be lost.
+    const racePending = takePendingComposerInsert();
+    if (racePending) applyComposerSeed(racePending);
     return () => {
-      window.removeEventListener('august-insert-composer-text', handleInsertText);
+      window.removeEventListener(INSERT_COMPOSER_TEXT_EVENT, handleInsertText);
+      window.removeEventListener(FOCUS_COMPOSER_EVENT, handleFocus);
     };
-  }, [insertText]);
+  }, [applyComposerSeed, taRef]);
 
   return {
     composerRootRef,

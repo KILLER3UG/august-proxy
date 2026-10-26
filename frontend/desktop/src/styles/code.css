@@ -225,6 +225,187 @@
   color: var(--dt-muted-foreground);
 }
 
+/* ── Study prose: editorial headings, quieter tables, callouts ────────
+ * The Signal Desk study answer treats a long explanation as a document, not
+ * as chat bubbles. These rules are deliberately scoped to rendered markdown
+ * so tool output, code blocks and the composer keep the UI sans stack. */
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3 {
+  font-family: var(--font-editorial);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+.markdown-content h1 { font-size: 1.55rem; }
+.markdown-content h2 { font-size: 1.35rem; }
+.markdown-content h3 { font-size: 1.1rem; }
+
+.markdown-content th {
+  font-family: 'JetBrains Mono Variable', ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
+  font-size: 0.65rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dt-muted-foreground);
+}
+.markdown-content td {
+  font-size: 0.84rem;
+  font-variant-numeric: tabular-nums;
+}
+.markdown-content table {
+  display: table;
+  table-layout: fixed;
+  width: 100%;
+  overflow-x: visible;
+}
+.markdown-content th,
+.markdown-content td {
+  overflow-wrap: anywhere;
+}
+.markdown-content tbody tr:hover {
+  background-color: color-mix(in srgb, var(--dt-muted) 55%, transparent);
+}
+
+.markdown-content blockquote {
+  margin: 1rem 0;
+  padding: 0.7rem 0.9rem;
+  border-left: 2px solid var(--dt-primary);
+  border-radius: 0 0.5rem 0.5rem 0;
+  background: color-mix(in srgb, var(--dt-primary) 5%, transparent);
+  color: var(--dt-fg-2);
+}
+.markdown-content blockquote p {
+  margin-bottom: 0.35rem;
+}
+.markdown-content blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+/* ── SVG study figures ─────────────────────────────────────────────── */
+.markdown-figure {
+  position: relative;
+  margin: 1rem 0 1.1rem;
+  border: 1px solid color-mix(in srgb, var(--dt-border) 78%, transparent);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--dt-card) 62%, transparent);
+  overflow: visible;
+}
+.markdown-figure-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem 0 0.85rem;
+}
+.markdown-figure-kicker {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--dt-muted-foreground);
+  font-family: 'JetBrains Mono Variable', ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
+  font-size: 0.625rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.markdown-figure-kicker::after {
+  content: "";
+  width: 1.5rem;
+  height: 1px;
+  background: var(--dt-border);
+}
+.markdown-figure-menu {
+  position: relative;
+  margin-left: auto;
+}
+.markdown-figure-menu > summary {
+  list-style: none;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--dt-muted-foreground);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.14s ease, background-color 0.14s ease, color 0.14s ease;
+}
+.markdown-figure-menu > summary::-webkit-details-marker { display: none; }
+.markdown-figure:hover .markdown-figure-menu > summary,
+.markdown-figure:focus-within .markdown-figure-menu > summary,
+.markdown-figure-menu[open] > summary { opacity: 1; }
+.markdown-figure-menu > summary:hover {
+  background: var(--dt-muted);
+  color: var(--dt-foreground);
+}
+.markdown-figure-menu-body {
+  position: absolute;
+  right: 0;
+  top: 28px;
+  z-index: 30;
+  min-width: 200px;
+  padding: 5px;
+  border: 1px solid var(--dt-border);
+  border-radius: 8px;
+  background: var(--dt-popover);
+  box-shadow: var(--elev-overlay);
+}
+.markdown-figure-menu-body a {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.5rem;
+  border-radius: 5px;
+  color: var(--dt-fg-2);
+  font-size: 0.75rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.markdown-figure-menu-body a:hover {
+  background: var(--dt-muted);
+  color: var(--dt-foreground);
+}
+.markdown-figure-menu-body a svg { flex: 0 0 auto; color: var(--dt-muted-foreground); }
+.markdown-figure-menu-body kbd {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--dt-muted-foreground);
+  font-size: 0.625rem;
+}
+.markdown-figure-frame { padding: 2px 0.6rem 0; }
+.markdown-figure-frame svg { display: block; width: 100%; height: auto; }
+.markdown-figure figcaption {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0 0.85rem 0.7rem;
+  color: var(--dt-muted-foreground);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+.markdown-figure figcaption strong {
+  font-weight: 500;
+  color: var(--dt-fg-2);
+}
+.markdown-figure-type {
+  margin-left: auto;
+  font-family: 'JetBrains Mono Variable', ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
+  font-size: 0.5625rem;
+  letter-spacing: 0.1em;
+  color: var(--dt-muted-foreground);
+  opacity: 0.7;
+}
+.markdown-figure--pending {
+  padding: 0.75rem 0.85rem;
+  border-style: dashed;
+  color: var(--dt-muted-foreground);
+  font-size: 0.75rem;
+}
+@media (hover: none) {
+  .markdown-figure-menu > summary { opacity: 1; }
+}
+
 /* ── Edit rail row — header faces + code panel ─────────────────────── */
 .edit-rail-verb {
   flex: 0 1 auto;

@@ -36,7 +36,6 @@ import { loadComposerDraft } from "@/sections/chat/message-storage";
 import { ConfirmDialog } from "@/components/overlays/ConfirmDialog";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { isUserOwnedPanelRoute } from "@/components/overlays/modal-layers";
 
 const SESSIONS_COLLAPSED_KEY = "august-sessions-collapsed";
 
@@ -552,61 +551,25 @@ export function ChatLayout() {
     };
   }, []);
 
-  // Settings is a DIALOG over a live app, not a page that replaces it.
-  // While /settings/* is open, the chat surface keeps rendering against the
-  // BACKGROUND location — where the user actually was — so streams keep
-  // running, scroll survives, and ✕/Escape restores instantly. The dialog
-  // renders from the real location via its own <Routes> below.
-  // The matcher is case-INSENSITIVE (React Router lowercases before matching,
-  // `caseSensitive` is off for every route here) and this prefix test was not,
-  // so `/Settings/general` matched a route, failed this check, and the overlay
-  // <Routes> never mounted — a blank main column with no dialog and no error.
-  // Same URL, two verdicts, one of them silent.
-  const isSettings = isUserOwnedPanelRoute(location.pathname);
-  const backgroundRef = useRef<{ pathname: string; search: string } | null>(null);
-  if (isSettings && backgroundRef.current === null) {
-    // Cold boot straight onto a settings deep link: the last non-settings
-    // path of this tab, else the chat root. (Pointing at `/` can mint a
-    // blank session — the same thing a cold boot at `/` does; the ghost
-    // sweep cleans those if they are never used.)
-    try {
-      const saved = sessionStorage.getItem("pre-settings-path");
-      if (saved) {
-        const url = new URL(saved, "http://localhost");
-        backgroundRef.current = { pathname: url.pathname, search: url.search };
-      }
-    } catch {
-      /* ignore */
-    }
-    backgroundRef.current = backgroundRef.current ?? { pathname: "/", search: "" };
-  }
-  useEffect(() => {
-    if (!isSettings) {
-      backgroundRef.current = { pathname: location.pathname, search: location.search };
-      try {
-        sessionStorage.setItem("pre-settings-path", location.pathname + location.search);
-      } catch {
-        /* ignore */
-      }
-    }
-  }, [isSettings, location.pathname, location.search]);
-  const background = backgroundRef.current ?? { pathname: "/", search: "" };
-
+  // Settings is a PAGE in the Signal Desk port: it replaces the chat in the
+  // main column instead of floating over it. The old background-location /
+  // inerted-shell split lived here and went with the dialog.
   // Responsive tiers are container queries on the shell (styles/chat.css).
   // The scrims are real DOM so click-outside works and Escape has a target.
   const shell = useShellWidth();
+  // One stable key for every /settings/:section path: the page's own section
+  // renderer is what swaps, not the whole surface (remounting the rail on
+  // every tab would lose its search and flash the panel).
+  const surfaceKey = location.pathname.startsWith('/settings')
+    ? '/settings'
+    : location.pathname;
 
   return (
     <div ref={shell.ref} className="august-shell h-full min-h-0 flex flex-col overflow-hidden bg-background text-foreground">
-      {/* INERT while the settings dialog is open. `aria-modal` names the
-          modality; `inert` is what actually enforces it for pointer, focus
-          and assistive tech — §4.4 recorded the gap ("aria-modal without
-          inert"). The dialog renders OUTSIDE this subtree (sibling below), so
-          it stays live, and any portal a section opens (dropdowns, palettes
-          go to document.body) escapes the inert ancestor too. The dialog's
-          own transparent backdrop remains the click-away target: an inerted
-          background never receives the click in the first place. */}
-      <div className="august-shell-body flex-1 flex min-h-0 overflow-hidden" inert={isSettings || undefined}>
+      {/* Shell body: sidebar + main column. Settings is a route inside this
+          column now, so nothing here is inerted and the chat does not keep
+          rendering behind an overlay. */}
+      <div className="august-shell-body flex-1 flex min-h-0 overflow-hidden">
         {shell.sidebarOverlays && !collapsed && (
           <div
             className="absolute inset-0 z-30 bg-scrim"
@@ -645,17 +608,7 @@ export function ChatLayout() {
                 aria-hidden
               />
             )}
-            {/* The chat surface renders against the background location while
-                settings is open, so the dialog floats over a LIVE app (the
-                reference: "the chat is dimmed behind it" — backdrop tint
-                removed in §11.6, the app simply stays put). App.tsx still
-                declares the full route tree for matching and deep links;
-                ChatLayout renders the matched elements itself:
-                  • background <Routes> — every non-settings surface;
-                  • overlay <Routes> — /settings, against the real location.
-                The motion key uses the background pathname on settings paths
-                so crossing into/out of settings does not remount the chat. */}
-            <ErrorBoundary key={isSettings ? background.pathname : location.pathname}>
+            <ErrorBoundary key={surfaceKey}>
               <>
                 {/* Full-width chat column — scroll container spans the full
                     chat-area width so the thumb sits at the chat-area edge.
@@ -676,16 +629,20 @@ export function ChatLayout() {
                       actually supposed to look like, and it needs no presence
                       gate — `initial`/`animate` run on mount. */}
                   <motion.div
-                    key={isSettings ? background.pathname : location.pathname}
+                    key={surfaceKey}
                     initial={{ opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
                     className="h-full min-w-0 flex-1"
                   >
-                    <Routes location={isSettings ? background : undefined}>
+                    <Routes>
                       {CHAT_SURFACE_ROUTES.map((route) => (
                         <Route key={route.path} path={route.path} element={route.element} />
                       ))}
+                      {/* Settings is one route per path, rendered in the main
+                          column like every other surface. */}
+                      <Route path="/settings" element={<SettingsPageRoute />} />
+                      <Route path="/settings/:section" element={<SettingsPageRoute />} />
                       {/* The catch-all lives HERE, in the Routes that
                           actually render. App.tsx's tree declares the
                           matching, but this layout renders NO <Outlet/> -
@@ -729,29 +686,6 @@ export function ChatLayout() {
               it. The dead `StatusBar` component was deleted with this comment. */}
         </div>
       </div>
-      {/* The settings dialog is a SIBLING of the inerted shell-body — inside
-          it, `inert` would disable the dialog itself. Still fixed-positioned
-          (z-50), so DOM order has no visual effect.
-
-          TWO FLAT ROUTES, one element per path. The shape is NOT what fixed the
-          rail. test/settingsRouteElement.test.tsx measures the two explanations
-          that used to be written here and both are false: a parent element DOES
-          see a param matched by its child route, and a hoisted module-level
-          element does NOT stop React re-rendering the subtree. What actually
-          froze the panel was the presence gate inside SettingsPage
-          (`AnimatePresence mode="wait"`), which has since come out. The flat
-          routes stay because one route per path is the simpler thing to reason
-          about, not because nesting was broken.
-
-          The visible failure, for the record: the URL moved to
-          /settings/appearance while the panel stayed on General — caught driving
-          the real app, invisible to every test that mounts SettingsPage directly. */}
-      {isSettings && (
-        <Routes>
-          <Route path="/settings" element={<SettingsPageRoute />} />
-          <Route path="/settings/:section" element={<SettingsPageRoute />} />
-        </Routes>
-      )}
       <ConfirmDialog
         open={confirmState.open}
         title={confirmState.title}

@@ -1,11 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { marked, type Tokens } from 'marked';
 import katex from 'katex';
+import { toast } from 'sonner';
 import { highlightCode } from '@/lib/code-highlight';
 import { demoteRenderedHeadings } from '@/lib/markdownHeadings';
 import { convertMathInHtml } from '@/lib/markdownMath';
 import { safeExternalHref } from '@/lib/safe-href';
 import { COPY_ICON_SVG } from '@/lib/icons';
+import {
+  copyFigurePng,
+  downloadFigurePng,
+  downloadFigureSvg,
+  renderSvgFigure,
+} from '@/lib/svg-figure';
 
 const COPY_PLACEHOLDER_ATTR = 'data-copy-placeholder';
 const COPY_CODE_ATTR = 'data-copy-code';
@@ -55,6 +62,17 @@ function renderLink(this: LinkRendererThis, token: Tokens.Link): string {
 function renderCode(token: Tokens.Code): string {
   const rawLang = (token.lang || '').trim();
   const displayLang = rawLang ? rawLang.split(/\s+/)[0] : 'code';
+  // A ```svg fence is a DIAGRAM, not a code sample. It is sanitized by
+  // lib/svg-figure before it reaches the DOM; the code renderer's normal
+  // highlight path stays for every other language.
+  if (displayLang.toLowerCase() === 'svg') {
+    if (liveMarkdownParse) {
+      return `<div class="markdown-figure markdown-figure--pending">SVG diagram — rendering when the turn settles…</div>`;
+    }
+    const caption = rawLang.split(/\s+/).slice(1).join(' ');
+    const figure = renderSvgFigure(token.text, caption);
+    if (figure) return figure;
+  }
   const langClass = rawLang ? ` class="hljs language-${escapeAttr(rawLang)}"` : ' class="hljs"';
   const code = escapeAttr(token.text);
   // Skip highlight.js while streaming — full re-highlight every flush was the
@@ -147,6 +165,34 @@ export class SizedCache<K, V> {
   /** Test/diagnostic read — the budget is the thing worth asserting on. */
   get approxChars(): number {
     return this.total;
+  }
+}
+
+/** The figure menu is plain HTML inside dangerouslySetInnerHTML, so its
+ *  actions are delegated from the markdown container. */
+function handleSvgFigureAction(figure: HTMLElement, action: string): void {
+  const svg = figure.querySelector<SVGSVGElement>('svg.markdown-svg');
+  if (!svg) return;
+  const title = figure.dataset.svgTitle || 'SVG diagram';
+  if (action === 'copy') {
+    void copyFigurePng(svg)
+      .then(() => toast.success('Diagram copied as a PNG.'))
+      .catch(() => toast.error('Copy is blocked here — use Download as PNG instead.'));
+    return;
+  }
+  if (action === 'svg') {
+    try {
+      downloadFigureSvg(svg, title);
+      toast.success('Downloaded the diagram as SVG.');
+    } catch {
+      toast.error('Could not export the diagram.');
+    }
+    return;
+  }
+  if (action === 'png') {
+    void downloadFigurePng(svg, title)
+      .then(() => toast.success('Downloaded the diagram as PNG.'))
+      .catch(() => toast.error('Could not render the diagram.'));
   }
 }
 
@@ -543,6 +589,15 @@ export function Markdown({
     if (!el) return;
 
     function handleClick(e: MouseEvent) {
+      const figureAction = (e.target as HTMLElement).closest<HTMLElement>('[data-svg-action]');
+      if (figureAction) {
+        e.preventDefault();
+        const figure = figureAction.closest<HTMLElement>('[data-svg-figure]');
+        const details = figureAction.closest('details');
+        if (details) details.open = false;
+        if (figure) handleSvgFigureAction(figure, figureAction.dataset.svgAction || '');
+        return;
+      }
       const btn = (e.target as HTMLElement).closest<HTMLElement>(`[${COPY_CODE_ATTR}]`);
       if (!btn) return;
       const code = btn.getAttribute(COPY_CODE_ATTR);
@@ -559,8 +614,27 @@ export function Markdown({
       }
     }
 
+    function closeFigureMenus(event: MouseEvent) {
+      document.querySelectorAll<HTMLDetailsElement>('details.markdown-figure-menu[open]').forEach((details) => {
+        if (!details.contains(event.target as Node)) details.open = false;
+      });
+    }
+
+    function closeFigureMenusOnEscape(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return;
+      document.querySelectorAll<HTMLDetailsElement>('details.markdown-figure-menu[open]').forEach((details) => {
+        details.open = false;
+      });
+    }
+
     el.addEventListener('click', handleClick);
-    return () => el.removeEventListener('click', handleClick);
+    document.addEventListener('click', closeFigureMenus);
+    document.addEventListener('keydown', closeFigureMenusOnEscape);
+    return () => {
+      el.removeEventListener('click', handleClick);
+      document.removeEventListener('click', closeFigureMenus);
+      document.removeEventListener('keydown', closeFigureMenusOnEscape);
+    };
   }, []);
 
   // Syntax colors are applied in renderCode (highlight.js). During live

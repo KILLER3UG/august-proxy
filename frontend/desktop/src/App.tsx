@@ -102,10 +102,10 @@ export default function App() {
               match anymore and therefore the child routes will never
               render" - and it was right, twice over.
 
-              The descendant <Routes> that ChatLayout renders (the
-              background-location split) is what actually draws the app,
-              and React Router only lets a descendant <Routes> match
-              deeper locations when the parent route's path ends in "*".
+              The descendant <Routes> that ChatLayout renders is what
+              actually draws the app, and React Router only lets a
+              descendant <Routes> match deeper locations when the parent
+              route's path ends in "*".
 
               And the catch-all cannot live up here at all: ChatLayout
               renders NO <Outlet/> - the surfaces come from its own
@@ -113,7 +113,7 @@ export default function App() {
               branch that matched and then rendered NOTHING. An unknown
               URL (a stale bookmark, a mistyped path) showed the app
               shell with no chat in it. The catch-all is in ChatLayout's
-              background <Routes>, where it can actually render.
+              <Routes>, where it can actually render.
 
               The route table's paths stay ABSOLUTE because the nav links
               to them; they are made relative HERE, at the one place
@@ -127,16 +127,6 @@ export default function App() {
               }
               return <Route key={route.path} path={rel} element={route.element} />;
             })}
-            {/* Single parent keeps the settings match stable across tab
-                changes. The element is null ON PURPOSE: ChatLayout renders
-                the settings dialog from its own <Routes> (background-location
-                split — the chat stays live behind the dialog), so anything
-                mounted here via the layout's never-rendered <Outlet> would
-                be dead code. */}
-            <Route path="settings" element={null}>
-              <Route index element={null} />
-              <Route path=":section" element={null} />
-            </Route>
             {ALL_ROUTES.filter((r) => r.path === '/_design').map((route) => (
               <Route key={route.path} path={route.path.replace(/^\//, '')} element={route.element} />
             ))}

@@ -31,6 +31,14 @@ export const UI_ACTION_EVENT = 'august:ui-action';
 export const FOCUS_COMPOSER_EVENT = 'august:focus-composer';
 export const INSERT_COMPOSER_TEXT_EVENT = 'august:insert-composer-text';
 
+export interface ComposerTextSeed {
+  text: string;
+  /** A card seed: fill an empty composer exactly, otherwise append. */
+  replace?: boolean;
+}
+
+let pendingComposerSeed: ComposerTextSeed | null = null;
+
 export function dispatchUiAction(detail: UiActionEvent): void {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent(UI_ACTION_EVENT, { detail }));
@@ -41,9 +49,25 @@ export function dispatchFocusComposer(): void {
   window.dispatchEvent(new CustomEvent(FOCUS_COMPOSER_EVENT));
 }
 
-export function dispatchInsertComposerText(text: string): void {
+/** Seed the composer. The event reaches a MOUNTED composer immediately; the
+ *  module-level handoff covers the other case — a seed fired while navigating
+ *  to a chat whose composer mounts after the event has passed (Charts → New
+ *  chart → a fresh thread). The composer consumes it on mount. */
+export function dispatchInsertComposerText(text: string, options: { replace?: boolean } = {}): void {
   if (typeof window === 'undefined') return;
-  window.dispatchEvent(new CustomEvent(INSERT_COMPOSER_TEXT_EVENT, { detail: { text } }));
+  const seed: ComposerTextSeed = { text, replace: options.replace };
+  pendingComposerSeed = seed;
+  window.dispatchEvent(new CustomEvent(INSERT_COMPOSER_TEXT_EVENT, { detail: seed }));
+}
+
+export function takePendingComposerInsert(): ComposerTextSeed | null {
+  const seed = pendingComposerSeed;
+  pendingComposerSeed = null;
+  return seed;
+}
+
+export function clearPendingComposerInsert(): void {
+  pendingComposerSeed = null;
 }
 
 /**

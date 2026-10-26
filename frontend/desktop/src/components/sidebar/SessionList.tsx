@@ -101,6 +101,14 @@ function ShownOfTotal({ shown, total }: { shown: number; total: number }) {
   );
 }
 
+/** Compact token count for the sidebar usage card (18.4M, 912k). */
+function formatCompactTokens(tokens: number): string {
+  if (!Number.isFinite(tokens) || tokens <= 0) return '0';
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
+  if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}k`;
+  return String(Math.round(tokens));
+}
+
 /** Project sub-heading INSIDE a leaf pool (a folder, or Unfiled).
  *
  *  Deliberately NOT a <Section>: `Section` gates its action buttons on the
@@ -931,6 +939,24 @@ export function SessionList({
     retry: false,
   });
 
+  // Sidebar usage card — the same /api/usage/stats door the Usage page reads,
+  // one 30-day aggregate. It is the only sidebar query that is not per chat.
+  const usageStats = useQuery({
+    queryKey: ['usage', 'stats', '30d'],
+    queryFn: () => usageApi.stats('30d'),
+    staleTime: 60_000,
+    refetchInterval: 120_000,
+    retry: false,
+  });
+
+  const activeSession = sessions.find(
+    (s) => s.id === activeId || s.workbenchSessionId === activeId,
+  );
+  const activeWorkspacePath = activeSession?.workspacePath ?? null;
+  const activeWorkspaceName = activeWorkspacePath
+    ? folderNameFromPath(activeWorkspacePath)
+    : null;
+
   return (
     <SessionUsageProvider value={usageBySession.data?.results ?? NO_DELTAS}>
     <div ref={rootRef} className="august-session-list flex h-full text-sm relative select-none bg-sidebar">
@@ -948,10 +974,8 @@ export function SessionList({
           onNavigate={onNavigate}
           onToggleCollapsed={onToggleCollapsed}
           activePath={typeof window !== 'undefined' ? window.location.pathname : ''}
-          workspaceName={(() => {
-            const s = sessions.find((x) => x.id === activeId || x.workbenchSessionId === activeId);
-            return s?.workspacePath ? folderNameFromPath(s.workspacePath) : null;
-          })()}
+          workspaceName={activeWorkspaceName}
+          workspacePath={activeWorkspacePath}
         />
 
         {/* Sessions | Bots — a two-state switch, and the WRITER for
@@ -1161,7 +1185,7 @@ export function SessionList({
           )}
 
           <Section
-            title="Read"
+            title="Recent"
             count={searching ? shownOthers : readOthers.length}
             viewOptions={{
               sortBy,
@@ -1294,10 +1318,27 @@ export function SessionList({
           </div>
         ) : null}
 
+        {/* Usage strip + identity — the mockup's sidebar footer. The usage
+            number is the same 30-day aggregate the Usage page reads, not a
+            second accounting of the per-row deltas. */}
+        <div className="px-2 pb-1.5 pt-2 border-t border-sidebar-border/40">
+          <div className="rounded-lg border border-sidebar-border/45 bg-sidebar-accent/20 px-2.5 py-1.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-[0.625rem] text-sidebar-foreground/45">Last 30 days</span>
+              <span className="font-mono text-[0.75rem] tabular-nums text-sidebar-foreground">
+                {usageStats.data ? formatCompactTokens(usageStats.data.totalTokens) : '—'}
+              </span>
+            </div>
+            <div className="mt-0.5 text-[0.625rem] text-sidebar-foreground/35">
+              tokens{usageStats.data ? ` · ${usageStats.data.sessions} chats` : ''}
+            </div>
+          </div>
+        </div>
+
         {/* Bottom: user identity row — Claude-style username + avatar icon
             that opens the selection list (profile / settings / notifications /
             what's-new / account). Falls back to Guest when signed out. */}
-        <div className="px-2 pb-2 pt-1.5 border-t border-sidebar-border/40">
+        <div className="px-2 pb-2 pt-1 border-t border-sidebar-border/40">
           <div className="min-w-0">
             <UserDropdown
               selectedStatus={dropdownUser.status}
@@ -1336,9 +1377,11 @@ export function SessionList({
                     ) : null}
                     <AvatarFallback className="text-2xs">{dropdownUser.initials}</AvatarFallback>
                   </Avatar>
-                  <div className="min-w-0 flex-1 truncate text-[0.78125rem]">
-                    <span className="font-medium text-sidebar-foreground">{dropdownUser.name}</span>
-                    
+                  <div className="min-w-0 flex-1 text-[0.78125rem]">
+                    <span className="block truncate font-medium text-sidebar-foreground">{dropdownUser.name}</span>
+                    <span className="block truncate text-[0.625rem] text-sidebar-foreground/40">
+                      {signedIn ? 'Signed in' : 'Local workspace'}
+                    </span>
                   </div>
                   <ChevronUp className="size-3 shrink-0 text-muted-foreground/50" />
                 </motion.button>
