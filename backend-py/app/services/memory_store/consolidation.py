@@ -1891,6 +1891,14 @@ def run_consolidation(modelSummarize: bool | None = None) -> dict[str, object]:
     except Exception as exc:
         logger.warning('consolidation pass failed: %s', exc, exc_info=True)
         summary['error'] = str(exc)
+    # A pass retires/archives/merges many rows; the markdown mirror is
+    # regenerated once here rather than per mutation.
+    try:
+        from app.services.memory_store.mirror import rebuild_mirror
+
+        summary['mirrorFiles'] = rebuild_mirror()
+    except Exception:
+        logger.debug('memory mirror rebuild failed', exc_info=True)
     return summary
 
 

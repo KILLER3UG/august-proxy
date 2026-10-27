@@ -73,6 +73,9 @@ _CORE_SCHEMA_SQL = """
             sensitive INTEGER DEFAULT 0,
             version INTEGER DEFAULT 1,
             derived_from TEXT DEFAULT '[]',
+            -- 059: in-place edit history — the value immediately before the
+            -- latest change, set only when the content actually changed.
+            previous_value TEXT DEFAULT '',
             -- One key per SCOPE, not one key in the whole store. The old
             -- column-level UNIQUE forced every per-scope memory to be
             -- hand-namespaced by the caller, and the namespacing changed the
@@ -421,6 +424,8 @@ def _ensure_fact_signal_columns(conn: sqlite3.Connection) -> None:
     ensure_column(conn, 'facts', 'sensitive', 'INTEGER DEFAULT 0')
     ensure_column(conn, 'facts', 'version', 'INTEGER DEFAULT 1')
     ensure_column(conn, 'facts', 'derived_from', "TEXT DEFAULT '[]'")
+    # 059: in-place edit history ("now X, previously Y").
+    ensure_column(conn, 'facts', 'previous_value', "TEXT DEFAULT ''")
     # 055: the automation SOURCE stamp (M-12). `episodes.scope` is "whose
     # memory is this?"; the source is "what produced this?".
     ensure_column(conn, 'episodes', 'source', 'TEXT')
@@ -772,7 +777,8 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
 # v18: goal_envs.workspace (058) — a workspace is a project with its own root and bound.
 # v17: goal_envs / goal_runs / goal_artifacts / goal_movements / goal_claims /
 #      goal_marks (057) — the harness as the environment the agent works inside.
-_SCHEMA_USER_VERSION = 18
+# v19: facts.previous_value (059) — in-place edit history ("now X, previously Y").
+_SCHEMA_USER_VERSION = 19
 
 
 def _ensure_messages_fts(conn: sqlite3.Connection) -> None:

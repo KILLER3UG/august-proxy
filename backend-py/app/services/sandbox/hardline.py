@@ -220,7 +220,12 @@ _POLICY_FILE_NAMES = ('mcp-servers.json', 'automations.json', 'scheduled-jobs.js
 # The sanctioned writers use `Path.write_text` / `write_json_atomic` and are
 # NOT behind this door, which is the point: closing the tool door leaves the
 # pipeline route as the only one the model can take.
-_AGENT_STATE_DIRS = ('harness_proposals', 'refine_store')
+# `memory` — the markdown MIRROR of the facts store. The database it
+# derives from is already fenced below; a model that could write the
+# human-readable view could install instruction-shaped content beside
+# the facts a person reads to audit it. The sanctioned writer is
+# `memory_store.mirror`, which is not behind this door.
+_AGENT_STATE_DIRS = ('harness_proposals', 'refine_store', 'memory')
 _AGENT_STATE_FILES = ('kanban.json',)
 
 # The durable memory itself. Writing it bypasses the proposal door, the retire

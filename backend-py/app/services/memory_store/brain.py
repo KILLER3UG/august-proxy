@@ -47,6 +47,9 @@ _BRAINStores: dict[str, dict[str, object]] = {
             # `memory_schema._ensure_fact_signal_columns` on every boot.
             'superseded_by, supersedes, contradicts, verified_at, '
             'injected_count, last_injected_at, '
+            # 059: the value this row's latest edit replaced ("now X,
+            # previously Y") — the detail pane renders it when set.
+            'previous_value, '
             # 056: the main-goal record shape (aliases/tag/source session/
             # sensitive/version/derived_from) — the Memory UI shows the tag
             # marker and the detail reads them.

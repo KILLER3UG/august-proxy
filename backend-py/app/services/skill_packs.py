@@ -362,6 +362,20 @@ def _preview(plan: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _trashPackDir(source: Path, name: str) -> str:
+    """Route a pack-owned replacement or removal through the skill trash.
+
+    Every other skill mutation (patch, delete, restore) snapshots before it
+    writes; a pack reinstall or uninstall was the one path that deleted live
+    content with no undo. Trashing instead makes the replaced directory
+    addressable by ``restoreSkill`` like any delete.
+    """
+    from app.services.skill_service import _trashDir  # noqa: SLF001 — canonical trash door
+
+    trash_id, _ = _trashDir(source, name, scope='agent', restore_to=_agentRoot())
+    return trash_id
+
+
 def install_pack(source: str, *, confirm: bool = False) -> dict[str, Any]:
     """Preview, then (only with ``confirm=True``) install a skill pack.
 
@@ -406,6 +420,7 @@ def install_pack(source: str, *, confirm: bool = False) -> dict[str, Any]:
     entry = manifest.get(packName) or {}
     prevDirs = set(entry.get('skills') or [])
     installed: list[str] = []
+    trash_ids: list[str] = []
     refused = list(preview['refused'])
     byName = {str(item['dir']): item for item in plan['skills']}
     for sk in preview['skills']:
@@ -418,7 +433,11 @@ def install_pack(source: str, *, confirm: bool = False) -> dict[str, Any]:
             refused.append(f'{dirname}: agent skills dir {safe!r} already exists (not owned by this pack)')
             continue
         if target.exists():
-            shutil.rmtree(target)
+            try:
+                trash_ids.append(_trashPackDir(target, dirname))
+            except OSError as exc:
+                refused.append(f'{dirname}: could not preserve the previous copy: {exc}')
+                continue
         target.mkdir(parents=True)
         for rel, blob in files.items():
             dest = (target / rel).resolve()
@@ -441,11 +460,15 @@ def install_pack(source: str, *, confirm: bool = False) -> dict[str, Any]:
     for gone in prevDirs - set(installed):
         victim = root / gone
         if victim.is_dir():
-            shutil.rmtree(victim, ignore_errors=True)
+            try:
+                trash_ids.append(_trashPackDir(victim, gone))
+            except OSError as exc:
+                log.warning('pack %s: could not trash removed skill %s: %s', packName, gone, exc)
     return {
         'ok': True, 'pack': packName, 'rev': plan['rev'], 'skills': installed,
         'refused': refused, 'warnings': preview.get('warnings') or [],
         'findings': [f for sk in preview['skills'] for f in sk['findings']],
+        'trashIds': trash_ids,
         'note': 'skills appear in the catalogue next turn (load_skill by name)',
     }
 
@@ -466,11 +489,22 @@ def uninstall_pack(name: str) -> dict[str, Any]:
     if not isinstance(spec, dict):
         return {'ok': False, 'error': f'no installed pack {name!r}'}
     removed = []
+    trash_ids: list[str] = []
+    errors: list[str] = []
     for d in spec.get('skills') or []:
         victim = root / str(d)
         if victim.is_dir():
-            shutil.rmtree(victim, ignore_errors=True)
+            try:
+                trash_ids.append(_trashPackDir(victim, str(d)))
+            except OSError as exc:
+                # Leave the directory in place and keep it in the manifest —
+                # an undoable uninstall either fully protects its content or
+                # does not happen.
+                errors.append(f'{d}: {exc}')
+                continue
             removed.append(str(d))
+    if errors:
+        return {'ok': False, 'error': 'uninstall failed; nothing further removed', 'errors': errors, 'removed': removed}
     manifest.pop(name, None)
     _saveManifest(root, manifest)
-    return {'ok': True, 'pack': name, 'removed': removed}
+    return {'ok': True, 'pack': name, 'removed': removed, 'trashIds': trash_ids}

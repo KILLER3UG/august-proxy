@@ -189,6 +189,12 @@ def save_fact(
     if tagValue not in _TAG_VALUES:
         tagValue = _deriveFactTag(source)
     subjectValue = (subject_type or '').strip().lower()
+    # 2026-10-27: the ZCode memory vocabulary is accepted as input aliases
+    # (user -> profile, feedback -> preference, project -> area,
+    # reference -> topic) so prompts written in that dialect land canonically.
+    from app.services.memory_store.mirror import normalize_subject_type
+
+    subjectValue = normalize_subject_type(subjectValue)
     if subjectValue not in _SUBJECT_TYPES:
         subjectValue = _deriveSubjectType(kind, category)
     _valueTextForType = factValue if isinstance(factValue, str) else str(factValue or '')
@@ -265,6 +271,14 @@ def save_fact(
             source_session = CASE WHEN excluded.source_session != '' THEN excluded.source_session ELSE facts.source_session END,
             sensitive = CASE WHEN excluded.sensitive = 1 OR COALESCE(facts.sensitive, 0) = 1 THEN 1 ELSE 0 END,
             version = COALESCE(facts.version, 1) + 1,
+            -- 059: in-place edit history. The value this update REPLACES is
+            -- kept on the row (one deep — the immediately prior state), so an
+            -- edit reads as "now X, previously Y" rather than a silent
+            -- overwrite. Unchanged content keeps whatever history it had.
+            previous_value = CASE
+                WHEN facts.fact_value != excluded.fact_value THEN facts.fact_value
+                ELSE COALESCE(facts.previous_value, '')
+            END,
             derived_from = CASE WHEN excluded.derived_from != '[]' THEN excluded.derived_from ELSE facts.derived_from END,
             -- M-8: a RE-STATEMENT is the only verification this store can
             -- observe. `verified` is the caller's claim that a HUMAN wrote
@@ -311,6 +325,14 @@ def save_fact(
         from app.services.memory_store.fact_retrieval import invalidate_fact_index
 
         invalidate_fact_index(scope)
+    except Exception:
+        pass
+    # The markdown mirror is a derived view maintained as a write side
+    # effect; a failure here is logged there and never blocks the store.
+    try:
+        from app.services.memory_store.mirror import note_fact_changed
+
+        note_fact_changed(factKey)
     except Exception:
         pass
 
@@ -774,6 +796,12 @@ def delete_fact(factKey: str) -> bool:
             from app.services.memory_store.fact_retrieval import invalidate_fact_index
 
             invalidate_fact_index()
+        except Exception:
+            pass
+        try:
+            from app.services.memory_store.mirror import note_fact_changed
+
+            note_fact_changed(factKey)
         except Exception:
             pass
     return cursor.rowcount > 0

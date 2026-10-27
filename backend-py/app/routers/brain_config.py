@@ -38,6 +38,8 @@ Port of the deleted Node.js ``backend/index.js`` brain-config block
 
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, HTTPException, Query
 
 from app.models.camel_base import CamelModel
@@ -649,3 +651,38 @@ async def getSkillSuggestions(days: int = Query(30, ge=1, le=30), limit: int = Q
             }
         )
     return {'days': windowDays, 'suggestions': suggestions}
+
+@router.post('/memory/open-folder')
+async def openMemoryFolder() -> dict[str, object]:
+    """Open the markdown memory mirror in the OS file browser.
+
+    The mirror (`<dataDir>/memory/`) is the human-readable view of the facts
+    store; this is the door that makes it a surface rather than a file tree
+    a person has to find by hand. Returns the path even when the open fails,
+    so the UI can still show where the folder lives.
+    """
+    import sys
+    from pathlib import Path
+
+    from app.services.memory_store.mirror import mirror_root
+
+    folder = Path(mirror_root())
+    folder.mkdir(parents=True, exist_ok=True)
+    opened = False
+    try:
+        if sys.platform == 'win32':
+            os.startfile(str(folder))  # noqa: S606 — Explorer, user-requested
+            opened = True
+        elif sys.platform == 'darwin':
+            import subprocess
+
+            subprocess.Popen(['open', str(folder)])  # noqa: S603, S607
+            opened = True
+        else:
+            import subprocess
+
+            subprocess.Popen(['xdg-open', str(folder)])  # noqa: S603, S607
+            opened = True
+    except Exception:
+        opened = False
+    return {'ok': True, 'path': str(folder), 'opened': opened}

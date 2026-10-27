@@ -808,16 +808,21 @@ async def _remember(
         pass
     _emitMemoryInvalidate()
     _after = memory_store.get_fact(factKey) or {}
-    return _json.dumps(
-        {
-            'ok': True,
-            'key': factKey,
-            'category': cat,
-            'updated': before is not None,
-            'version': _after.get('version'),
-            'rollbackId': _rollbackId or None,
-        }
-    )
+    _result: dict[str, object] = {
+        'ok': True,
+        'key': factKey,
+        'category': cat,
+        'updated': before is not None,
+        'version': _after.get('version'),
+        'rollbackId': _rollbackId or None,
+    }
+    # 059: an edit carries its history — "now X, previously Y" — so the model
+    # (and the receipt the user sees) can tell a correction from a first save.
+    if before is not None:
+        _previous = _unwrapFactValue(before.get('factValue'))
+        if _previous and _previous != text:
+            _result['previously'] = _previous
+    return _json.dumps(_result)
 
 
 # Sources the model may delete via `forget`: its own writes, user-added

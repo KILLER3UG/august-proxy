@@ -234,6 +234,14 @@ async def lifespan(app: FastAPI):
 
     brain_backup.apply_pending_restore()
     memory_store.init()
+    try:
+        # The markdown mirror is a derived view; a boot rebuild repairs
+        # hand edits and any out-of-band store write.
+        from app.services.memory_store.mirror import rebuild_mirror
+
+        rebuild_mirror()
+    except Exception:
+        logging.getLogger(__name__).debug('memory mirror boot rebuild failed', exc_info=True)
     # Anything still marked active in `subagent_runs` belonged to the previous
     # process, so nothing will ever move it again — resolve it before the first
     # drawer poll renders a dead worker as one still thinking.
