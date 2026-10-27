@@ -77,8 +77,17 @@
   FileWrite $R0 "  Get-ChildItem -LiteralPath $$Root -Filter '*.old_*' -Recurse -ErrorAction SilentlyContinue |$\r$\n"
   FileWrite $R0 "    ForEach-Object { Remove-Item -LiteralPath $$_.FullName -Recurse -Force -ErrorAction SilentlyContinue }$\r$\n"
   FileWrite $R0 "}$\r$\n"
+  FileWrite $R0 "function Test-AnyAugustProcess {$\r$\n"
+  FileWrite $R0 "  if (Get-Process -Name 'August','august-desktop' -ErrorAction SilentlyContinue) { return $$true }$\r$\n"
+  FileWrite $R0 "  return [bool]@(Get-CimInstance Win32_Process | Where-Object { Test-AugustProcess $$_ })$\r$\n"
+  FileWrite $R0 "}$\r$\n"
+  ; Four passes was a timer, not a condition: with nothing left to kill it still
+  ; burned 2.8 s of sleeps plus four full process enumerations, and the app has
+  ; already tree-killed and reaped its own backend before launching this. Stop
+  ; as soon as no August-shaped process exists; keep retrying while one does.
   FileWrite $R0 "for ($$i = 0; $$i -lt 4; $$i++) {$\r$\n"
   FileWrite $R0 "  Stop-AugustEverything$\r$\n"
+  FileWrite $R0 "  if (-not (Test-AnyAugustProcess)) { break }$\r$\n"
   FileWrite $R0 "  Start-Sleep -Milliseconds 700$\r$\n"
   FileWrite $R0 "}$\r$\n"
   FileWrite $R0 "$$candidates = @($\r$\n"
@@ -86,8 +95,12 @@
   FileWrite $R0 "  (Join-Path $$env:APPDATA 'com.august.proxy\backend-runtime\backend-py\.venv')$\r$\n"
   FileWrite $R0 ") | Select-Object -Unique$\r$\n"
   FileWrite $R0 "foreach ($$c in $$candidates) { Move-LockedPythonTree $$c }$\r$\n"
-  FileWrite $R0 "Stop-AugustEverything$\r$\n"
-  FileWrite $R0 "Start-Sleep -Milliseconds 1000$\r$\n"
+  ; Same rule as the loop above: the last sweep and its second of settling only
+  ; matter when something is still alive to sweep.
+  FileWrite $R0 "if (Test-AnyAugustProcess) {$\r$\n"
+  FileWrite $R0 "  Stop-AugustEverything$\r$\n"
+  FileWrite $R0 "  Start-Sleep -Milliseconds 1000$\r$\n"
+  FileWrite $R0 "}$\r$\n"
   FileClose $R0
 
   StrCpy $R1 0

@@ -127,8 +127,15 @@ at 27.)
   every iteration, and the update left a DEAD APP. The stale marker is
   deleted when the waiter is SCHEDULED, not by the waiter: by the time the
   waiter starts, the installer may already have written a fresh one.
-  The waiter always relaunches at its 180 s deadline, so a failed update
-  leaves a dead app rather than an app that never returns. The DOWNLOAD is
+  The waiter waits 120 s for the old pid to exit, then up to 1800 s for the
+  installer, polling at 400 ms, and it relaunches at its deadline whenever no
+  installer process is still running — so a slow copy leaves a live app rather
+  than a dead one. It used to expire at 600 s, delete the marker and exit
+  WITHOUT relaunching, which is the "the update took forever and August never
+  came back" bug; the claim that it "always relaunches at its 180 s deadline"
+  described no code in the file. These three numbers live in a PowerShell
+  string, not in a Rust constant, so `check:docs` cannot guard them — edit them
+  only while changing the waiter itself. The DOWNLOAD is
   automatic (Settings → About → "Download updates automatically", on by
   default, 60 s after launch); the RESTART never is — it interrupts whatever
   is running, so it stays the user's click.

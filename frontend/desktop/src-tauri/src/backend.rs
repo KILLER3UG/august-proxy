@@ -1264,19 +1264,29 @@ function Test-AugustBackend($p) {{
   ))
 }}
 function Stop-AugustBackends {{
-  Get-CimInstance Win32_Process | Where-Object {{ Test-AugustBackend $_ }} |
-    ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}
+  $killed = 0
+  foreach ($p in @(Get-CimInstance Win32_Process | Where-Object {{ Test-AugustBackend $_ }})) {{
+    Stop-Process -Id $p.ProcessId -Force
+    $killed++
+  }}
   foreach ($port in {port}, 8085, 8787) {{
     Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue |
       ForEach-Object {{
         $owner = Get-CimInstance Win32_Process -Filter "ProcessId=$($_.OwningProcess)"
-        if ($owner -and (Test-AugustBackend $owner)) {{ Stop-Process -Id $owner.ProcessId -Force }}
+        if ($owner -and (Test-AugustBackend $owner)) {{ Stop-Process -Id $owner.ProcessId -Force; $killed++ }}
       }}
   }}
+  $killed
 }}
-Stop-AugustBackends
-Start-Sleep -Milliseconds 500
-Stop-AugustBackends
+# The tree kill in killChild already took the backend it spawned, so the
+# ordinary answer here is "nothing matched" — and a full second enumeration
+# buys nothing in that case. Re-scan only when the first pass actually killed
+# something, which is the only situation where a handle can still be in flight.
+$killed = Stop-AugustBackends
+if ($killed -gt 0) {{
+  Start-Sleep -Milliseconds 500
+  Stop-AugustBackends | Out-Null
+}}
 "#
     );
     let dir = std::env::temp_dir();
@@ -2096,40 +2106,49 @@ pub fn schedule_post_update_relaunch() -> Result<String, String> {
         // FRESH marker that the waiter would then delete.
         let marker_path = dir.join(".august-update-complete");
         let _ = std::fs::remove_file(&marker_path);
-        // Poll up to ~3 minutes for large Python resource bundles.
+        // Two windows: 120 s for THIS process to actually exit, then up to
+        // 1800 s for the installer to finish — a 200 MB payload of small
+        // Python files on a slow disk has been seen to exceed ten minutes, and
+        // the old 600 s ceiling expired mid-copy and left a dead app. Poll at
+        // 400 ms so the relaunch lands as soon as the copy is done, not on the
+        // next two-second tick.
         let script = format!(
             "$ErrorActionPreference='SilentlyContinue'; \
              $exe = '{exe_str}'; \
              $dir = '{dir_str}'; \
              $marker = Join-Path $dir '.august-update-complete'; \
              $oldPid = {old_pid}; \
+             function Test-InstallerBusy {{ \
+               @(Get-Process | Where-Object {{ \
+                 $_.ProcessName -match '^(Aug|august).*-setup' -or \
+                 ($_.Path -and $_.Path -like '*\\AppData\\Local\\Temp\\*' -and $_.ProcessName -match '^(Aug|august)') \
+               }}).Count \
+             }}; \
+             function Start-AugustIfIdle {{ \
+               if ((Test-Path -LiteralPath $exe) -and -not (Get-Process -Name 'August','august-desktop' -ErrorAction SilentlyContinue)) {{ \
+                 Start-Process -FilePath $exe \
+               }} \
+             }}; \
              $exitDeadline = (Get-Date).AddSeconds(120); \
              while ((Get-Date) -lt $exitDeadline) {{ \
                if (-not (Get-Process -Id $oldPid -ErrorAction SilentlyContinue)) {{ break }}; \
                Start-Sleep -Milliseconds 250 \
              }}; \
-             $installDeadline = (Get-Date).AddSeconds(600); \
+             $installDeadline = (Get-Date).AddSeconds(1800); \
              while ((Get-Date) -lt $installDeadline) {{ \
-               $installerBusy = @(Get-Process | Where-Object {{ \
-                 $_.ProcessName -match '^(Aug|august).*-setup' -or \
-                 ($_.Path -and $_.Path -like '*\\AppData\\Local\\Temp\\*' -and $_.ProcessName -match '^(Aug|august)') \
-               }}); \
-               if ($installerBusy.Count -eq 0) {{ \
+               if ((Test-InstallerBusy) -eq 0) {{ \
                  if (Test-Path -LiteralPath $marker) {{ \
-                   Start-Sleep -Milliseconds 600; \
-                   if (-not (Get-Process -Name 'August','august-desktop' -ErrorAction SilentlyContinue)) {{ \
-                     Start-Process -FilePath $exe \
-                   }}; \
+                   Start-Sleep -Milliseconds 200; \
+                   Start-AugustIfIdle; \
                    Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue; \
                    exit 0 \
                  }}; \
-                 if ((Test-Path -LiteralPath $exe) -and -not (Get-Process -Name 'August','august-desktop' -ErrorAction SilentlyContinue)) {{ \
-                   Start-Process -FilePath $exe \
-                 }}; \
+                 Start-AugustIfIdle; \
                  exit 0 \
                }}; \
-               Start-Sleep -Seconds 2 \
+               Start-Sleep -Milliseconds 400 \
              }}; \
+             if ((Test-InstallerBusy) -eq 0) {{ Start-AugustIfIdle }}; \
              if (Test-Path -LiteralPath $marker) {{ Remove-Item -LiteralPath $marker -Force }}"
         );
         std::process::Command::new("powershell.exe")
@@ -2488,8 +2507,16 @@ pub fn launch_installer_and_exit(app: AppHandle, path: String) -> Result<String,
         }
     };
     verifyInstallerSignature(&installer, signature_text.trim())?;
-    // Release python/.pyd locks before NSIS copies over the install dir.
-    stopBackendForUpdate(&app);
+    // Release python/.pyd locks before NSIS copies over the install dir. The
+    // updater calls `stop_backend_for_update` first, and that armed
+    // UPDATE_HOLDOFF — tearing down twice on one click cost a second process
+    // sweep for nothing. The holdoff is exactly the "already stopped, and the
+    // watchdog is not going to respawn it" signal, so trust it.
+    if !UPDATE_HOLDOFF.load(Ordering::SeqCst) {
+        stopBackendForUpdate(&app);
+    } else {
+        log::info!("[update] backend already stopped for this update — not tearing down twice");
+    }
     Command::new(&installer)
         .arg("/UPDATE")
         // NSIS silent: no install pages. The update is a background operation
