@@ -8,8 +8,8 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowUpRight, Copy, Download, FileText, Image as ImageIcon, LineChart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { SignalIcon } from '@/components/ui/SignalIcon';
 import { collectArtifacts, type SessionArtifact } from '@/lib/artifacts';
 import { useSessionStream } from '@/sections/chat/hooks/useSessionStream';
 import { ChatAttachmentService } from '@/sections/chat/services/ChatAttachmentService';
@@ -108,101 +108,95 @@ export function RightDrawerCanvasSection({ sessionId }: { sessionId: string | nu
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-2 px-3 pb-2 pt-1">
-        <div className="flex items-center gap-0.5 rounded-md border border-border/60 p-0.5" role="tablist" aria-label="Canvas view">
+    <div className="canvas-panel">
+      <div className="canvas-toolbar">
+        <div className="segmented" role="tablist" aria-label="Canvas view">
           {TABS.map((item) => (
             <Button
               key={item.key}
+              variant="bare"
               type="button"
               role="tab"
               aria-selected={tab === item.key}
-              variant="ghost"
-              size="sm"
+              data-active={tab === item.key}
               onClick={() => setTab(item.key)}
-              className={`h-6 rounded px-2 text-[0.68rem] font-normal ${
-                tab === item.key ? 'bg-muted text-foreground' : 'text-muted-foreground/60'
-              }`}
             >
               {item.label}
             </Button>
           ))}
         </div>
-        <span className="ml-auto font-mono text-[0.58rem] uppercase tracking-[0.1em] text-muted-foreground/40">
+        <span className="canvas-toolbar-note">
           {sessionId ? 'Session canvas' : 'Canvas'}
         </span>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+      <div className="canvas-body">
         {tab === 'chart' && (
-          <div>
+          <div className="canvas-tab-pane" data-active="true">
             {loading ? (
-              <div className="flex h-40 items-center justify-center text-xs text-muted-foreground/60">
-                Loading chart…
-              </div>
+              <div className="canvas-empty">Loading chart…</div>
             ) : preview?.dataUrl || preview?.previewUrl ? (
-              <div className="rounded-xl border border-border/55 bg-card/35 p-2">
-                <img
-                  src={preview.dataUrl || preview.previewUrl}
-                  alt={chartArtifact?.label || 'Chart'}
-                  className="max-h-[420px] w-full rounded-lg bg-muted/20 object-contain"
-                />
-                <div className="flex items-start gap-2 px-1 pt-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[0.78rem] font-medium text-foreground/90">
-                      {chartArtifact?.label || preview.name}
-                    </p>
-                    <p className="mt-0.5 font-mono text-[0.6rem] text-muted-foreground/50">
-                      {preview.size || preview.mimeType || 'Image'} · {chartArtifact ? timeAgo(chartArtifact.timestamp) : 'just now'}
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="size-7 shrink-0 text-muted-foreground/60"
-                    onClick={() => chartArtifact && openArtifact(chartArtifact)}
-                    title="Open the original file"
-                    aria-label="Open the original chart file"
-                  >
-                    <ArrowUpRight className="size-3.5" />
-                  </Button>
-                  {preview.dataUrl && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="size-7 shrink-0 text-muted-foreground/60"
-                      onClick={() => downloadAttachment(preview)}
-                      title="Download the chart"
-                      aria-label="Download the chart"
-                    >
-                      <Download className="size-3.5" />
-                    </Button>
-                  )}
+              <>
+                <div className="canvas-kicker">
+                  <span className="live-dot" />
+                  Rendered {chartArtifact ? timeAgo(chartArtifact.timestamp) : 'just now'}
                 </div>
-              </div>
-            ) : chartArtifact ? (
-              <div className="rounded-xl border border-border/55 bg-card/35 p-4">
-                <div className="flex items-center gap-2 text-sm text-foreground">
-                  <ImageIcon className="size-4 text-muted-foreground/60" />
-                  <span className="min-w-0 flex-1 truncate">{chartArtifact.label}</span>
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground/60">
-                  The chart file could not be previewed here. Open the original to inspect it.
+                <h2 className="canvas-h1">{chartArtifact?.label || preview.name}</h2>
+                <p className="canvas-sub">
+                  {preview.size || preview.mimeType || 'Image'} · produced by this thread
                 </p>
-                <Button type="button" variant="outline" size="sm" className="mt-3" onClick={() => openArtifact(chartArtifact)}>
-                  Open file
-                </Button>
-              </div>
+                <div className="chart-stage">
+                  <img
+                    src={preview.dataUrl || preview.previewUrl}
+                    alt={chartArtifact?.label || 'Chart'}
+                  />
+                </div>
+                <div className="canvas-metrics">
+                  <div className="metric">
+                    <span className="metric-label">Kind</span>
+                    <span className="metric-value">PNG</span>
+                    <span className="metric-delta">{preview.mimeType || 'image'}</span>
+                  </div>
+                  <div className="metric">
+                    <span className="metric-label">Size</span>
+                    <span className="metric-value">{preview.size || '—'}</span>
+                    <span className="metric-delta">on disk</span>
+                  </div>
+                  <div className="metric">
+                    <span className="metric-label">Made</span>
+                    <span className="metric-value">
+                      {chartArtifact ? timeAgo(chartArtifact.timestamp) : 'now'}
+                    </span>
+                    <span className="metric-delta">this thread</span>
+                  </div>
+                </div>
+                <div className="canvas-section">
+                  <div className="canvas-section-head">Readout</div>
+                  <div className="insight">
+                    The chart is the artifact this turn produced. Open the original to inspect it at
+                    full size, or take the file into Charts with the rest of the library.
+                  </div>
+                </div>
+              </>
+            ) : chartArtifact ? (
+              <>
+                <div className="canvas-kicker">Source / {chartArtifact.href}</div>
+                <h2 className="canvas-h1">{chartArtifact.label}</h2>
+                <p className="canvas-sub">The chart file could not be previewed here.</p>
+                <div className="canvas-empty">
+                  <Button variant="bare" type="button" className="ghost-button" onClick={() => openArtifact(chartArtifact)}>
+                    Open file
+                  </Button>
+                </div>
+              </>
             ) : (
-              <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/60 px-5 py-12 text-center">
-                <LineChart className="size-6 text-muted-foreground/35" />
-                <p className="mt-3 text-[0.8rem] font-medium text-foreground/80">No chart in this thread yet</p>
-                <p className="mt-1 max-w-[240px] text-[0.7rem] leading-relaxed text-muted-foreground/50">
+              <div className="canvas-empty canvas-empty--tall">
+                <SignalIcon name="chart" size="lg" />
+                <p className="canvas-empty-title">No chart in this thread yet</p>
+                <p className="canvas-empty-copy">
                   Ask August for a chart and it will land here, beside the conversation that made it.
                 </p>
-                <Button type="button" size="sm" className="mt-4" onClick={askForChart}>
+                <Button variant="bare" type="button" className="solid-button" onClick={askForChart}>
                   Ask August for a chart
                 </Button>
               </div>
@@ -211,30 +205,30 @@ export function RightDrawerCanvasSection({ sessionId }: { sessionId: string | nu
         )}
 
         {tab === 'data' && (
-          <div>
+          <div className="canvas-tab-pane" data-active="true">
+            <div className="canvas-kicker">Produced / this thread</div>
+            <h2 className="canvas-h1">Files</h2>
+            <p className="canvas-sub">{produced.length} file{produced.length === 1 ? '' : 's'} written by August here.</p>
             {produced.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-border/60 px-5 py-10 text-center text-xs text-muted-foreground/60">
-                Files August produces in this chat appear here.
-              </div>
+              <div className="canvas-empty">Files August produces in this chat appear here.</div>
             ) : (
-              <div className="divide-y divide-border/40 rounded-xl border border-border/55 bg-card/25">
+              <div className="canvas-list">
                 {produced.map((artifact) => (
                   <Button
                     key={artifact.id}
+                    variant="bare"
                     type="button"
-                    variant="ghost"
-                    size="sm"
                     onClick={() => openArtifact(artifact)}
-                    className="h-auto w-full items-center justify-start gap-2.5 rounded-none px-3 py-2.5 text-left font-normal"
+                    className="canvas-list-row"
                   >
-                    <FileText className="size-3.5 shrink-0 text-muted-foreground/55" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[0.75rem] text-foreground/85">{artifact.label}</span>
-                      <span className="mt-0.5 block font-mono text-[0.58rem] text-muted-foreground/45">
+                    <SignalIcon name="file" />
+                    <span className="canvas-list-copy">
+                      <strong>{artifact.label}</strong>
+                      <span>
                         {artifact.kind} · {timeAgo(artifact.timestamp)}
                       </span>
                     </span>
-                    <ArrowUpRight className="size-3 shrink-0 text-muted-foreground/35" />
+                    <SignalIcon name="chev-right" />
                   </Button>
                 ))}
               </div>
@@ -243,42 +237,35 @@ export function RightDrawerCanvasSection({ sessionId }: { sessionId: string | nu
         )}
 
         {tab === 'notes' && (
-          <div className="h-[calc(100%-0.25rem)] min-h-[320px]">
+          <div className="canvas-tab-pane canvas-notes" data-active="true">
             <RightDrawerNotesSection sessionId={sessionId} />
           </div>
         )}
       </div>
 
-      <div className="flex items-center gap-1.5 border-t border-border/40 px-3 py-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-7 gap-1.5 px-2 text-[0.68rem] text-muted-foreground/65"
-          onClick={copyPath}
-        >
-          <Copy className="size-3" />
+      <div className="canvas-foot">
+        <Button variant="bare" type="button" className="ghost-button" onClick={copyPath}>
+          <SignalIcon name="copy" />
           Copy path
         </Button>
         <Button
+          variant="bare"
           type="button"
-          variant="ghost"
-          size="sm"
-          className="h-7 gap-1.5 px-2 text-[0.68rem] text-muted-foreground/65"
+          className="ghost-button"
           onClick={() => preview && downloadAttachment(preview)}
           disabled={!preview?.dataUrl}
         >
-          <Download className="size-3" />
+          <SignalIcon name="download" />
           Download
         </Button>
         <Button
+          variant="bare"
           type="button"
-          size="sm"
-          className="ml-auto h-7 gap-1.5 px-2.5 text-[0.68rem]"
+          className="solid-button"
           onClick={() => void navigate('/charts')}
         >
           Open in Charts
-          <ArrowUpRight className="size-3" />
+          <SignalIcon name="chev-right" />
         </Button>
       </div>
     </div>

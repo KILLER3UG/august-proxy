@@ -5,6 +5,10 @@ interface Props {
   title: string;
   subtitle?: ReactNode;
   actions?: ReactNode;
+  /** The mockup's mono kicker above the serif title ("Output / data",
+   *  "Library / everything"). Rendered through `.page-eyebrow`, whose ::after
+   *  draws the trailing hairline. */
+  eyebrow?: string;
   className?: string;
 }
 
@@ -25,14 +29,15 @@ interface Props {
  * settings header is one shape, and the point of a shared component is
  * that the shape cannot drift.
  */
-export function SectionHeader({ title, subtitle, actions, className }: Props) {
+export function SectionHeader({ title, subtitle, actions, eyebrow, className }: Props) {
   return (
-    <header className={cn('flex items-start justify-between gap-4 mb-6', className)}>
+    <header className={cn('page-head', className)}>
       <div className="min-w-0">
-        <h2 className="font-editorial text-[1.75rem] font-medium leading-[1.15] tracking-[-0.025em] text-foreground">{title}</h2>
-        {subtitle && <p className="mt-1.5 text-[0.8125rem] text-muted-foreground">{subtitle}</p>}
+        {eyebrow && <div className="page-eyebrow">{eyebrow}</div>}
+        <h2 className="page-title">{title}</h2>
+        {subtitle && <p className="page-sub">{subtitle}</p>}
       </div>
-      {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
+      {actions && <div className="page-actions">{actions}</div>}
     </header>
   );
 }

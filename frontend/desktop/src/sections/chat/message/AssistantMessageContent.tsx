@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { AssistantMessageActions } from './AssistantMessageActions';
 import { TurnEndActionRow } from './TurnEndActionRow';
 import { turnEndActions, turnEndPhrase, turnEndRemedy } from '@/lib/turn-end';
+import { MessageTimestamp } from '@/components/chat/MessageTimestamp';
 
 type DisplayBlock = MessageBlock;
 
@@ -94,9 +95,19 @@ export function AssistantMessageContent({
   /** Turn-end "Edit prompt" — open the originating user message for editing. */
   onEditPrompt?: () => void;
 }) {
+  const modelLabel = modelId ? modelId.split('/').pop() : null;
+
   return (
     <>
       <div className="flex min-w-0 flex-col w-full gap-2">
+        {/* The mockup's assistant head: who answered, on what, and when. The
+            app carried this only in the composer footer, so a scrolled-back
+            turn could not say which model produced it. */}
+        <div className="assistant-head">
+          <span className="agent-name">August</span>
+          {modelLabel ? <span className="agent-model">{modelLabel}</span> : null}
+          <MessageTimestamp timestamp={message.timestamp} className="assistant-time" />
+        </div>
         {message.queued && !streaming ? (
           // Backend accepted the message into the queue — a structural
           // notice, not model prose (the QueuePills row above the composer

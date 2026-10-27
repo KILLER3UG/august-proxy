@@ -1,41 +1,28 @@
-import { type ComponentType, type ReactNode, type SVGProps } from 'react';
+/* ── UserDropdown — the sidebar profile footer's account popover ────────
+ *
+ * Restyled to the mockup's `.account-popover`: one compact panel anchored
+ * above the profile row, icon rows only — no avatar header, no status
+ * picker. The three mockup rows come first (Account settings / Switch
+ * workspace / Sign out); the rows below are the app's OWN live surfaces
+ * that the mockup has no opinion about (update, appearance, what's new,
+ * help), kept so no real entry point is deleted to make the mockup fit.
+ * The old template menu (status badge, "Update status" submenu, generic
+ * profile/support groups) is gone with the redesign it imitated.
+ */
+
 import { motion, type Variants } from 'framer-motion';
 
-import {
-  Bell,
-  CircleHelp,
-
-  ExternalLink,
-  LogOut,
-  Moon,
-  RefreshCw,
-  Settings,
-  Smile,
-  Sun,
-  UserCircle,
-  UserPlus,
-  Users,
-  Mail,
-} from 'lucide-react';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
+import { ExternalLink } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuPortal,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { SignalIcon, type SignalIconName } from '@/components/ui/SignalIcon';
 import { t } from '@/lib/motion';
 import { cn } from '@/lib/utils';
-
 
 export type UserStatus = 'online' | 'focus' | 'offline' | 'busy';
 
@@ -66,132 +53,43 @@ export interface UserDropdownAccount {
   initials?: string;
 }
 
-type LucideIcon = ComponentType<SVGProps<SVGSVGElement> & { className?: string }>;
-
-interface MenuItemBase {
-  Icon: LucideIcon;
+interface AccountRow {
+  signal: SignalIconName;
   label: string;
   action: UserDropdownAction;
-  iconClass?: string;
+  danger?: boolean;
   badge?: { text: string; className: string };
-  RightIcon?: LucideIcon;
-  showAvatar?: boolean;
-}
-
-interface StatusMenuItem {
-  value: string;
-  Icon: LucideIcon;
-  label: string;
+  RightIcon?: typeof ExternalLink;
 }
 
 /** Same row nudge as New chat / Skills & Tools in SessionListNav. */
-const rowMotion = {
+const rowMotion: Variants = {
   rest: { x: 0 },
-  hover: { x: 3, transition: t.fast },
+  hover: { x: 2, transition: t.fast },
   tap: { scale: 0.98, transition: t.fast },
-};
-
-const defaultIconMotion: Variants = {
-  rest: { scale: 1, rotate: 0 },
-  hover: { scale: 1.12, rotate: -18, transition: t.spring },
-  tap: { scale: 0.92, transition: t.fast },
-};
-
-const ICON_MOTION: Partial<Record<UserDropdownAction | 'status', Variants>> = {
-  profile: {
-    rest: { scale: 1, y: 0 },
-    hover: { scale: 1.12, y: -2, transition: t.spring },
-    tap: { scale: 0.92, y: 0, transition: t.fast },
-  },
-  appearance: {
-    rest: { scale: 1, rotate: 0 },
-    hover: { scale: 1.15, rotate: 45, transition: t.spring },
-    tap: { scale: 0.9, rotate: 45, transition: t.fast },
-  },
-  settings: {
-    rest: { scale: 1, rotate: 0 },
-    hover: { scale: 1.12, rotate: -18, transition: t.spring },
-    tap: { scale: 0.92, transition: t.fast },
-  },
-  notifications: {
-    rest: { scale: 1, rotate: 0 },
-    hover: { scale: 1.15, rotate: 12, transition: t.spring },
-    tap: { scale: 0.9, transition: t.fast },
-  },
-  'whats-new': {
-    rest: { scale: 1, rotate: 0 },
-    hover: { scale: 1.15, rotate: -8, transition: t.spring },
-    tap: { scale: 0.9, transition: t.fast },
-  },
-  help: {
-    rest: { scale: 1, rotate: 0 },
-    hover: { scale: 1.15, rotate: 0, transition: t.spring },
-    tap: { scale: 0.9, transition: t.fast },
-  },
-  switch: defaultIconMotion,
-  logout: defaultIconMotion,
-  'create-account': {
-    rest: { scale: 1, rotate: 0 },
-    hover: { scale: 1.15, rotate: 90, transition: t.spring },
-    tap: { scale: 0.9, rotate: 90, transition: t.fast },
-  },
-  update: {
-    rest: { scale: 1, y: 0 },
-    hover: { scale: 1.12, y: -2, transition: t.spring },
-    tap: { scale: 0.92, y: 0, transition: t.fast },
-  },
-  status: {
-    rest: { scale: 1, rotate: 0 },
-    hover: { scale: 1.15, rotate: 12, transition: t.spring },
-    tap: { scale: 0.9, transition: t.fast },
-  },
-};
-
-const MENU_ITEMS: {
-  status: StatusMenuItem[];
-  profile: MenuItemBase[];
-  support: MenuItemBase[];
-} = {
-  status: [
-    { value: 'focus', Icon: Smile, label: 'Focus' },
-    { value: 'offline', Icon: Moon, label: 'Appear Offline' },
-  ],
-  profile: [
-    { Icon: UserCircle, label: 'Your profile', action: 'profile' },
-    { Icon: Sun, label: 'Appearance', action: 'appearance' },
-    { Icon: Settings, label: 'Settings', action: 'settings' },
-    { Icon: Bell, label: 'Notifications', action: 'notifications' },
-  ],
-  support: [
-    { Icon: Mail, label: "What's new?", action: 'whats-new' },
-    { Icon: CircleHelp, label: 'Get help?', action: 'help', RightIcon: ExternalLink },
-  ],
 };
 
 const DEFAULT_USER: UserDropdownUser = {
   name: 'Guest',
   username: '@guest',
-  avatar:
-    'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=96&h=96&fit=crop&crop=face',
+  avatar: '',
   initials: 'G',
   status: 'online',
 };
 
-const itemButtonClass =
-  'w-full flex items-center gap-1.5 rounded-lg p-2 text-sm outline-none cursor-pointer select-none';
-
-const iconClass = 'size-4 shrink-0 text-muted-foreground';
+const rowClass =
+  'flex w-full cursor-pointer select-none items-center gap-[7px] rounded-[5px] px-2 py-[7px] text-left text-xs text-foreground/85 outline-none transition-colors data-[highlighted]:bg-muted/70 data-[highlighted]:text-foreground';
 
 export interface UserDropdownProps {
   user?: UserDropdownUser;
   onAction?: (action: UserDropdownAction) => void;
   onStatusChange?: (status: string) => void;
   selectedStatus?: string;
-  /** When false, show Create account instead of Switch / Log out. */
+  /** When false, show Create account instead of Switch / Sign out. */
   signedIn?: boolean;
   accounts?: UserDropdownAccount[];
   /** Custom trigger (e.g. settings row). Defaults to avatar button. */
-  trigger?: ReactNode;
+  trigger?: React.ReactNode;
   align?: 'start' | 'center' | 'end';
   side?: 'top' | 'right' | 'bottom' | 'left';
   matchTriggerWidth?: boolean;
@@ -201,17 +99,14 @@ export interface UserDropdownProps {
   sideOffset?: number;
   className?: string;
   triggerClassName?: string;
-  /** When set, shows an update notice in the menu (Notifications badge + row). */
+  /** When set, shows an update row in the menu. */
   updateAvailable?: { version: string } | null;
 }
 
 export function UserDropdown({
-  user = DEFAULT_USER,
+  user: _user = DEFAULT_USER,
   onAction = () => {},
-  onStatusChange = () => {},
-  selectedStatus = 'online',
   signedIn = false,
-  accounts: _accounts = [],
   trigger,
   align = 'end',
   side = 'bottom',
@@ -220,160 +115,61 @@ export function UserDropdown({
   contentClassName,
   alignOffset,
   sideOffset,
-  className,
-  triggerClassName,
+  className: _className,
+  triggerClassName: _triggerClassName,
   updateAvailable = null,
 }: UserDropdownProps) {
-  const profileItems: MenuItemBase[] = MENU_ITEMS.profile.map((item) => {
-    if (item.action === 'notifications' && updateAvailable) {
-      return {
-        ...item,
-        badge: {
-          text: 'Update',
-          className:
-            'rounded-sm border-0 bg-warning/20 text-warning-fg text-2xs px-1.5 py-0',
-        },
-      };
-    }
-    return item;
-  });
-
-  const supportItems: MenuItemBase[] = [
+  // The mockup's three rows, then the app's own live surfaces.
+  const rows: AccountRow[] = [
+    { signal: 'settings', label: 'Account settings', action: 'profile' },
+    signedIn
+      ? { signal: 'folder', label: 'Switch workspace', action: 'switch' }
+      : { signal: 'user', label: 'Create account', action: 'create-account' },
+    ...(signedIn
+      ? [{ signal: 'close' as const, label: 'Sign out', action: 'logout' as const, danger: true }]
+      : []),
     ...(updateAvailable
       ? [
           {
-            Icon: RefreshCw,
+            signal: 'refresh' as const,
             label: `Update to v${updateAvailable.version}`,
             action: 'update' as const,
             badge: {
               text: 'New',
-              className:
-                'rounded-sm border-0 bg-warning/20 text-warning-fg text-2xs px-1.5 py-0',
+              className: 'rounded-sm border-0 bg-warning/20 text-warning-fg text-2xs px-1.5 py-0',
             },
           },
         ]
       : []),
-    ...MENU_ITEMS.support,
+    { signal: 'sun', label: 'Appearance', action: 'appearance' },
+    { signal: 'info', label: "What's new?", action: 'whats-new' },
+    {
+      signal: 'globe',
+      label: 'Get help',
+      action: 'help',
+      RightIcon: ExternalLink,
+    },
   ];
-
-  const accountItems: MenuItemBase[] = signedIn
-    ? [
-        {
-          Icon: Users,
-          label: 'Switch account',
-          action: 'switch',
-          showAvatar: false,
-        },
-        { Icon: LogOut, label: 'Log out', action: 'logout' },
-      ]
-    : [
-        {
-          Icon: UserPlus,
-          label: 'Create account',
-          action: 'create-account',
-        },
-      ];
-
-  const renderMenuItem = (item: MenuItemBase, index: number) => {
-    const iconMotion = ICON_MOTION[item.action] ?? defaultIconMotion;
-    const ItemIcon = item.Icon;
-    const ItemRightIcon = item.RightIcon;
-    return (
-      <DropdownMenuItem
-        key={`${item.action}-${index}`}
-        asChild
-        className="august-menu-item p-0 focus:bg-transparent"
-        style={{ animationDelay: `${40 + index * 35}ms` }}
-        onSelect={() => onAction(item.action)}
-      >
-        <motion.button
-          type="button"
-          initial="rest"
-          whileHover="hover"
-          whileTap="tap"
-          variants={rowMotion}
-          className={cn(
-            itemButtonClass,
-            item.badge || item.showAvatar || item.RightIcon ? 'justify-between' : '',
-            'data-[highlighted]:bg-accent/70',
-          )}
-        >
-          <span className="flex items-center gap-1.5 font-medium">
-            <motion.span className="inline-flex shrink-0" variants={iconMotion}>
-              <ItemIcon className={cn(iconClass, item.iconClass)} />
-            </motion.span>
-            {item.label}
-          </span>
-          {item.badge && <Badge className={item.badge.className}>{item.badge.text}</Badge>}
-          {ItemRightIcon && <ItemRightIcon className="size-3 shrink-0 text-muted-foreground" />}
-          {item.showAvatar && (
-            <Avatar className="size-6 cursor-pointer border border-white shadow dark:border-gray-700">
-              <AvatarImage src={user.avatar} alt={user.name} />
-              <AvatarFallback>{user.initials}</AvatarFallback>
-            </Avatar>
-          )}
-        </motion.button>
-      </DropdownMenuItem>
-    );
-  };
-
-  const getStatusColor = (status: string) => {
-    const colors: Record<string, string> = {
-      online:
-        'text-success-fg bg-success border-success text-success-fg bg-success/30 border-success/50',
-      offline:
-        'text-gray-600 bg-gray-100 border-gray-300 dark:text-gray-400 dark:bg-gray-800 dark:border-gray-600',
-      busy:
-        'text-danger-fg bg-danger border-danger text-danger-fg bg-danger/30 border-danger/50',
-      focus:
-        'text-warning-fg bg-warning border-warning text-warning-fg bg-warning/30 border-warning/50',
-    };
-    return colors[status.toLowerCase()] || colors.online;
-  };
-
-  const defaultTrigger = (
-    <button
-      type="button"
-      className={cn(
-        'rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
-        className,
-      )}
-      title="Account menu"
-      aria-label="Open account menu"
-    >
-      <Avatar
-        className={cn(
-          'size-7 cursor-pointer border border-white dark:border-gray-700',
-          triggerClassName,
-        )}
-      >
-        <AvatarImage src={user.avatar} alt={user.name} />
-        <AvatarFallback className="text-2xs">{user.initials}</AvatarFallback>
-      </Avatar>
-    </button>
-  );
 
   return (
     <DropdownMenu modal={false}>
-      <DropdownMenuTrigger asChild>
-        {trigger ?? defaultTrigger}
-      </DropdownMenuTrigger>
+      <DropdownMenuTrigger asChild>{trigger ?? null}</DropdownMenuTrigger>
 
       <DropdownMenuContent
         className={cn(
-          'august-menu-panel no-scrollbar rounded-2xl bg-gray-50 p-0 dark:bg-black/90',
+          'august-menu-panel rounded-lg border border-border bg-popover p-1 shadow-lg',
           'data-[state=open]:duration-200 data-[state=closed]:duration-150',
           contentWidth == null &&
             (matchTriggerWidth
               ? 'w-[var(--radix-dropdown-menu-trigger-width)]'
-              : 'w-[310px]'),
+              : 'w-[220px]'),
           contentClassName,
         )}
         style={contentWidth != null ? { width: contentWidth } : undefined}
         align={align}
         side={side}
         alignOffset={alignOffset}
-        sideOffset={sideOffset}
+        sideOffset={sideOffset ?? 8}
         onPointerDownOutside={(e) => {
           if (
             e.target instanceof Element &&
@@ -391,99 +187,40 @@ export function UserDropdown({
           }
         }}
       >
-        <section className="rounded-2xl border border-gray-200 bg-white p-1 shadow backdrop-blur-lg dark:border-gray-700/20 dark:bg-gray-100/10">
-          <div
-            className="august-menu-item flex items-center p-2"
-            style={{ animationDelay: '20ms' }}
-          >
-            <div className="flex flex-1 items-center gap-2">
-              <Avatar className="size-10 cursor-pointer border border-white dark:border-gray-700">
-                <AvatarImage src={user.avatar} alt={user.name} />
-                <AvatarFallback>{user.initials}</AvatarFallback>
-              </Avatar>
-              <div>
-                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                  {user.name}
-                </h3>
-                <p className="text-xs text-muted-foreground">{user.username}</p>
-              </div>
-            </div>
-            <Badge
-              className={`${getStatusColor(user.status)} rounded-sm border-[0.5px] text-2xs capitalize`}
-            >
-              {user.status}
-            </Badge>
-          </div>
-
-          <DropdownMenuGroup>
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger
-                className="august-menu-item cursor-pointer rounded-lg p-0 focus:bg-transparent data-[state=open]:bg-accent/50"
-                style={{ animationDelay: '55ms' }}
+        <DropdownMenuGroup>
+          {rows.map((row, index) => {
+            const RightIcon = row.RightIcon;
+            return (
+              <DropdownMenuItem
+                key={`${row.action}-${index}`}
+                asChild
+                className="p-0 focus:bg-transparent"
+                onSelect={() => onAction(row.action)}
               >
-                <motion.span
-                  className="flex w-full items-center gap-1.5 p-2 font-medium text-muted-foreground"
+                <motion.button
+                  type="button"
                   initial="rest"
                   whileHover="hover"
                   whileTap="tap"
                   variants={rowMotion}
+                  className={cn(rowClass, row.danger && 'text-danger-fg')}
                 >
-                  <motion.span
-                    className="inline-flex shrink-0"
-                    variants={ICON_MOTION.status}
-                  >
-                    <Smile className={iconClass} />
-                  </motion.span>
-                  Update status
-                </motion.span>
-              </DropdownMenuSubTrigger>
-              <DropdownMenuPortal>
-                <DropdownMenuSubContent className="august-menu-panel bg-white backdrop-blur-lg dark:bg-white/10 data-[state=open]:duration-200">
-                  <DropdownMenuRadioGroup
-                    value={selectedStatus}
-                    onValueChange={onStatusChange}
-                  >
-                    {MENU_ITEMS.status.map((status, index) => {
-                      const StatusIcon = status.Icon;
-                      return (
-                        <DropdownMenuRadioItem
-                          className="august-menu-item gap-2 rounded-lg"
-                          style={{ animationDelay: `${30 + index * 35}ms` }}
-                          key={status.value}
-                          value={status.value}
-                        >
-                          <motion.span
-                            className="inline-flex shrink-0"
-                            initial="rest"
-                            whileHover="hover"
-                            variants={defaultIconMotion}
-                          >
-                            <StatusIcon className={iconClass} />
-                          </motion.span>
-                          {status.label}
-                        </DropdownMenuRadioItem>
-                      );
-                    })}
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuSubContent>
-              </DropdownMenuPortal>
-            </DropdownMenuSub>
-          </DropdownMenuGroup>
-
-          <DropdownMenuSeparator />
-          <DropdownMenuGroup>{profileItems.map(renderMenuItem)}</DropdownMenuGroup>
-
-          <DropdownMenuSeparator />
-          <DropdownMenuGroup>{supportItems.map(renderMenuItem)}</DropdownMenuGroup>
-        </section>
-
-        <section className="mt-1 rounded-2xl p-1">
-          <DropdownMenuGroup>
-            {accountItems.map((item, index) =>
-              renderMenuItem(item, profileItems.length + supportItems.length + index),
-            )}
-          </DropdownMenuGroup>
-        </section>
+                  {/* Explicit size: this popover portals to document.body,
+                      outside .sd-app, so the stylesheet's .icon-sm sizing
+                      never reaches it. */}
+                  <SignalIcon name={row.signal} className="size-3.5 shrink-0 opacity-70" />
+                  <span className="block min-w-0 flex-1 truncate">{row.label}</span>
+                  {row.badge && (
+                    <span className={cn('rounded-sm px-1.5 py-0 text-2xs', row.badge.className)}>
+                      {row.badge.text}
+                    </span>
+                  )}
+                  {RightIcon && <RightIcon className="size-3 shrink-0 opacity-50" />}
+                </motion.button>
+              </DropdownMenuItem>
+            );
+          })}
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );

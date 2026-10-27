@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, memo, useId } from "react";
 import { useNeedsAttention } from './needs-handoff-store';
 import { createPortal } from "react-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   Pin,
   EllipsisVertical,
@@ -14,19 +14,15 @@ import {
   Archive,
 } from "lucide-react";
 import { cn, timeAgo } from "@/lib/utils";
-import { sessionRow, hoverScale } from "@/lib/motion";
+import { sessionRow } from "@/lib/motion";
 import { MarqueeTitle } from "@/components/ui/MarqueeTitle";
+import { Button } from "@/components/ui/button";
 import {
   clearSessionStatus,
   type Session,
   type Folder,
   type SessionStatus,
 } from "@/store/sessions";
-import {
-  selectSessionLiveActivity,
-  useLiveActivityStore,
-} from "@/store/liveActivity";
-import { modelDisplayParts } from "@/sections/chat/ChatThread";
 
 
 export interface SessionRowProps {
@@ -88,9 +84,6 @@ function SessionRowInner({
   onMoveToFolder,
   onDelete,
 }: SessionRowProps) {
-  const liveHeadline = useLiveActivityStore(
-    (s) => selectSessionLiveActivity(s, session.id).headline,
-  );
   const [showMenu, setShowMenu] = useState(false);
   const [folderOpen, setFolderOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -270,7 +263,6 @@ function SessionRowInner({
     );
   }
 
-  const hasStatus = status && status !== "idle";
   
   /* ── Preview payload: everything below is already on `session` / props ── */
   const previewStatusWord =
@@ -343,7 +335,7 @@ function SessionRowInner({
         style={{ top: menuPos.top, left: menuPos.left }}
         onClick={(e) => e.stopPropagation()}
       >
-        <button
+        <Button variant="bare"
           type="button"
           role="menuitem"
           onClick={() => {
@@ -354,9 +346,9 @@ function SessionRowInner({
         >
           <Pin className="size-3 text-muted-foreground" />
           {pinned ? "Unpin Chat" : "Pin Chat"}
-        </button>
+        </Button>
 
-        <button
+        <Button variant="bare"
           type="button"
           role="menuitem"
           onClick={() => {
@@ -367,10 +359,10 @@ function SessionRowInner({
         >
           <Edit3 className="size-3 text-muted-foreground" />
           Rename Chat
-        </button>
+        </Button>
 
         <div className="relative">
-          <button
+          <Button variant="bare"
             type="button"
             role="menuitem"
             onClick={() => setFolderOpen((v) => !v)}
@@ -386,26 +378,26 @@ function SessionRowInner({
                 folderOpen && "rotate-90",
               )}
             />
-          </button>
+          </Button>
           {folderOpen && (
             <div className="mt-0.5 mx-1 mb-1 max-h-40 overflow-y-auto rounded-md border border-border/40 bg-popover/95 py-1">
-              <button
+              <Button variant="bare"
                 type="button"
                 onClick={() => {
                   onMoveToFolder(null);
                   closeMenu();
                 }}
                 className={cn(
-                  "w-full text-left px-2.5 py-1 hover:bg-white/5 truncate transition",
+                  "block w-full text-left px-2.5 py-1 hover:bg-white/5 truncate transition",
                   !session.folderId
                     ? "text-primary font-medium"
                     : "text-foreground/80",
                 )}
               >
                 No Folder
-              </button>
+              </Button>
               {folders.map((f) => (
-                <button
+                <Button variant="bare"
                   key={f.id}
                   type="button"
                   onClick={() => {
@@ -413,7 +405,7 @@ function SessionRowInner({
                     closeMenu();
                   }}
                   className={cn(
-                    "w-full text-left px-2.5 py-1 hover:bg-white/5 truncate transition",
+                    "block w-full text-left px-2.5 py-1 hover:bg-white/5 truncate transition",
                     session.folderId === f.id
                       ? "text-primary font-medium"
                       : "text-foreground/80",
@@ -421,13 +413,13 @@ function SessionRowInner({
                   title={f.name}
                 >
                   {f.name}
-                </button>
+                </Button>
               ))}
             </div>
           )}
         </div>
 
-        <button
+        <Button variant="bare"
           type="button"
           role="menuitem"
           onClick={() => {
@@ -438,11 +430,11 @@ function SessionRowInner({
         >
           <Archive className="size-3 text-warning/80" />
           Archive Chat
-        </button>
+        </Button>
 
         <div className="h-[1px] bg-border/40 my-1" />
 
-        <button
+        <Button variant="bare"
           type="button"
           role="menuitem"
           onClick={() => {
@@ -453,10 +445,13 @@ function SessionRowInner({
         >
           <Trash2 className="size-3 text-destructive/80" />
           Delete Chat
-        </button>
+        </Button>
       </div>,
       document.body,
     );
+
+  const stamp = timeAgo(session.updatedAt || session.startedAt || '');
+  const rowClass = cn('thread group', active && 'active');
 
   return (
     <motion.div
@@ -465,20 +460,18 @@ function SessionRowInner({
       initial="initial"
       animate="animate"
       exit="exit"
-      className={cn(
-        "august-session-row group relative rounded-md",
-        active ? "august-session-row-active bg-white/[0.05]" : "hover:bg-white/[0.03]",
-      )}
+      className={rowClass}
+      data-live={status === 'working' || status === 'streaming'}
+      data-awaiting={status === 'awaiting' || needsHandoff > 0}
     >
-      {/* Preview triggers: hover AND keyboard focus, Escape to dismiss. Deliberately
-          no native `title=` on this row — a browser tooltip cannot be styled,
-          themed, timed or read on demand, and it would fight the card. The pin
-          gesture its old `title` advertised is now taught by the Pinned empty
-          state in SessionList. */}
-      <button
+      {/* One line, like the mockup: dot, title, time. Everything the old
+          second line carried (model, live headline, handoff count) is in the
+          hover preview and in the row's accessible name — the rail stays
+          scannable instead of turning each chat into a two-line card. */}
+      <Button variant="bare"
         ref={rowRef}
         onClick={() => {
-          if (status === "done") clearSessionStatus(session.id);
+          if (status === 'done') clearSessionStatus(session.id);
           hidePreview();
           onClick();
         }}
@@ -491,195 +484,53 @@ function SessionRowInner({
         onFocus={schedulePreview}
         onBlur={hidePreview}
         onKeyDown={(e) => {
-          if (e.key === "Escape") hidePreview();
+          if (e.key === 'Escape') hidePreview();
         }}
         aria-describedby={previewPos ? previewId : undefined}
-        className="relative w-full text-left px-2 py-0.5 flex flex-col gap-0 pr-7 min-w-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+        aria-label={`${session.title || 'Untitled'}${status ? ` — ${status}` : ''}${
+          needsHandoff > 0 ? ` — ${needsHandoff} needs handoff` : ''
+        }`}
+        className="thread-open focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
       >
-        {/* Line 1 is the title ALONE. It used to share this line with the
-            status dot, a folder glyph, the token delta and the timestamp,
-            and on a narrow sidebar that truncated the one thing the row is
-            for ("Friendly g" + "+12.3k / −98" + "5d ago"). Haze splits it
-            the same way: title on top, quiet metadata beneath. */}
-        <div className="flex items-center gap-1.5 min-w-0">
-          {hasStatus ? (
-            <span
-              className={cn(
-                "inline-block size-1.5 rounded-full shrink-0 transition-colors",
-                status === "working" && "bg-warning",
-                status === "streaming" && "bg-warning animate-pulse",
-                status === "done" && "bg-success",
-                status === "awaiting" && "bg-info",
-                status === "error" && "bg-danger",
-              )}
-            />
-          ) : (
-            /* The hollow circle bullet, on EVERY row including the selected
-             * one. Measured off the Claude reference at 2.4x: the bullet is
-             * identical on selected and unselected rows — selection is carried
-             * by the row's lighter fill alone, so changing the bullet on
-             * selection is redundant signal.
-             *
-             * Two things were wrong before:
-             * 1. `bg-sidebar-foreground` has NO css rule anywhere (only
-             *    `--dt-sidebar-foreground` is defined), so the SELECTED row's
-             *    bullet computed to fully transparent — no bullet at all.
-             * 2. `border-sidebar-foreground/35` rendered the same `--dt-border`
-             *    as a full-strength border, because a `!important`
-             *    `border-color` rule in base.css was overriding the opacity
-             *    modifier. That rule is now fixed.
-             * `border-tier-2` is a muted token that resolves on both themes. */
-            <span
-              className="inline-block size-[7px] rounded-full border border-foreground/25
-                         group-hover:border-foreground/40 transition-colors shrink-0"
-              data-testid="session-row-bullet"
-            />
-          )}
-          {session.workspacePath && (
-            <FolderIcon className="size-3 text-tier-3 shrink-0" />
-          )}
-          <div
-            className={cn(
-              "flex-1 min-w-0 session-list-title",
-              active
-                ? "font-medium text-sidebar-foreground"
-                : "text-sidebar-foreground/70 group-hover:text-sidebar-foreground",
-            )}
-          >
-            <MarqueeTitle
-              text={session.title}
-              data-testid="session-list-title"
-              className="w-full"
-            />
-          </div>
-        </div>
-
-        {/* Line 2 — REMOVED.
-
-            This was "the Haze row signature": relative time on the left, token
-            delta hard right. Measured against the Claude reference at 2.4x, its
-            chat rows are a SINGLE line — hollow circle bullet, then the title,
-            with no second line at all: no timestamp, no `+29.0k / −386`. Haze
-            does carry the delta, but the two references disagree and the Claude
-            layout is the one this redesign is being measured against.
-
-            The delta also cost a per-row subscription (`useSessionTokenDelta`)
-            and a second rendered line per row, to surface a number the composer
-            footer now carries in aggregate.
-
-            `hasTokenDelta`/`delta` stay defined: the hover preview and the
-            pending-handoff warning still read them. */}
-
-        {/* DeepSeek parity: a pending human interaction REPLACES the
-            timestamp with its own warning label — R4 §3, "pending
-            interactions replace the timestamp". It sits on its own line here
-            so the title line never competes with an amber pill. */}
+        <span className="thread-dot" aria-hidden />
+        <span className="thread-title session-list-title" data-testid="session-list-title">
+          <MarqueeTitle text={session.title} className="w-full" />
+        </span>
         {needsHandoff > 0 ? (
           <span
-            className="ml-3.5 inline-flex w-fit items-center gap-1 rounded-sm bg-warning/15 px-1 text-2xs font-medium text-warning-fg"
+            className="thread-needs"
             title={`${needsHandoff} workstream${needsHandoff === 1 ? '' : 's'} need${needsHandoff === 1 ? 's' : ''} a handoff`}
             data-testid="session-row-needs-handoff"
           >
-            <span className="size-1.5 rounded-full bg-warning" aria-hidden />
-            Needs handoff
+            {needsHandoff}
           </span>
         ) : null}
+        <span className="thread-time">{stamp}</span>
+      </Button>
 
-        <AnimatePresence>
-          {(status === "working" || status === "streaming") && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              className="flex items-center gap-1.5 ml-3 min-w-0 overflow-hidden"
-              data-slot="session-live-status"
-            >
-              <span className="text-xs text-warning/80 font-medium shrink-0">
-                {modelDisplayParts(session.model).name}
-              </span>
-              <span className="text-xs text-warning/40 shrink-0" aria-hidden>
-                ·
-              </span>
-              <span
-                className="text-xs text-warning/65 font-medium truncate session-list-meta"
-                title={liveHeadline || undefined}
-              >
-                {liveHeadline?.trim() ||
-                  (status === "streaming"
-                    ? "Running in background"
-                    : "Working…")}
-              </span>
-            </motion.div>
-          )}
-          {status === "done" && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              className="flex items-center gap-1.5 ml-3 min-w-0 overflow-hidden"
-            >
-              <span className="text-xs text-success/80 font-medium shrink-0">
-                {modelDisplayParts(session.model).name}
-              </span>
-              <span className="text-xs text-success/40 shrink-0" aria-hidden>
-                ·
-              </span>
-              <span className="text-xs text-success/60 font-medium">Done</span>
-            </motion.div>
-          )}
-          {status === "error" && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              className="flex items-center gap-1.5 ml-3 min-w-0 overflow-hidden"
-            >
-              <span className="text-xs text-danger/80 font-medium shrink-0">
-                {modelDisplayParts(session.model).name}
-              </span>
-              <span className="text-xs text-danger/40 shrink-0" aria-hidden>
-                ·
-              </span>
-              <span className="text-xs text-danger/60 font-medium">Error</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </button>
-
-      {/* Kebab — hover-revealed controls on the session row */}
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className={cn(
-          "absolute right-1 top-1/2 -translate-y-1/2 z-40 flex items-center gap-px opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100",
-        )}
-      >
-        <motion.button
-          ref={kebabRef}
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            // The action menu wins: never let the preview sit under it.
+      <Button variant="bare"
+        ref={kebabRef}
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          hidePreview();
+          setShowMenu((v) => !v);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
             hidePreview();
-            setShowMenu((v) => !v);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "ArrowDown") {
-              e.preventDefault();
-              hidePreview();
-              setShowMenu(true);
-            }
-          }}
-          whileHover={hoverScale.whileHover}
-          whileTap={hoverScale.whileTap}
-          className="rounded p-0.5 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
-          aria-label="More options"
-          aria-expanded={showMenu}
-          aria-haspopup="menu"
-          aria-controls={menuId}
-        >
-          <EllipsisVertical className="size-2.5 text-tier-2 transition hover:text-tier-1" />
-        </motion.button>
-      </div>
+            setShowMenu(true);
+          }
+        }}
+        className="thread-kebab focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+        aria-label="More options"
+        aria-expanded={showMenu}
+        aria-haspopup="menu"
+        aria-controls={menuId}
+      >
+        <EllipsisVertical className="size-2.5" />
+      </Button>
 
       {menu}
       {preview}

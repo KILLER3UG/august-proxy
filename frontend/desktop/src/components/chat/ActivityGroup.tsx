@@ -19,9 +19,10 @@
  * rather than as a stack of separate rows that happen to be adjacent. */
 
 import { Children, useId, type ReactNode } from 'react';
-import { AlertCircle, ChevronDown } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { cn, fmtElapsed } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { SignalIcon } from '@/components/ui/SignalIcon';
 
 export function ActivityGroup({
   summary,
@@ -61,88 +62,46 @@ export function ActivityGroup({
   const rows = Children.toArray(children);
 
   return (
-    <div className="row-enter my-0.5" data-slot="activity-group" data-group-key={groupKey}>
-      {/* NOT A BOX. This runs inside the activity CARD, and the reference's
-          card is ONE container whose children are hairline-separated rows -
-          "one rounded container with hairline children, not N bordered
-          cards". The group brought its own rounded border and background,
-          so the card held a bordered box inside a bordered card. The group
-          is now a section of the card: the card's own hairline separates it
-          from its neighbours, and the group's header and body rows are
-          separated by the hairline below. */}
-      <div className="overflow-hidden">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="w-full shrink justify-start gap-2 whitespace-normal rounded-none px-2.5 py-1.5 text-left text-[0.8125rem] font-medium text-foreground/85 hover:bg-white/[0.03] hover:text-foreground"
-          onClick={() => onToggle(!expanded)}
-          id={triggerId}
-          aria-expanded={expanded}
-          aria-controls={regionId}
-          data-testid="activity-group-head"
-        >
-          {running ? (
-            <span className="activity-dots shrink-0" aria-hidden>
-              <span className="dot" />
-              <span className="dot" />
-              <span className="dot" />
-            </span>
-          ) : (
-            <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/50" aria-hidden />
-          )}
-          {/* NOT `flex-1`. The reference puts the duration and the chevron
-              IMMEDIATELY after the title -- "Comparing two lesser-known
-              language models  9s >" -- and the rest of the row is empty. A
-              growing summary span pushed the chevron to the far right of the
-              content column instead, which is a different row. It still
-              shrinks (`min-w-0` + `truncate`), it just no longer GROWS. */}
-          <span
-            className="min-w-0 truncate text-[0.8125rem] font-medium text-foreground/85"
-            data-testid="activity-group-summary"
-          >
-            {summary}
+    <div
+      className="ledger row-enter"
+      data-slot="activity-group"
+      data-group-key={groupKey}
+      data-open={expanded}
+    >
+      <Button
+        variant="bare"
+        type="button"
+        className="ledger-head"
+        onClick={() => onToggle(!expanded)}
+        id={triggerId}
+        aria-expanded={expanded}
+        aria-controls={regionId}
+        data-testid="activity-group-head"
+      >
+        <span className={cn('ledger-pulse', !running && 'ledger-pulse--idle')} aria-hidden />
+        <strong data-testid="activity-group-summary">{summary}</strong>
+        {failed && (
+          <span className="ledger-failed" data-testid="activity-group-failed">
+            <AlertCircle className="size-3" aria-hidden />
+            failed
           </span>
-          {failed && (
-            <span
-              className="inline-flex shrink-0 items-center gap-1 text-2xs font-medium text-danger-fg"
-              data-testid="activity-group-failed"
-            >
-              <AlertCircle className="size-3 text-danger" aria-hidden />
-              failed
-            </span>
-          )}
-          {elapsed ? (
-            <span
-              className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground/60"
-              data-testid="activity-group-elapsed"
-            >
-              {elapsed}
-            </span>
-          ) : null}
-          <ChevronDown
-            className={cn(
-              'size-3 shrink-0 text-muted-foreground/60 transition-transform',
-              !expanded && '-rotate-90',
-            )}
-            aria-hidden
-          />
-        </Button>
+        )}
+        <span className="ledger-meta">
+          {elapsed ? <span data-testid="activity-group-elapsed">{elapsed}</span> : null}
+        </span>
+        <SignalIcon name="chev" className="chev" />
+      </Button>
 
-        <div id={regionId} role="region" aria-labelledby={triggerId}>
-          {expanded && rows.length > 0 ? (
-            <div className="border-t border-border/60 px-2.5 py-1" data-testid="activity-group-body">
-              {/* The header's own left padding is px-2.5; the body used px-2,
-                  which put the rows 2px off the header's text - a hairline
-                  misalignment in the one place the eye checks alignment. */}
-              {rows.map((row, i) => (
-                <div key={i} className={cn(i > 0 && 'border-t border-border/50')}>
-                  {row}
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </div>
+      <div id={regionId} role="region" aria-labelledby={triggerId}>
+        {expanded && rows.length > 0 ? (
+          <div className="ledger-body" data-testid="activity-group-body">
+            {rows.map((row, i) => (
+              <div key={i} className="ledger-row-wrap">
+                {row}
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   );

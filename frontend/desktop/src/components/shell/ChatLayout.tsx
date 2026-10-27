@@ -36,6 +36,7 @@ import { loadComposerDraft } from "@/sections/chat/message-storage";
 import { ConfirmDialog } from "@/components/overlays/ConfirmDialog";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { SignalSprite } from "@/components/ui/SignalIcon";
 
 const SESSIONS_COLLAPSED_KEY = "august-sessions-collapsed";
 
@@ -565,7 +566,8 @@ export function ChatLayout() {
     : location.pathname;
 
   return (
-    <div ref={shell.ref} className="august-shell h-full min-h-0 flex flex-col overflow-hidden bg-background text-foreground">
+    <div ref={shell.ref} className="august-shell app sd-app h-full min-h-0 overflow-hidden text-foreground">
+      <SignalSprite />
       {/* Shell body: sidebar + main column. Settings is a route inside this
           column now, so nothing here is inerted and the chat does not keep
           rendering behind an overlay. */}
@@ -592,7 +594,7 @@ export function ChatLayout() {
           }}
         />
 
-        <div className="august-main-column flex-1 flex flex-col min-w-0">
+        <div className="august-main-column main">
           <ChatTitlebar
             session={active}
             sidebarCollapsed={collapsed}
@@ -600,7 +602,7 @@ export function ChatLayout() {
             onToggleSidebar={() => setCollapsed((c) => !c)}
             workersBadge={workersBadge}
           />
-          <div className="august-content-area flex-1 min-h-0 overflow-hidden relative flex">
+          <div className="august-content-area workspace-body">
             {showRightSidebar && shell.drawerOverlays && (
               <div
                 className="absolute inset-0 z-20 bg-scrim"
@@ -617,7 +619,7 @@ export function ChatLayout() {
                     --august-drawer-w (see chat.css): the drawer stays an
                     overlay per Part 15.4, but at dock widths the column
                     reserves its space so nothing renders underneath it. */}
-                <div className="august-chat-column flex-1 flex min-w-0 h-full">
+                <div className="august-chat-column chat-surface">
                   {/* No `AnimatePresence mode="wait"` around this keyed surface.
                       That gate mounts the incoming page only after the outgoing
                       one reports its exit as complete, and its failure mode is

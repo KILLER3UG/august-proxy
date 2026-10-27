@@ -8,14 +8,11 @@ import { useQuery } from '@tanstack/react-query';
 import { listBots } from '@/api/api-client';
 import { useNeedsHandoffStore } from './needs-handoff-store';
 import { PromptDialog } from '@/components/overlays/PromptDialog';
-import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
-import { ChevronUp, Search, X, AlertCircle } from "lucide-react";
+import { AnimatePresence, LayoutGroup } from "framer-motion";
+import { AlertCircle } from "lucide-react";
 import { openConversationSearch } from "@/store/conversation-search";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
 import { openFolderViaTauri, folderNameFromPath } from "@/api/folder";
 import { isTauri } from "@/lib/tauri-detect";
-import { t } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { useAppUpdate } from "@/hooks/useAppUpdate";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
@@ -47,6 +44,8 @@ import { toast } from "sonner";
 import { api } from "@/api/client";
 import { openExternal } from "@/lib/tauri-shell";
 import { SessionListNav } from "./SessionListNav";
+import { Button } from "@/components/ui/button";
+import { SignalIcon } from "@/components/ui/SignalIcon";
 import { SessionRow } from "./SessionRow";
 import { BotsRail } from "./BotsRail";
 import { Section, FolderHeader, UncategorizedHeader } from "./FolderTree";
@@ -70,12 +69,6 @@ const STORAGE = (() => {
     return [];
   }
 })();
-
-const settingsRowMotion = {
-  rest: { x: 0 },
-  hover: { x: 3, transition: t.fast },
-  tap: { scale: 0.98, transition: t.fast },
-};
 
 /** Rows rendered per group before the rest is held back. Each row is a
  *  framer-motion node with its own handlers, and the pool is unbounded — sessions
@@ -949,17 +942,9 @@ export function SessionList({
     retry: false,
   });
 
-  const activeSession = sessions.find(
-    (s) => s.id === activeId || s.workbenchSessionId === activeId,
-  );
-  const activeWorkspacePath = activeSession?.workspacePath ?? null;
-  const activeWorkspaceName = activeWorkspacePath
-    ? folderNameFromPath(activeWorkspacePath)
-    : null;
-
   return (
     <SessionUsageProvider value={usageBySession.data?.results ?? NO_DELTAS}>
-    <div ref={rootRef} className="august-session-list flex h-full text-sm relative select-none bg-sidebar">
+    <div ref={rootRef} className="august-session-list flex h-full relative select-none">
       <input
         ref={dirInputRef}
         type="file"
@@ -968,14 +953,13 @@ export function SessionList({
         className="hidden"
         onChange={handleDirPicked}
       />
-      <div className="flex-1 flex flex-col min-w-0 text-sm">
+      <div className="flex-1 flex flex-col min-w-0">
         <SessionListNav
           onNew={onNew}
           onNavigate={onNavigate}
           onToggleCollapsed={onToggleCollapsed}
           activePath={typeof window !== 'undefined' ? window.location.pathname : ''}
-          workspaceName={activeWorkspaceName}
-          workspacePath={activeWorkspacePath}
+          threadCount={visible.length}
         />
 
         {/* Sessions | Bots — a two-state switch, and the WRITER for
@@ -1008,40 +992,24 @@ export function SessionList({
             no Terminal, no count badge, and the session search below renders
             only for the sessions view (the roster carries its own), so nothing
             in either state is inert. */}
-        <div className="flex items-center gap-1 px-1.5 pt-1.5" role="tablist" aria-label="Sidebar view">
-          <Button
+        <div className="sd-rail-switch" role="tablist" aria-label="Sidebar view">
+          <Button variant="bare"
             type="button"
             role="tab"
-            variant="ghost"
-            size="sm"
             aria-selected={railTab === 'sessions'}
             onClick={() => switchRailTab('sessions')}
             data-testid="sidebar-tab-sessions"
-            // `Button` for the focus ring it carries; padding and colours are
-            // overridden because a view switch is a tab, not a form action.
-            className={cn(
-              'px-2 py-1 transition-colors',
-              railTab === 'sessions'
-                ? 'bg-sidebar-accent/70 text-sidebar-foreground hover:bg-sidebar-accent/70 hover:text-sidebar-foreground'
-                : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground',
-            )}
+            data-active={railTab === 'sessions'}
           >
             Sessions
           </Button>
-          <Button
+          <Button variant="bare"
             type="button"
             role="tab"
-            variant="ghost"
-            size="sm"
             aria-selected={railTab === 'bots'}
             onClick={() => switchRailTab('bots')}
             data-testid="sidebar-tab-bots"
-            className={cn(
-              'px-2 py-1 transition-colors',
-              railTab === 'bots'
-                ? 'bg-sidebar-accent/70 text-sidebar-foreground hover:bg-sidebar-accent/70 hover:text-sidebar-foreground'
-                : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground',
-            )}
+            data-active={railTab === 'bots'}
           >
             Bots
           </Button>
@@ -1052,9 +1020,9 @@ export function SessionList({
             the Bots view it would be a text box that does nothing (the roster
             has its own). */}
         {railTab === 'sessions' && (
-        <div className="px-1.5 pt-1">
-          <div className="relative">
-            <Search className="absolute left-1.5 top-1/2 -translate-y-1/2 size-3 text-tier-3 pointer-events-none" />
+        <div className="sd-rail-search-wrap">
+          <div className="sd-rail-search">
+            <SignalIcon name="search" />
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -1063,17 +1031,16 @@ export function SessionList({
               }}
               placeholder="Search sessions or ids…"
               aria-label="Search sessions"
-              className="w-full rounded-md bg-white/[0.04] border border-sidebar-border/50 pl-6 pr-6 py-0.5 text-xs text-tier-1 placeholder:text-tier-3 outline-none focus:border-sidebar-ring/70 transition-colors"
             />
             {searchQuery && (
-              <button
+              <Button variant="bare"
                 type="button"
                 onClick={() => setSearchQuery("")}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-tier-2 hover:text-tier-1 transition-colors"
                 title="Clear search"
+                aria-label="Clear search"
               >
-                <X className="size-3" />
-              </button>
+                <SignalIcon name="close" />
+              </Button>
             )}
           </div>
         </div>
@@ -1081,7 +1048,7 @@ export function SessionList({
 
         {/* Scrollable sessions area — denser, drawer-only simplicity */}
         {railTab === 'sessions' && (
-        <div className="flex-1 overflow-y-auto px-1.5 pb-2 space-y-2">
+        <div className="sd-sidebar-list space-y-2">
           {searching && searchMatchCount === 0 && (
             <div className="py-4 text-center">
               <p className="text-xs text-tier-1">
@@ -1108,7 +1075,7 @@ export function SessionList({
                 <span className="tabular-nums">{attentionSessions.length}</span>
               </div>
               {attentionSessions.map((s) => (
-                <button
+                <Button variant="bare"
                   key={s.id}
                   type="button"
                   onClick={() => onSelect(s)}
@@ -1125,7 +1092,7 @@ export function SessionList({
                   <span className="shrink-0 text-2xs tabular-nums text-warning-fg">
                     {attentionBySession[s.id].needs}
                   </span>
-                </button>
+                </Button>
               ))}
             </div>
           )}
@@ -1287,13 +1254,13 @@ export function SessionList({
               })()}
               {!searching && (
                 <div className="pt-2 pl-2 pb-1">
-                  <button
+                  <Button variant="bare"
                     type="button"
                     onClick={() => openConversationSearch()}
                     className="text-[0.71875rem] text-sidebar-foreground/50 hover:text-sidebar-foreground transition"
                   >
                     View all
-                  </button>
+                  </Button>
                 </div>
               )}
             </div>
@@ -1304,7 +1271,7 @@ export function SessionList({
         {/* Bots view — the roster owns the sidebar while the switch above is
             on Bots. It is the roster's only render site in the app. */}
         {railTab === 'bots' ? (
-          <div className="flex-1 overflow-y-auto">
+          <div className="sd-sidebar-list">
             <BotsRail
               activeSessionId={
                 sessions.find((s) => s.id === activeId || s.workbenchSessionId === activeId)
@@ -1318,76 +1285,66 @@ export function SessionList({
           </div>
         ) : null}
 
-        {/* Usage strip + identity — the mockup's sidebar footer. The usage
-            number is the same 30-day aggregate the Usage page reads, not a
-            second accounting of the per-row deltas. */}
-        <div className="px-2 pb-1.5 pt-2 border-t border-sidebar-border/40">
-          <div className="rounded-lg border border-sidebar-border/45 bg-sidebar-accent/20 px-2.5 py-1.5">
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="text-[0.625rem] text-sidebar-foreground/45">Last 30 days</span>
-              <span className="font-mono text-[0.75rem] tabular-nums text-sidebar-foreground">
-                {usageStats.data ? formatCompactTokens(usageStats.data.totalTokens) : '—'}
-              </span>
+        {/* Usage + identity — the mockup's sidebar footer. The usage number is
+            the same 30-day aggregate the Usage page reads, not a second
+            accounting of the per-row deltas. */}
+        <div className="sidebar-footer">
+          <div className="usage-card">
+            <div className="usage-top">
+              <span>Last 30 days</span>
+              <strong>{usageStats.data ? formatCompactTokens(usageStats.data.totalTokens) : '—'}</strong>
             </div>
-            <div className="mt-0.5 text-[0.625rem] text-sidebar-foreground/35">
+            <div className="usage-sub">
               tokens{usageStats.data ? ` · ${usageStats.data.sessions} chats` : ''}
             </div>
           </div>
-        </div>
 
-        {/* Bottom: user identity row — Claude-style username + avatar icon
-            that opens the selection list (profile / settings / notifications /
-            what's-new / account). Falls back to Guest when signed out. */}
-        <div className="px-2 pb-2 pt-1 border-t border-sidebar-border/40">
-          <div className="min-w-0">
-            <UserDropdown
-              selectedStatus={dropdownUser.status}
-              onStatusChange={(status) => {
-                if (signedIn) setAccountStatus(status as UserStatus);
-              }}
-              onAction={handleUserAction}
-              signedIn={signedIn}
-              accounts={accounts.map((a) => ({
-                id: a.id,
-                name: a.displayName,
-                avatar: a.avatar,
-                initials: a.initials,
-              }))}
-              align="start"
-              side="top"
-              alignOffset={-8}
-              contentWidth={sidebarWidth}
-              user={dropdownUser}
-              updateAvailable={updateAvailable}
-              trigger={
-                <motion.button
-                  type="button"
-                  initial="rest"
-                  whileHover="hover"
-                  whileTap="tap"
-                  variants={settingsRowMotion}
-                  className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/40 hover:bg-white/[0.04]"
-                  title={dropdownUser.name}
-                  aria-label={`Account menu — ${dropdownUser.name}`}
-                  data-testid="user-menu-trigger"
-                >
-                  <Avatar className="size-6 shrink-0 border border-white/20">
-                    {dropdownUser.avatar ? (
-                      <AvatarImage src={dropdownUser.avatar} alt={dropdownUser.name} />
-                    ) : null}
-                    <AvatarFallback className="text-2xs">{dropdownUser.initials}</AvatarFallback>
-                  </Avatar>
-                  <div className="min-w-0 flex-1 text-[0.78125rem]">
-                    <span className="block truncate font-medium text-sidebar-foreground">{dropdownUser.name}</span>
-                    <span className="block truncate text-[0.625rem] text-sidebar-foreground/40">
-                      {signedIn ? 'Signed in' : 'Local workspace'}
-                    </span>
-                  </div>
-                  <ChevronUp className="size-3 shrink-0 text-muted-foreground/50" />
-                </motion.button>
-              }
-            />
-          </div>
+          <UserDropdown
+            selectedStatus={dropdownUser.status}
+            onStatusChange={(status) => {
+              if (signedIn) setAccountStatus(status as UserStatus);
+            }}
+            onAction={handleUserAction}
+            signedIn={signedIn}
+            accounts={accounts.map((a) => ({
+              id: a.id,
+              name: a.displayName,
+              avatar: a.avatar,
+              initials: a.initials,
+            }))}
+            align="start"
+            side="top"
+            alignOffset={-8}
+            contentWidth={sidebarWidth}
+            user={dropdownUser}
+            updateAvailable={updateAvailable}
+            trigger={
+              <Button variant="bare"
+                type="button"
+                className="profile"
+                title={dropdownUser.name}
+                aria-label={`Account menu — ${dropdownUser.name}`}
+                data-testid="user-menu-trigger"
+              >
+                <span className="avatar">
+                  {dropdownUser.avatar ? (
+                    <img src={dropdownUser.avatar} alt="" />
+                  ) : (
+                    dropdownUser.initials || dropdownUser.name.slice(0, 2).toUpperCase()
+                  )}
+                </span>
+                <span className="profile-copy">
+                  <span className="profile-name">{dropdownUser.name}</span>
+                  <span className="profile-plan">
+                    {signedIn ? 'Signed in' : 'Local workspace'}
+                  </span>
+                </span>
+                <span className="icon-button" aria-hidden="true">
+                  <SignalIcon name="more" />
+                </span>
+              </Button>
+            }
+          />
         </div>
       </div>
 

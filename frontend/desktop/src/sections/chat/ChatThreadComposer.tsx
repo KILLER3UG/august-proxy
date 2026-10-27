@@ -327,7 +327,11 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
 
   // Value-driven auto-grow so clearing input after send collapses height
   // (onChange alone never fires for controlled setInput('')).
-  const MAX_COMPOSER_H = 360;
+  // This cap and the textarea's inline max-height must agree: the height set
+  // here is clamped by max-height while the overflow test reads the raw
+  // scrollHeight, so a cap above max-height silently hides every line
+  // between the two (no scrollbar — overflow stays `hidden`).
+  const MAX_COMPOSER_H = 240;
   const resizeTextarea = useCallback(() => {
     const el = taRef.current;
     if (!el) return;
@@ -428,8 +432,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
 
       <div
         className={cn(
-          'august-composer relative w-full min-w-0 rounded-2xl border bg-chat-input backdrop-blur-sm shadow-md',
-          'border-border/70 overflow-visible',
+          'august-composer composer relative w-full min-w-0 overflow-visible',
         )}
       >
         {/* Jump-to-bottom, centered and straddling the card's top border.
@@ -551,8 +554,13 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
                  height, so the 6px of slack all landed under the text and the
                  placeholder sat high in its own row — the "floating" look. With
                  8px above and below, one line is exactly 36px and centred, and
-                 a wrapped paragraph keeps the same rhythm as it grows. */
-              className="w-full resize-none bg-transparent px-1 py-2 text-sm leading-5 outline-none placeholder:text-muted-foreground/70"
+                 a wrapped paragraph keeps the same rhythm as it grows.
+                 `block` is the second half of the same fix: a textarea is an
+                 inline-block, so its cell kept the ~7px baseline descender
+                 under it (a 41px input measured 48px) — invisible slack that
+                 landed below the text and made the card's two paddings read
+                 unequal even when they were not. */
+              className="block w-full resize-none bg-transparent px-1 py-2 text-sm leading-5 outline-none placeholder:text-muted-foreground/70"
               style={{ minHeight: '36px', maxHeight: '240px' }}
             />
           )}
@@ -611,7 +619,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
           Before a session's first turn there is no measurement, and the
           readout renders nothing at all rather than a confident `0%`. */}
       <div
-        className="mt-1.5 flex items-center justify-between gap-3 px-1 select-none"
+        className="composer-foot mt-1.5 flex items-center justify-between gap-3 px-1 select-none"
         data-testid="composer-footer-row"
       >
         {/* The row shares width with the project and model chips, and those are
@@ -620,7 +628,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
             disclaimer informs no one. Shortened to what fits, with the full
             sentence on hover rather than dropped. */}
         <p
-          className="min-w-0 flex-1 truncate text-2xs text-muted-foreground/60"
+          className="composer-foot-note min-w-0 flex-1 truncate"
           title="August is an AI assistant and can make mistakes. Please double-check responses."
         >
           August can make mistakes — double-check responses.

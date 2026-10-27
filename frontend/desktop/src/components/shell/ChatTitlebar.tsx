@@ -1,26 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { PromptDialog } from '@/components/overlays/PromptDialog';
 import { useLocation } from "react-router-dom";
-import {
-  Minus,
-  Square,
-  X,
-  PanelLeftClose,
-  Minimize2,
-  Folder,
-  Pencil,
-  Copy,
-  ExternalLink,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  Search,
-  Sun,
-  Moon,
-  PanelRight,
-} from "lucide-react";
+import { Pencil, Copy, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 import { isTauri } from "@/lib/tauri-detect";
 import { revealInFolder } from "@/lib/tauri-shell";
 import { renameSession, useSessionsStore } from "@/store/sessions";
@@ -33,11 +15,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
-import { Button } from "@/components/ui/button";
 import { RightDrawerDropdown } from "./RightDrawerLauncher";
 import { closeRightDrawer, openRightDrawer, useRightDrawer } from "./RightDrawerState";
 import { BackgroundJobsButton } from "./BackgroundJobsButton";
 import { MarqueeTitle } from "@/components/ui/MarqueeTitle";
+import { Button } from "@/components/ui/button";
+import { SignalIcon } from "@/components/ui/SignalIcon";
 import { useSessionStream } from '@/sections/chat/hooks/useSessionStream';
 import { collectArtifacts } from '@/lib/artifacts';
 import type { Session } from "@/store/sessions";
@@ -187,73 +170,44 @@ export function ChatTitlebar({
   };
 
   return (
-    <header
-      data-tauri-drag-region
-      className="august-titlebar h-[var(--shell-titlebar-h)] bg-background flex items-center justify-between shrink-0 select-none border-b border-border/25 px-2"
-    >
-      <div className="flex items-center min-w-0 gap-1.5" data-tauri-drag-region>
+    <header data-tauri-drag-region className="titlebar">
+      <div className="titlebar-left" data-tauri-drag-region>
         {sidebarCollapsed && (
-          <button
+          <Button variant="bare"
+            type="button"
             onClick={onToggleSidebar}
-            className="size-8 rounded-md flex items-center justify-center shrink-0 hover:bg-accent text-muted-foreground/80 hover:text-foreground transition mr-0.5"
+            className="icon-button"
             title="Show sidebar"
             aria-label="Show sidebar"
           >
-            <PanelLeftClose className="size-3" />
-          </button>
+            <SignalIcon name="panel" />
+          </Button>
         )}
 
-        <div className="hidden xl:flex items-center gap-0.5 text-muted-foreground/50">
-          <button
-            type="button"
-            onClick={() => window.history.back()}
-            className="size-7 rounded flex items-center justify-center hover:bg-accent hover:text-foreground transition"
-            title="Back"
-            aria-label="Back"
-          >
-            <ChevronLeft className="size-3" />
-          </button>
-          <button
-            type="button"
-            onClick={() => window.history.forward()}
-            className="size-7 rounded flex items-center justify-center hover:bg-accent hover:text-foreground transition"
-            title="Forward"
-            aria-label="Forward"
-          >
-            <ChevronRight className="size-3" />
-          </button>
-        </div>
-
-        <div className={cn(
-          "flex items-center gap-1.5 min-w-0 max-w-[min(54vw,42rem)] pl-1",
-        )}>
-          {workspaceName && (
-            <div className="hidden lg:flex items-center gap-1.5 shrink-0 text-[0.75rem] text-muted-foreground/55">
-              <Folder className="size-3 opacity-70" />
-              <div className="max-w-[10rem] truncate" title={session?.workspacePath || workspaceName}>
+        <div className="crumbs">
+          {workspaceName ? (
+            <>
+              <span className="crumb-muted" title={session?.workspacePath || workspaceName}>
                 {workspaceName}
-              </div>
-              <span className="text-muted-foreground/30">/</span>
-            </div>
-          )}
+              </span>
+              <span className="crumb-slash">/</span>
+            </>
+          ) : null}
           {session ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button
+                <Button variant="bare"
                   type="button"
-                  className="group flex items-center gap-1 px-2 py-1 rounded-md hover:bg-accent/60 text-left transition-colors min-w-0"
-                  title="Session menu" aria-label="Session menu"
+                  className="crumb-title"
+                  title="Session menu"
+                  aria-label="Session menu"
                   data-testid="titlebar-session-trigger"
                 >
-                  <h1 className="text-[0.8125rem] font-medium text-foreground/90 min-w-0 truncate">
-                    <MarqueeTitle
-                      text={barTitle}
-                      data-testid="session-bar-title"
-                      className="w-full"
-                    />
-                  </h1>
-                  <ChevronDown className="size-3 text-muted-foreground/70 group-hover:text-foreground shrink-0 transition-transform" />
-                </button>
+                  <strong>
+                    <MarqueeTitle text={barTitle} data-testid="session-bar-title" className="w-full" />
+                  </strong>
+                  <SignalIcon name="chev" />
+                </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="min-w-48">
                 <DropdownMenuItem onClick={() => setRenameOpen(true)}>
@@ -280,65 +234,60 @@ export function ChatTitlebar({
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <h1 className="text-[0.8125rem] font-medium text-foreground/90 min-w-0 flex-1 px-1">
-              <MarqueeTitle
-                text={barTitle}
-                data-testid="session-bar-title"
-                className="w-full"
-              />
-            </h1>
-          )}
-          {live && (
-            <span className="ml-1 inline-flex h-5 shrink-0 items-center gap-1.5 rounded-full border border-border/50 px-2 font-mono text-[0.5625rem] uppercase tracking-[0.12em] text-muted-foreground/65">
-              <span className="size-1.5 rounded-full bg-primary" aria-hidden />
-              Live
-            </span>
+            <strong className="crumb-title-static">
+              <MarqueeTitle text={barTitle} data-testid="session-bar-title" className="w-full" />
+            </strong>
           )}
         </div>
+
+        {live && (
+          <span className="live-pill">
+            <span className="live-dot" />
+            Live
+          </span>
+        )}
       </div>
 
-      <div className="flex items-center gap-1">
-        <Button
+      <div className="titlebar-actions">
+        <Button variant="bare"
           type="button"
-          variant="ghost"
-          size="sm"
+          className="cmd-button"
           onClick={() => toggleCommandPalette()}
-          className="hidden sm:inline-flex h-8 items-center gap-2 rounded-md border border-border/45 bg-card/30 px-2.5 text-muted-foreground/65 transition-colors hover:bg-accent hover:text-foreground"
           title="Search or run a command (Ctrl+K)"
           aria-label="Search or run"
           aria-keyshortcuts="Control+K"
         >
-          <Search className="size-3.5 shrink-0" />
-          <span className="hidden min-[1180px]:inline text-[0.75rem]">Search or run</span>
-          <kbd className="border-border/50 bg-transparent text-[0.625rem] text-muted-foreground/45">⌘K</kbd>
+          <SignalIcon name="search" />
+          <span>Search or run</span>
+          <kbd>⌘K</kbd>
         </Button>
-        <Button
+
+        <Button variant="bare"
           type="button"
-          variant={canvasActive ? 'secondary' : 'ghost'}
-          size="sm"
+          className="canvas-toggle"
+          data-open={canvasActive}
           onClick={() => {
             if (canvasActive) closeRightDrawer();
             else openRightDrawer('canvas');
           }}
-          className="h-8 items-center gap-1.5 rounded-md px-2 text-muted-foreground/70 hover:bg-accent hover:text-foreground"
           title="Canvas"
           aria-label="Canvas"
           aria-pressed={canvasActive}
         >
-          <PanelRight className="size-3.5" />
-          <span className="hidden min-[1180px]:inline text-[0.75rem]">Canvas</span>
+          <SignalIcon name="panel" />
+          Canvas
         </Button>
-        <Button
+
+        <Button variant="bare"
           type="button"
-          variant="ghost"
-          size="icon-sm"
+          className="icon-button"
           onClick={toggleTheme}
-          className="size-8 rounded-md text-muted-foreground/70 hover:bg-accent hover:text-foreground"
           title={effectiveTheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
           aria-label={effectiveTheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
         >
-          {effectiveTheme === 'dark' ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
+          <SignalIcon name={effectiveTheme === 'dark' ? 'sun' : 'moon'} />
         </Button>
+
         {/* The global door to the background job tray. It renders nothing when
             there is no job, so the chrome stays quiet. */}
         <BackgroundJobsButton />
@@ -349,30 +298,21 @@ export function ChatTitlebar({
         />
 
         {/* Windows-style title bar buttons — Tauri only (dead no-ops in the
-            mobile WebView). One height token, one width, token hover fills. */}
+            mobile WebView). */}
         {isTauri && (
-          <div className="flex items-stretch ml-1 -mr-2 h-[var(--shell-titlebar-h)]">
-            <button
-              onClick={() => { void handleMinimize(); }}
-              className="w-10 flex items-center justify-center text-muted-foreground/70 hover:bg-accent transition-colors"
-              aria-label="Minimize"
-            >
-              <Minus className="size-3" />
-            </button>
-            <button
+          <div className="window-controls">
+            <Button variant="bare" onClick={() => { void handleMinimize(); }} aria-label="Minimize">
+              <SignalIcon name="window-min" />
+            </Button>
+            <Button variant="bare"
               onClick={() => { void handleToggleMaximize(); }}
-              className="w-10 flex items-center justify-center text-muted-foreground/70 hover:bg-accent transition-colors"
-              aria-label={isMaximized ? "Restore" : "Maximize"}
+              aria-label={isMaximized ? 'Restore' : 'Maximize'}
             >
-              {isMaximized ? <Minimize2 className="size-3" /> : <Square className="size-3" />}
-            </button>
-            <button
-              onClick={() => { void handleClose(); }}
-              className="w-10 flex items-center justify-center text-muted-foreground/70 hover:bg-danger hover:text-danger-foreground transition-colors"
-              aria-label="Close"
-            >
-              <X className="size-3" />
-            </button>
+              <SignalIcon name="window-max" />
+            </Button>
+            <Button variant="bare" className="close" onClick={() => { void handleClose(); }} aria-label="Close">
+              <SignalIcon name="close" />
+            </Button>
           </div>
         )}
       </div>

@@ -616,6 +616,9 @@ export function ModelEffortMenu({
                     value={effortIndex}
                     aria-label="Effort"
                     aria-valuetext={effortOpt.label}
+                    /* The stylesheet clips its fixed gradient at this stop —
+                       the knob position and the colored fill must agree. */
+                    style={{ '--effort-fill': `${Math.round((effortIndex / (EFFORT_OPTIONS.length - 1)) * 100)}%` } as React.CSSProperties}
                     onChange={(e) => {
                       const next = EFFORT_OPTIONS[Number(e.target.value)];
                       if (next) onEffortChange(next.value);

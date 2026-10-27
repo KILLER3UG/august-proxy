@@ -10,12 +10,14 @@
    drawer is about the full session of workers. */
 
 import { useEffect, useState } from 'react';
-import { Bot, ChevronRight, Loader2, PanelRightOpen } from 'lucide-react';
+import { ChevronRight, Loader2, PanelRightOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getAgentRoleLabel } from '@/lib/tool-labels';
 import { setFocusedSubagent } from '@/components/chat/focused-subagent';
 import { addRightDrawerSection } from '@/components/shell/RightDrawerState';
 import { SubagentTimeline } from '@/components/chat/SubagentTimeline';
+import { Button } from '@/components/ui/button';
+import { SignalIcon } from '@/components/ui/SignalIcon';
 import type { SubagentBlockState } from '@/types/chat';
 
 export interface SubagentDelegateRowProps {
@@ -110,135 +112,98 @@ export function SubagentDelegateRow({
     setExpanded((v) => !v);
   };
 
+  const statusWord = failed
+    ? 'failed'
+    : cancelled
+      ? 'cancelled'
+      : partial
+        ? 'partial'
+        : running
+          ? 'running'
+          : 'queued';
+
+  // One header, used by both branches: with a transcript the line toggles the
+  // inline timeline, without one it opens the drawer. Same anatomy either way,
+  // which is the mockup's `.subagent-top` — icon, name, task, status.
+  const head = (
+    <>
+      <span className="subagent-icon">
+        {running ? (
+          <Loader2 className="size-3 animate-spin" aria-hidden />
+        ) : (
+          <SignalIcon name="branch" />
+        )}
+      </span>
+      <span className="subagent-name">{role}</span>
+      <span className="subagent-task" title={task || undefined}>
+        {task || role}
+      </span>
+      <span className="subagent-status" data-state={statusWord}>
+        {statusWord}
+      </span>
+    </>
+  );
+
   return (
     <div
-      className="subagent-delegate-row row-enter w-full min-w-0"
+      className="subagent-delegate-row subagent-row row-enter"
       data-testid="subagent-delegate-row"
       data-subagent-id={jobId}
       data-subagent-status={status}
       data-expanded={expanded && hasTranscript ? 'true' : 'false'}
     >
-      <div className="group flex w-full min-w-0 items-center gap-2 rounded-md px-1 py-0.5 text-left text-[0.8125rem] leading-5 transition-colors hover:bg-white/[0.03]">
+      <div className="subagent-top">
         {hasTranscript ? (
-          <button
+          <Button
+            variant="bare"
             type="button"
             onClick={toggle}
             aria-expanded={expanded}
-            className="flex min-w-0 flex-1 items-center gap-2 text-left"
+            className="subagent-toggle"
             title={task || undefined}
             data-testid="subagent-delegate-toggle"
           >
             <ChevronRight
-              className={cn(
-                'size-3 shrink-0 text-muted-foreground/50 transition-transform',
-                expanded && 'rotate-90',
-              )}
+              className={cn('subagent-chev', expanded && 'rotate-90')}
               aria-hidden
             />
-            <span className="flex shrink-0 items-center gap-1.5 font-semibold text-foreground/90">
-              {running ? (
-                <Loader2 className="size-3 animate-spin text-primary/80" aria-hidden />
-              ) : (
-                <Bot className="size-3 text-muted-foreground/70" aria-hidden />
-              )}
-              SubAgent
-            </span>
-            <span className="shrink-0 text-info/90">{role}</span>
-            <span className="shrink-0 text-muted-foreground/40" aria-hidden>
-              ·
-            </span>
-            <span className="min-w-0 flex-1 truncate text-muted-foreground/80">
-              {task || role}
-            </span>
-            {running && (
-              <span className="shrink-0 text-2xs tabular-nums text-muted-foreground/60">
-                {fmtElapsed(elapsed)}
-              </span>
-            )}
-            {failed && (
-              <span className="shrink-0 text-2xs text-destructive/80 underline decoration-dotted underline-offset-2">
-                Failed
-              </span>
-            )}
-            {cancelled && (
-              <span className="shrink-0 text-2xs text-muted-foreground/60 underline decoration-dotted underline-offset-2">
-                Cancelled
-              </span>
-            )}
-            {partial && (
-              <span
-                className="shrink-0 text-2xs text-warning/90 underline decoration-dotted underline-offset-2"
-                title="The worker stopped before finishing — what you see is part of its answer, not all of it."
-                data-testid="subagent-delegate-partial"
-              >
-                Partial
-              </span>
-            )}
-          </button>
+            {head}
+            {running ? <span className="subagent-elapsed">{fmtElapsed(elapsed)}</span> : null}
+          </Button>
         ) : (
           /* No transcript (a spawn whose worker never reported, or a legacy
              row): the whole line is the drawer affordance, as before. */
-          <button
+          <Button
+            variant="bare"
             type="button"
             onClick={openDrawer}
             disabled={!jobId}
-            className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-default"
+            className="subagent-toggle"
             title={task || undefined}
           >
-            <span className="flex shrink-0 items-center gap-1.5 font-semibold text-foreground/90">
-              {running ? (
-                <Loader2 className="size-3 animate-spin text-primary/80" aria-hidden />
-              ) : (
-                <Bot className="size-3 text-muted-foreground/70" aria-hidden />
-              )}
-              SubAgent
-            </span>
-            <span className="shrink-0 text-info/90">{role}</span>
-            <span className="shrink-0 text-muted-foreground/40" aria-hidden>
-              ·
-            </span>
-            <span className="min-w-0 flex-1 truncate text-muted-foreground/80">
-              {task || role}
-            </span>
-            {running && (
-              <span className="shrink-0 text-2xs tabular-nums text-muted-foreground/60">
-                {fmtElapsed(elapsed)}
-              </span>
-            )}
-            {failed && (
-              <span className="shrink-0 text-2xs text-destructive/80 underline decoration-dotted underline-offset-2">
-                Failed
-              </span>
-            )}
-            {cancelled && (
-              <span className="shrink-0 text-2xs text-muted-foreground/60 underline decoration-dotted underline-offset-2">
-                Cancelled
-              </span>
-            )}
-            {partial && (
-              <span
-                className="shrink-0 text-2xs text-warning/90 underline decoration-dotted underline-offset-2"
-                title="The worker stopped before finishing — what you see is part of its answer, not all of it."
-                data-testid="subagent-delegate-partial"
-              >
-                Partial
-              </span>
-            )}
-          </button>
+            {head}
+            {running ? <span className="subagent-elapsed">{fmtElapsed(elapsed)}</span> : null}
+          </Button>
         )}
         {jobId && hasTranscript && (
-          <button
+          <Button
+            variant="bare"
             type="button"
             onClick={openDrawer}
-            className="shrink-0 rounded p-0.5 text-muted-foreground/40 transition hover:bg-white/[0.06] hover:text-foreground"
+            className="subagent-open"
             aria-label="Open in drawer"
             title="Open in drawer"
             data-testid="subagent-delegate-open-drawer"
           >
             <PanelRightOpen className="size-3" aria-hidden />
-          </button>
+          </Button>
         )}
       </div>
+      {running ? (
+        <div className="subagent-progress" aria-hidden>
+          <span data-indeterminate="true" />
+        </div>
+      ) : null}
       {expanded && hasTranscript && state ? (
         <div
           className="mt-1 ml-3 border-l border-border/40 pl-3"

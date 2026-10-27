@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { HardDriveDownload, RefreshCw, ShieldCheck, TriangleAlert } from 'lucide-react';
+import { FolderOpen, HardDriveDownload, RefreshCw, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
@@ -9,6 +9,7 @@ import {
   getBrainIntegrity,
   listBrainBackups,
   stageBrainRestore,
+  openMemoryFolder,
 } from '@/api/api-client/brain-backup';
 
 /**
@@ -76,6 +77,15 @@ export function BrainBackupsCard() {
     },
   });
 
+  const openFolderMut = useMutation({
+    mutationFn: () => openMemoryFolder(),
+    onSuccess: (res) => {
+      if (res.opened) toast.success('Memory folder opened.');
+      else toast.info(`Memory folder: ${res.path}`);
+    },
+    onError: () => toast.error('Could not open the memory folder.'),
+  });
+
   const pending = backups.data?.pendingRestore ?? integrity.data?.pendingRestore ?? null;
   const entries = backups.data?.backups ?? [];
   const healthy = integrity.data?.ok && integrity.data.exists;
@@ -100,6 +110,18 @@ export function BrainBackupsCard() {
             aria-label="Refresh backups"
           >
             <RefreshCw className="size-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => openFolderMut.mutate()}
+            disabled={openFolderMut.isPending}
+            aria-label="Open the markdown memory folder"
+            title="Open the readable markdown view of your memory"
+            data-testid="memory-open-folder"
+          >
+            <FolderOpen className="size-3" />
+            Open folder
           </Button>
           <Button
             size="sm"

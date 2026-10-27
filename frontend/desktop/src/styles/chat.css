@@ -152,15 +152,24 @@ details[open] > summary .disclosure-chevron {
   display: none !important;
 }
 
-/* Effort slider in the composer model card. The reference's track is a
- * green→blue gradient with a white knob; the four effort levels are the
- * stops, so the native range keeps keyboard and screen-reader behavior. */
+/* Effort slider in the composer model card, matched to the reference picker:
+ * a fat pill track whose UNFILLED remainder is the muted ground, over a
+ * green→teal→blue gradient that stays fixed to the FULL track width —
+ * so "Low" shows only the gradient's green lead-in and "Max" reveals the
+ * whole run, exactly like the reference at each stop. The white knob and the
+ * small end-of-track marker complete it. The four effort levels are the
+ * stops, so the native range keeps keyboard and screen-reader behavior; the
+ * component sets --effort-fill from the selected index. */
 .model-effort-slider {
+  --effort-fill: 33%;
   -webkit-appearance: none;
   appearance: none;
-  height: 7px;
+  height: 14px;
   border-radius: 9999px;
-  background: linear-gradient(90deg, #2bd6a3 0%, #37b7ff 100%);
+  background:
+    radial-gradient(circle 2.5px at calc(100% - 11px) 50%, rgb(255 255 255 / 0.5) 0 2.5px, transparent 2.5px),
+    linear-gradient(to right, transparent var(--effort-fill), var(--dt-muted) var(--effort-fill)),
+    linear-gradient(90deg, #2ecc71 0%, #2bd6a3 40%, #37b7ff 100%);
   outline: none;
   cursor: pointer;
 }
@@ -172,8 +181,8 @@ details[open] > summary .disclosure-chevron {
 .model-effort-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   border: 0;
   border-radius: 9999px;
   background: #ffffff;
@@ -182,14 +191,17 @@ details[open] > summary .disclosure-chevron {
 }
 
 .model-effort-slider::-moz-range-track {
-  height: 7px;
+  height: 14px;
   border-radius: 9999px;
-  background: linear-gradient(90deg, #2bd6a3 0%, #37b7ff 100%);
+  background:
+    radial-gradient(circle 2.5px at calc(100% - 11px) 50%, rgb(255 255 255 / 0.5) 0 2.5px, transparent 2.5px),
+    linear-gradient(to right, transparent var(--effort-fill), var(--dt-muted) var(--effort-fill)),
+    linear-gradient(90deg, #2ecc71 0%, #2bd6a3 40%, #37b7ff 100%);
 }
 
 .model-effort-slider::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   border: 0;
   border-radius: 9999px;
   background: #ffffff;

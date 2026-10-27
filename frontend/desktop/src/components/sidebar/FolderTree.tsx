@@ -5,7 +5,6 @@ import {
   Plus,
   FolderPlus,
   Folder as FolderIcon,
-  FolderOpen,
   ChevronRight,
   Edit3,
   Trash2,
@@ -67,8 +66,8 @@ export function Section({
 }) {
   return (
     <div className="august-sidebar-section">
-      <div className="august-sidebar-section-header flex items-center justify-between mb-1 px-2">
-        <div className="flex items-center gap-1">
+      <div className="section-head">
+        <span className="section-head-label">
           {/* Count removed, and the label is sentence case with normal
               tracking. Measured off the Claude reference at 2.4x, the section
               header reads `Chats and tasks` — sentence case, muted, with NO
@@ -89,18 +88,16 @@ export function Section({
               39` containing `Tasks 39`) is gone here; the nested `Tasks` lane
               header still exists, but in `SessionList.tsx`, with its own
               `New chat in Tasks` / `Delete all tasks` controls. */}
-          <h3 className="text-2xs text-sidebar-foreground/45 font-medium">
-            {title}
-          </h3>
-        </div>
+          {title}
+        </span>
         {(title === "Sessions" || title === "Recents" || title === "Projects" || title === "Chats and tasks") && (
-          <div className="flex items-center gap-0.5">
+          <div className="section-actions">
             {viewOptions && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className="text-sidebar-foreground/40 hover:text-sidebar-foreground p-0.5 rounded transition-colors hover:bg-white/[0.04]"
+                    className="section-action"
                     title="Sort and group chats" aria-label="Sort and group chats"
                   >
                     <ArrowUpDown className="size-3" />
@@ -136,7 +133,7 @@ export function Section({
             {onUploadFolder && (
               <button
                 onClick={onUploadFolder}
-                className="text-sidebar-foreground/30 hover:text-sidebar-foreground/55 p-0.5 rounded transition-colors hover:bg-white/[0.03]"
+                className="section-action"
                 title="Open Workspace Folder" aria-label="Open Workspace Folder"
               >
                 <FolderPlus className="size-3" />
@@ -148,7 +145,7 @@ export function Section({
                   e.stopPropagation();
                   onNewFolder();
                 }}
-                className="text-sidebar-foreground/30 hover:text-sidebar-foreground/55 p-0.5 rounded transition-colors hover:bg-white/[0.03]"
+                className="section-action"
                 title="Create Sidebar Folder"
               >
                 <Plus className="size-3" />
@@ -158,11 +155,11 @@ export function Section({
         )}
       </div>
       {count === 0 && title === "Pinned" ? (
-        <p className="px-2 py-0.5 text-2xs text-sidebar-foreground/30">
+        <p className="section-empty">
           {empty ?? "No items"}
         </p>
       ) : (
-        <div className="space-y-0.5">{children}</div>
+        <div className="space-y-px">{children}</div>
       )}
     </div>
   );
@@ -195,55 +192,35 @@ export function FolderHeader({
     <div
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className="august-project-row flex items-center justify-between py-0.5 px-2 rounded-md hover:bg-white/[0.03] cursor-pointer group text-sidebar-foreground/55"
+      className="august-project-row project-head group"
       onClick={onToggleCollapse}
     >
-      <div className="flex items-center gap-1 min-w-0">
+      <div className="project-head-main">
         <span
           className={cn(
-            "flex items-center justify-center shrink-0 transition-transform duration-150 text-sidebar-foreground/35",
+            "project-chev",
             folder.isCollapsed ? "rotate-0" : "rotate-90",
           )}
         >
           <ChevronRight className="size-3" />
         </span>
-        {folder.isCollapsed ? (
-          <FolderIcon
-            className="size-4 shrink-0 text-sidebar-foreground/60 group-hover:text-sidebar-foreground/85"
-            strokeWidth={1.7}
-            aria-hidden
-          />
-        ) : (
-          <FolderOpen
-            className="size-4 shrink-0 text-sidebar-foreground/60 group-hover:text-sidebar-foreground/85"
-            strokeWidth={1.7}
-            aria-hidden
-          />
-        )}
-        <span className="truncate text-[0.78125rem] text-sidebar-foreground/60 group-hover:text-sidebar-foreground/80">
+        <FolderIcon className="project-folder" strokeWidth={1.7} aria-hidden />
+        <span className="project-name">
           {folder.name}
         </span>
         {hasActiveSession ? (
           <span
             role="img"
-            className="size-1.5 shrink-0 rounded-full bg-warning"
+            className="project-live"
             title="A chat in this project is active"
             aria-label="A chat in this project is active"
             data-testid={`folder-active-${folder.id}`}
           />
         ) : null}
-        {count > 0 && (
-          <span className="text-2xs text-sidebar-foreground/25 tabular-nums shrink-0">
-            {count}
-          </span>
-        )}
+        {count > 0 && <span className="project-count">{count}</span>}
       </div>
       <div
-        className={cn(
-          "flex items-center gap-0.5 shrink-0 transition-opacity",
-          // Keep "+" visible on workspace folders so multi-chat-per-project is obvious.
-          folder.workspacePath || isHovered ? "opacity-100" : "opacity-0",
-        )}
+        className={cn("project-actions", folder.workspacePath || isHovered ? "is-open" : "")}
         onClick={(e) => e.stopPropagation()}
       >
         <button
@@ -294,21 +271,14 @@ export function UncategorizedHeader({
 }) {
   return (
     <div
-      className="august-other-chats-row flex items-center justify-between py-0.5 px-2 rounded-md hover:bg-white/[0.03] cursor-pointer group text-sidebar-foreground/55"
+      className="august-other-chats-row project-head group"
       onClick={onToggleCollapse}
     >
-      <div className="flex items-center gap-1 min-w-0">
-        <span
-          className={cn(
-            "flex items-center justify-center shrink-0 transition-transform duration-150 text-sidebar-foreground/35",
-            isCollapsed ? "rotate-0" : "rotate-90",
-          )}
-        >
+      <div className="project-head-main">
+        <span className={cn("project-chev", isCollapsed ? "rotate-0" : "rotate-90")}>
           <ChevronRight className="size-3" />
         </span>
-        <span className="truncate text-[0.78125rem] text-sidebar-foreground/60 group-hover:text-sidebar-foreground/80">
-          Tasks
-        </span>
+        <span className="project-name">Tasks</span>
         {/* Count removed. This row is nested INSIDE `Chats and tasks`, so the
             number beside it was the same total the section header already
             showed one line up. */}

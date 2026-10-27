@@ -13,6 +13,12 @@ const buttonVariants = cva(
         secondary:  'bg-secondary text-secondary-foreground hover:bg-secondary/80',
         ghost:      'hover:bg-accent hover:text-accent-foreground',
         link:       'text-primary underline-offset-4 hover:underline',
+        /* No layout, type or colour: the control's whole appearance comes from
+         * a stylesheet (the Signal Desk port in styles/signal-desk.css). What
+         * survives is what the primitive is FOR here — the focus ring, the
+         * pointer, and the disabled states — so a stylesheet-styled button is
+         * still a Button rather than a raw <button> that has to re-earn them. */
+        bare:       '',
       },
       size: {
         default:   'px-3 py-1.5',
@@ -31,6 +37,18 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>,
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   function Button({ className, variant, size, ...props }, ref) {
+    if (variant === 'bare') {
+      return (
+        <button
+          ref={ref}
+          className={cn(
+            'cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:opacity-50',
+            className,
+          )}
+          {...props}
+        />
+      );
+    }
     return (
       <button
         ref={ref}

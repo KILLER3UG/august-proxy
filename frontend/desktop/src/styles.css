@@ -3,14 +3,18 @@
  * the import list below; the rules live in src/styles/. The import ORDER is
  * the cascade order, so it is deliberate and should not be alphabetised:
  *
- *   tokens.css     design tokens + token-backed utilities + @tailwind
- *   base.css       global / feature-agnostic CSS
- *   chat.css       chat + shell surfaces
- *   settings.css   settings and update-flow surfaces
- *   code.css       markdown + code presentation
- *   motion.css     @keyframes + reduced-motion opt-outs (last, so the
- *                  opt-outs win over the animation declarations that stay
- *                  with their own rules in the files above)
+ *   tokens.css      design tokens + token-backed utilities + @tailwind
+ *   base.css        global / feature-agnostic CSS
+ *   chat.css        chat + shell surfaces
+ *   settings.css    settings and update-flow surfaces
+ *   code.css        markdown + code presentation
+ *   signal-desk.css the desktop mockup's own stylesheet, scoped to .sd-app.
+ *                   After the Tailwind-era partials on purpose: the ported
+ *                   surfaces must win against the older approximations they
+ *                   replace, and everything it touches is namespaced.
+ *   motion.css      @keyframes + reduced-motion opt-outs (last, so the
+ *                   opt-outs win over the animation declarations that stay
+ *                   with their own rules in the files above)
  *
  * Vite inlines each @import before Tailwind runs, so a partial may use
  * Tailwind's layer syntax. Keep the @tailwind directives in tokens.css. */
@@ -20,4 +24,5 @@
 @import './styles/chat.css';
 @import './styles/settings.css';
 @import './styles/code.css';
+@import './styles/signal-desk.css';
 @import './styles/motion.css';

@@ -1,7 +1,6 @@
 import { memo, useEffect, useState } from 'react';
-import { AlertCircle, CircleDot } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { DisclosureRow } from '@/components/chat/DisclosureRow';
+import { Button } from '@/components/ui/button';
+import { SignalIcon } from '@/components/ui/SignalIcon';
 import { ToolIcon } from '@/components/ui/ToolIcon';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { type ProgressEntry } from '@/lib/tool-progress';
@@ -11,17 +10,6 @@ import { useLiveBackendAction } from '@/hooks/useLiveBackendAction';
 import { extractFilename, extractCommand, extractAgentId } from './extractors';
 import type { ToolEntry } from './types';
 import { ToolCallItemBody } from './ToolCallItemBody';
-
-/**
- * Format milliseconds to MM:SS format.
- */
-function formatTimer(ms: number): string {
-  const totalSeconds = Math.floor(Math.max(0, ms) / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  const pad = (num: number) => String(num).padStart(2, '0');
-  return `${pad(minutes)}:${pad(seconds)}`;
-}
 
 // Above this length the label is a multi-flag shell command or a long path,
 // and monospace reads better than the proportional label font. The label is
@@ -113,17 +101,6 @@ export const ToolCallItem = memo(function ToolCallItem({
   // result event, treat it as stalled — show a warning so the user knows
   // something went wrong rather than seeing an infinite spinner.
   const toolStalled = isRunning && startedAtMs !== undefined && (now - startedAtMs) > 120_000;
-  // Whether the status chip has anything to say. It renders in the
-  // DisclosureRow's `trailing` slot, which sits OUTSIDE the trigger button —
-  // as a child of the button it was part of the button's accessible name and
-  // a click on it toggled the disclosure.
-  const showStatus =
-    (isRunning && !!liveBackend.label) ||
-    tool.status === 'stalled' ||
-    toolStalled ||
-    tool.status === 'done' ||
-    tool.status === 'error' ||
-    (tool.status === 'running' && !!tool.pendingApproval);
   const isCommand = tool.name.startsWith('@run_command') || tool.name.startsWith('run_command');
   // Strip the @ prefix that the workbench sometimes prepends so the icon
   // mapper matches the canonical tool name (e.g. "read_file" not "@read_file").
@@ -148,8 +125,6 @@ export const ToolCallItem = memo(function ToolCallItem({
     : (isCommand && commandText && commandText.length > 120) ? commandText
     : isLongLabel(label) ? label
     : undefined;
-  const displayLabel = (elapsed !== undefined && elapsed >= 100) ? `${label} · ${formatTimer(elapsed)}` : label;
-
   // The row's second line. A view/read tool has no expanded body (its
   // payload IS the file, and the label already carries the basename), so the
   // full path is the one thing the row can still add. Every other tool shows
@@ -158,107 +133,89 @@ export const ToolCallItem = memo(function ToolCallItem({
   // duplicated what the body renders.
   const inlineContextText = isView ? filename : null;
 
+  const bodyId = `tool-body-${tool.id ?? tool.name}`;
+  const headerId = `tool-head-${tool.id ?? tool.name}`;
+  const subtitle = commandText || filename || tool.summary || null;
+  const statusWord =
+    tool.status === 'error'
+      ? 'FAILED'
+      : tool.status === 'stalled' || toolStalled
+        ? 'STALLED'
+        : tool.status === 'done'
+          ? 'OK'
+          : tool.status === 'running'
+            ? tool.pendingApproval
+              ? 'AWAIT'
+              : 'RUN'
+            : null;
+
   return (
     <div
-      className="row-enter text-xs text-muted-foreground w-full py-0.5"
+      className="tool-card row-enter"
+      data-open={open && hasBody}
       data-slot="tool-block"
+      data-testid="tool-call-card"
     >
-      <DisclosureRow
-        onToggle={hasBody ? () => setUserOverride(!open) : undefined}
-        open={open && hasBody}
-        trailing={
-          showStatus ? (
-            <span className="flex items-center gap-1.5 shrink-0">
-              {isRunning && liveBackend.label && (
-                <span
-                  className="tool-row-meta text-info max-w-[7.5rem] truncate"
-                  data-testid="tool-live-backend"
-                  title={liveBackend.label}
-                >
-                  {liveBackend.active?.stage || 'backend'}
-                </span>
-              )}
-              {toolStalled || tool.status === 'stalled' ? (
-                <span className="inline-flex items-center gap-1">
-                  <AlertCircle className="size-3 text-warning" />
-                  <span className="tool-row-meta text-warning">stalled</span>
-                </span>
-              ) : tool.status === 'done' ? (
-                <span className="inline-flex items-center gap-1">
-                  <span className="inline-block size-1.5 rounded-full bg-success" />
-                  <span className="tool-row-meta text-success">done</span>
-                </span>
-              ) : tool.status === 'error' ? (
-                <span className="inline-flex items-center gap-1">
-                  <AlertCircle className="size-3 text-danger" />
-                  <span className="tool-row-meta text-danger">failed</span>
-                </span>
-              ) : tool.status === 'running' && tool.pendingApproval ? (
-                <span className="inline-flex items-center gap-1">
-                  <CircleDot className="size-3 text-warning animate-pulse" />
-                  <span className="tool-row-meta text-warning">awaiting</span>
-                </span>
-              ) : null}
-            </span>
-          ) : undefined
-        }
-        /* The body goes through the disclosure instead of sitting beside it as
-           a sibling the trigger knows nothing about: that is what gives the
-           pill an `aria-controls` and the body a real hidden state, in BOTH
-           states — the closed row is the one a screen reader navigates.
-
-           The body is mounted whether the row is open or closed (that is
-           what `forceMount` means), so a settled read — which has no body at
-           all — passes `undefined` and gets no region rather than an empty
-           one. */
-        content={
-          hasBody ? (
-            <ToolCallItemBody tool={tool} progress={progress} sessionId={sessionId} />
-          ) : undefined
-        }
+      <Button
+        variant="bare"
+        id={headerId}
+        type="button"
+        className="tool-head"
+        onClick={hasBody ? () => setUserOverride(!open) : undefined}
+        aria-expanded={hasBody ? open : undefined}
+        aria-controls={hasBody ? bodyId : undefined}
       >
-        <span className="flex min-w-0 items-center gap-2">
+        <span className="tool-icon">
           {filename ? (
-            <FileIcon name={filename} size={14} className="shrink-0" />
+            <FileIcon name={filename} size={13} />
           ) : (
-            <ToolIcon name={toolNameForIcon} kind={isCommand ? 'command' : 'tool'} size={14} className="shrink-0" />
-          )}
-          {/* One line, one span. The label used to be split into a <span>
-            per character with a staggered animationDelay — but
-            `.thinking-char` declares no `animation`, and motion.css holds
-            every @keyframes in the app, so the shimmer never ran. The only
-            surviving effect was one DOM node per character for every tool
-            row in every transcript, and a permanent 60% opacity on every
-            label, running or not. The full text is on the tooltip and in
-            the expanded body. */}
-          <span
-            className={cn(
-              'min-w-0 truncate text-xs font-medium leading-5',
-              isLongLabel(label) && 'font-mono text-[0.71875rem]',
-              isRunning && 'text-foreground/85',
-            )}
-            title={labelTitle}
-          >
-            {displayLabel}
-          </span>
-          {isRunning && (
-            <span className="thinking-dots" aria-hidden>
-              <span className="dot" style={{ animationDelay: '0ms' }}>.</span>
-              <span className="dot" style={{ animationDelay: '200ms' }}>.</span>
-              <span className="dot" style={{ animationDelay: '400ms' }}>.</span>
-            </span>
+            <ToolIcon name={toolNameForIcon} kind={isCommand ? 'command' : 'tool'} size={13} />
           )}
         </span>
-      </DisclosureRow>
+        <span className="tool-copy">
+          <strong title={label}>{toolNameForIcon}</strong>
+          <span title={labelTitle ?? label}>
+            {subtitle ?? label}
+            {isRunning && liveBackend.label ? ` · ${liveBackend.active?.stage || 'backend'}` : ''}
+          </span>
+        </span>
+        {statusWord ? (
+          <span
+            className="tool-status"
+            data-state={
+              tool.status === 'error' || tool.status === 'stalled' || toolStalled
+                ? 'error'
+                : tool.status === 'running'
+                  ? 'running'
+                  : 'done'
+            }
+          >
+            {statusWord}
+          </span>
+        ) : null}
+        {elapsed !== undefined ? (
+          <span className="tool-duration">{elapsed < 1000 ? `${Math.round(elapsed)}ms` : `${(elapsed / 1000).toFixed(1)}s`}</span>
+        ) : null}
+        {hasBody ? <SignalIcon name="chev" className="tool-chev" /> : null}
+      </Button>
 
-      {inlineContextText && (
+      {hasBody ? (
         <div
-          className="tool-row-meta mt-0.5 text-muted-foreground/85 truncate"
-          title={tool.context ?? inlineContextText}
+          className="tool-body"
+          id={bodyId}
+          role="region"
+          aria-labelledby={headerId}
+          hidden={!open}
         >
+          <ToolCallItemBody tool={tool} progress={progress} sessionId={sessionId} />
+        </div>
+      ) : null}
+
+      {inlineContextText ? (
+        <div className="tool-row-meta mt-0.5 text-muted-foreground/85 truncate" title={tool.context ?? inlineContextText}>
           {inlineContextText}
         </div>
-      )}
+      ) : null}
     </div>
   );
 });

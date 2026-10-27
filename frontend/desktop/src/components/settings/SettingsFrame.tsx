@@ -18,12 +18,20 @@ export const SETTINGS_PAGE_CLASS =
 /** The left rail. `min-h-0` + `overflow-hidden` so its own `nav` is the
  *  scroller; a rail that grew instead of scrolling would push the profile
  *  footer out of the page. */
+/* The mockup's rail is a 204px column on the page's own ground — no
+ * full-height divider, no second surface. The divider made Settings read as
+ * a split pane; the mockup reads as one page with a table of contents. */
 export const SETTINGS_RAIL_CLASS =
-  'flex h-full min-h-0 w-44 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar sm:w-60';
+  'flex h-full min-h-0 w-[204px] shrink-0 flex-col overflow-hidden bg-transparent';
 
-/** The scrolling content region — centred in the space the rail leaves. */
+/** The scrolling content region — centred in the space the rail leaves.
+ *  `settings-page-content` is the stylesheet hook that re-scales section
+ *  headings to the mockup's modest panel size (signal-desk.css). It is
+ *  deliberately NOT the mockup's own `.settings-content` name — that class
+ *  exists in the ported stylesheet as the mockup's 680px panel-inner clamp,
+ *  and borrowing the name here clamped this whole region to 680px. */
 export const SETTINGS_CONTENT_CLASS =
-  'flex h-full min-h-0 flex-1 justify-center overflow-y-auto overflow-x-hidden';
+  'settings-page-content flex h-full min-h-0 flex-1 justify-center overflow-y-auto overflow-x-hidden';
 
 export const SETTINGS_COLUMN_CLASS = 'flex min-h-full w-full max-w-[1080px] flex-col';
 

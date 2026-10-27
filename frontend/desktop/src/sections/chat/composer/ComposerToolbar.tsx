@@ -35,7 +35,6 @@ import { CameraPopover } from './CameraPopover';
 import { SubagentSpawnModal } from './SubagentSpawnModal';
 import { CostCeilingChip } from './CostCeilingChip';
 import type { AnchorPos } from './useComposerPopovers';
-import { cn } from '@/lib/utils';
 import { normalizeHarnessMode, type HarnessAgentMode } from '@/components/chat/HarnessModeChip';
 import type { ChatSendFn } from '../hooks/useChatSend';
 
@@ -224,7 +223,7 @@ export function ComposerToolbar({
           glyph at the left, the placeholder, the one filled control at the
           right. `items-end` keeps the send circle on the BOTTOM-right as the
           input grows, the way a growing composer card does. */}
-      <div className="flex items-end gap-1 px-2 py-1">
+      <div className="composer-tools flex items-end gap-1 px-2 py-1">
         {/* LEFT — the reference's only left-hand affordance is the `+`; the
             folder chip is August's own and only rides along while the
             folder binding is still open (a fresh chat). */}
@@ -332,7 +331,7 @@ export function ComposerToolbar({
             title="Voice input"
             aria-label="Voice input"
             data-testid="composer-voice-button"
-            className="rounded-full text-muted-foreground hover:bg-muted/50 hover:text-foreground [&_svg]:size-4"
+            className="tool-button"
           >
             <Mic aria-hidden />
           </Button>
@@ -351,7 +350,7 @@ export function ComposerToolbar({
             title="More options"
             aria-label="More options"
             data-testid="composer-more-button"
-            className="rounded-full text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+            className="tool-button"
           >
             <ChevronDown aria-hidden />
           </Button>
@@ -361,7 +360,7 @@ export function ComposerToolbar({
               onClick={stop}
               title="Stop"
               aria-label="Stop"
-              className="size-8 shrink-0 rounded-full flex items-center justify-center bg-foreground/90 text-background hover:bg-foreground transition"
+              className="send-button stop size-8 shrink-0"
             >
               <Square className="size-3 fill-current" />
             </button>
@@ -396,15 +395,7 @@ export function ComposerToolbar({
                       ? 'Dispatch'
                       : 'Send'
               }
-              className={cn(
-                /* Same reasoning as the stop button above: circular and
-                   neutral. The reference's send control is not the accent
-                   colour, and a 32px circle matches the stop button it swaps
-                   into. */
-                'size-8 justify-center rounded-full p-0 text-xs font-medium flex items-center gap-1.5 transition',
-                'bg-foreground/90 text-background hover:bg-foreground',
-                'disabled:opacity-30 disabled:pointer-events-none',
-              )}
+              className="send-button size-8 shrink-0 disabled:opacity-30 disabled:pointer-events-none"
             >
               <ArrowUp className="size-3" />
             </button>

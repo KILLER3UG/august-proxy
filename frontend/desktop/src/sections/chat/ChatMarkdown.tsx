@@ -645,7 +645,7 @@ export function Markdown({
       ref={ref}
       className={
         (variant === 'assistant'
-          ? 'markdown-content markdown-content--assistant'
+          ? 'markdown-content markdown-content--assistant assistant-copy'
           : 'markdown-content') + (justSettled ? ' markdown-content--settle' : '')
       }
       {...(liveBlocks ? {} : { dangerouslySetInnerHTML: { __html: html as string } })}

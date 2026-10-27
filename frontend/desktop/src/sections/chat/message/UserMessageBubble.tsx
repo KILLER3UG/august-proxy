@@ -63,7 +63,7 @@ export function UserMessageBubble({
         ) : null}
 
         {(editing || displayContent || message.queued) && (
-          <div className="rounded-2xl bg-user-bubble px-4 py-2.5 w-full text-[0.84375rem] leading-relaxed">
+          <div className="user-bubble w-full">
             {/* No border: reference rule 3 makes the user bubble the only
                 elevated chat surface, elevated by FILL alone — a hairline box
                 around it is exactly the "borders are boxes" shape rule 2 bans. */}

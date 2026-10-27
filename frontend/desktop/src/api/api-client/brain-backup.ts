@@ -95,3 +95,11 @@ export function stageBrainRestore(name: string): Promise<BrainRestoreStaged> {
 export function cancelBrainRestore(): Promise<BrainRestoreCancelled> {
   return api.delete<BrainRestoreCancelled>('/api/brain/backups/restore');
 }
+
+
+/** Open the markdown memory mirror (`<dataDir>/memory/`) in the OS file
+ *  browser. The mirror is the human-readable view of the facts store; the
+ *  backend owns the path so the frontend never needs the data dir. */
+export function openMemoryFolder(): Promise<{ ok: boolean; path: string; opened: boolean }> {
+  return api.post('/api/brain/memory/open-folder', {});
+}

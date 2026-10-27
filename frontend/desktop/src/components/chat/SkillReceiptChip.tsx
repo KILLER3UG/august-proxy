@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Sparkles } from 'lucide-react';
+import { SignalIcon } from '@/components/ui/SignalIcon';
 import { SettingsTooltip } from '@/components/settings/SettingsTooltip';
 import type { ChatMessage } from '@/types/chat';
 
@@ -57,26 +57,43 @@ export function SkillReceiptChip({ tools }: { tools?: ChatMessage['tools'] }) {
     evolved.length === 1 ? `Skill updated: ${evolved[0]}` : `${evolved.length} skills updated`;
 
   return (
-    <span
-      className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-2xs text-foreground/90"
-      data-testid="skill-receipt-chip"
-    >
-      <Sparkles className="size-2.5 shrink-0 text-primary" aria-hidden />
-      <SettingsTooltip
-        side="top"
-        content={
-          <div className="text-left">
+    <div className="skill-receipt" data-open="false" data-testid="skill-receipt-chip">
+      <div className="skill-head">
+        <span className="skill-icon">
+          <SignalIcon name="layers" />
+        </span>
+        <span className="skill-copy">
+          <strong>{label}</strong>
+          <span>
             {evolved.length === 1
-              ? `${evolved[0]}'s SKILL.md was written by this turn — the next turn reads the new version.`
-              : evolved.map((n) => <div key={n}>{n}</div>)}
-          </div>
-        }
-        trigger={(tp) => (
-          <span {...tp} className="cursor-help">
-            {label}
+              ? 'SKILL.md written by this turn'
+              : 'SKILL.md files written by this turn'}
           </span>
-        )}
-      />
-    </span>
+        </span>
+        <span className="skill-badge">Updated</span>
+        <SettingsTooltip
+          side="top"
+          content={
+            <div className="text-left">
+              {evolved.length === 1
+                ? `${evolved[0]}'s SKILL.md was written by this turn — the next turn reads the new version.`
+                : evolved.map((n) => <div key={n}>{n}</div>)}
+            </div>
+          }
+          trigger={(tp) => (
+            <span {...tp} className="cursor-help">
+              <SignalIcon name="info" />
+            </span>
+          )}
+        />
+      </div>
+      <div className="skill-body">
+        {evolved.map((name) => (
+          <div key={name} className="skill-path">
+            skills/{name}/SKILL.md
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

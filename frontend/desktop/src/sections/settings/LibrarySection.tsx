@@ -429,6 +429,9 @@ interface MemRow {
   supersededBy: string;
   contradicts: string;
   replaces: string[];
+  /** 059: the value this row's latest edit replaced — "now X, previously Y".
+   *  Empty on rows that were never edited or whose edit changed nothing. */
+  previousValue: string;
   editable: boolean;
   deletable: boolean;
 }
@@ -516,6 +519,7 @@ function toMemRow(store: string, row: Row, scopeLabelFor: (scope: string) => str
     retired: str(row.status).trim() === 'retired',
     profileKind: facts && str(row.kind).trim().toLowerCase() === 'profile',
     supersededBy: str(row.supersededBy),
+    previousValue: str(row.previousValue ?? ''),
     contradicts: str(row.contradicts),
     replaces: (() => {
       const raw = row.supersedes;
@@ -559,6 +563,7 @@ function projectRow(entry: ProjectEntry, workspaceName: string): MemRow {
     retired: false,
     profileKind: false,
     supersededBy: '',
+    previousValue: '',
     contradicts: '',
     replaces: [],
     editable: true,
@@ -1390,6 +1395,9 @@ function MemoryDetail({
           <DetailCell label="Uses" value={row.uses ? `${row.uses} times` : row.store === 'project' ? 'not counted' : '0 times'} />
           <DetailCell label="Created" value={absoluteDay(row.created)} />
           <DetailCell label="Last used" value={row.lastUsed ? timeAgo(row.lastUsed) : shortUpdated(row.updated) || 'never'} />
+          {row.previousValue ? (
+            <DetailCell label="Previously" value={row.previousValue} />
+          ) : null}
         </div>
 
         {row.supersededBy || row.contradicts || row.replaces.length > 0 ? (
@@ -1908,7 +1916,10 @@ function SkillsLibrary({ workspaces }: { workspaces: WorkspaceInfo[] }) {
                   className={cn(
                     SKILL_COLS,
                     'items-center gap-2 border-b border-border/40 px-4 py-2 transition-colors hover:bg-muted/40',
-                    s.name === active?.name && 'bg-primary/5',
+                    // The mockup's active row: a 2px accent inset on the left
+                    // edge plus the faint tint (`.row[data-active="true"]`).
+                    s.name === active?.name &&
+                      'bg-primary/5 shadow-[inset_2px_0_0_0_var(--dt-primary)]',
                     !s.enabled && 'opacity-70',
                   )}
                 >

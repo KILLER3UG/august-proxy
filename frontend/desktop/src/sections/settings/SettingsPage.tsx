@@ -199,12 +199,16 @@ export function SettingsPage() {
       active={activeId}
     >
       <div className="mx-auto w-full max-w-5xl px-8 pb-1 pt-8">
-        <h1 className="font-editorial text-[2rem] font-medium tracking-[-0.03em] text-foreground">
-          Settings
-        </h1>
-        <p className="mt-1.5 text-[0.8125rem] text-muted-foreground">
-          Tune the surface, the models, and how August remembers your work.
-        </p>
+        {/* The mockup's page head, verbatim: mono eyebrow, serif display
+            title, one-line sub. The section content below keeps the app's
+            own max-width column. */}
+        <header className="page-head">
+          <div>
+            <div className="page-eyebrow">Workspace / preferences</div>
+            <h1 className="page-title">Settings</h1>
+            <p className="page-sub">Tune the surface, the models, and how August remembers your work.</p>
+          </div>
+        </header>
       </div>
       {/* The 150 ms cross-fade was an `AnimatePresence mode="wait"` around a
           keyed motion.div. `mode="wait"` mounts the incoming section only after

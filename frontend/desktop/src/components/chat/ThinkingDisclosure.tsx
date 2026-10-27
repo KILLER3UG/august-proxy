@@ -1,8 +1,7 @@
-import { memo, useRef, useEffect, useState, type ReactNode } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { memo, useId, useRef, useEffect, useState, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
-import { DisclosureRow } from '@/components/chat/DisclosureRow';
-import { thoughtCollapsedTitle } from '@/lib/thought-presentation';
+import { Button } from '@/components/ui/button';
+import { SignalIcon } from '@/components/ui/SignalIcon';
 
 /**
  * ThinkingDisclosure — auto-open while streaming, collapse when done
@@ -30,10 +29,13 @@ export const ThinkingDisclosure = memo(function ThinkingDisclosure({
   pending = false,
   duration,
   elapsed,
-  icon,
+  icon: _icon,
   label,
-  omitDurationLabel = false,
+  // Kept in the signature: callers still pass it. The block shows the raw
+  // duration instead of a composed sentence, so there is nothing to omit.
+  omitDurationLabel: _omitDurationLabel = false,
 }: ThinkingDisclosureProps) {
+  const uid = useId();
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
   // Claude-parity: done reasoning clamps to a short window with Show more.
   const [expanded, setExpanded] = useState(false);
@@ -68,127 +70,66 @@ export const ThinkingDisclosure = memo(function ThinkingDisclosure({
   }, [isPreview, open, children]);
 
   const liveElapsed = pending && elapsed !== undefined ? fmtElapsed(elapsed) : null;
+  const displayDuration =
+    duration !== undefined ? fmtElapsed(duration) : liveElapsed;
   // Explicit multi-count label (e.g. "Thinking (3)") wins when provided.
   // Otherwise keep the classic single-thought labels.
-  const displayLabel =
-    label != null && label !== ''
-      ? pending && liveElapsed
-        ? `${label} ${liveElapsed}`
-        : label
-      : thoughtCollapsedTitle({
-          // duration/elapsed arrive in SECONDS on this component.
-          generating: pending,
-          elapsedMs: pending && elapsed !== undefined ? elapsed * 1000 : undefined,
-          durationMs: duration !== undefined ? duration * 1000 : undefined,
-          omitDurationLabel,
-        });
+  const bodyId = `thinking-body-${uid}`;
+  const headerId = `thinking-head-${uid}`;
 
   return (
-    <div
-      className="text-[0.78125rem] text-muted-foreground/70"
-      data-slot="thinking-disclosure"
-    >
-      <DisclosureRow
-        onToggle={() => setUserOpen(!open)}
-        open={open}
-        /* The body goes through the disclosure instead of sitting beside it as
-           a sibling the trigger knows nothing about: that is what gives the
-           pill an `aria-controls` and the body a real hidden state.
-
-           The function form is the "my body leaves on its own" channel. The
-           region is `hidden` while the row is closed, and `hidden` is
-           `display:none` — a body that collapses itself could not be seen
-           collapsing inside one, because the hidden lands on the same frame
-           the exit starts. The region therefore stays rendered until
-           `onBodyExitComplete` says the body is gone, and the collapse is
-           seen rather than cut.
-
-           The MOUNT animation is a different problem and it is solved by the
-           body mounting lazily: `{open && …}` means the motion element is
-           created in the same commit that un-hides the region, so it animates
-           where it can be seen. (A body that was mounted eagerly — while the
-           region was still hidden — would finish animating inside a
-           `display:none` box and the row would open on an element already
-           at its final state.) */
-        content={(api) => (
-          <AnimatePresence initial={false} onExitComplete={api.onBodyExitComplete}>
-            {open && (
-              <motion.div
-                key="thinking-content"
-                initial={pending ? false : { opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={pending ? { opacity: 0 } : { opacity: 0, height: 0 }}
-                transition={
-                  pending
-                    ? { duration: 0.1, ease: 'easeOut' }
-                    : { duration: 0.18, ease: [0.16, 1, 0.3, 1] }
-                }
-                className={cn(
-                  'mt-0.5 w-full min-w-0 max-w-full wrap-anywhere pb-1 text-muted-foreground/65',
-                )}
-              >
-                {/* Claude-parity truncation: while streaming the live preview
-                    scroll-pins (existing behavior). Once DONE the reasoning is
-                    CLAMPED to a short window with a "Show more / Show less"
-                    expander — long reasoning must never dominate the transcript. */}
-                {!pending && (
-                  <button
-                    type="button"
-                    onClick={() => setExpanded((v) => !v)}
-                    data-testid="thinking-show-more"
-                    className="mb-0.5 text-2xs text-muted-foreground/60 hover:text-primary"
-                  >
-                    {expanded ? 'Show less' : 'Show more'}
-                  </button>
-                )}
-                <div
-                  ref={scrollRef}
-                  className={cn(
-                    'tool-result-scroll overscroll-contain thinking-scroll',
-                    pending
-                      ? 'max-h-36 overflow-y-auto'
-                      : expanded
-                        ? ''
-                        : 'relative max-h-16 overflow-hidden',
-                  )}
-                  onWheel={(e) => {
-                    if (e.currentTarget.scrollHeight > e.currentTarget.clientHeight) {
-                      e.stopPropagation();
-                    }
-                  }}
-                >
-                  <div ref={contentRef}>{children}</div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        )}
+    <div className="thinking-block" data-open={open} data-slot="thinking-disclosure">
+      <Button
+        variant="bare"
+        id={headerId}
+        type="button"
+        className="thinking-head"
+        onClick={() => setUserOpen(!open)}
+        aria-expanded={open}
+        aria-controls={bodyId}
       >
-        <span className="flex min-w-0 items-baseline gap-1.5">
-          {icon}
-          <span
-            className={cn(
-              'text-[0.78125rem] font-normal italic leading-5',
-              pending
-                ? 'text-muted-foreground/85 shimmer thinking-content-generating'
-                : 'text-muted-foreground/55',
-            )}
+        <SignalIcon name="brain" className="brain" />
+        <strong>{label != null && label !== '' ? label : 'Thinking'}</strong>
+        {displayDuration ? <span className="duration">{displayDuration}</span> : null}
+        <SignalIcon name="chev" className="chev" />
+      </Button>
+
+      <div
+        className="thinking-body"
+        id={bodyId}
+        role="region"
+        aria-labelledby={headerId}
+        hidden={!open}
+      >
+        {/* Done reasoning clamps to a short window with Show more: long
+            reasoning must never dominate the transcript. While streaming the
+            live preview scroll-pins instead. */}
+        {!pending && (
+          <Button
+            variant="bare"
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            data-testid="thinking-show-more"
+            className="thinking-more"
           >
-            <span className="thinking-text">
-              <span className="thinking-label" style={{ whiteSpace: 'pre' }}>
-                {displayLabel}
-              </span>
-              {pending && (
-                <span className="thinking-dots">
-                  <span className="dot" style={{ animationDelay: '0ms' }}>.</span>
-                  <span className="dot" style={{ animationDelay: '200ms' }}>.</span>
-                  <span className="dot" style={{ animationDelay: '400ms' }}>.</span>
-                </span>
-              )}
-            </span>
-          </span>
-        </span>
-      </DisclosureRow>
+            {expanded ? 'Show less' : 'Show more'}
+          </Button>
+        )}
+        <div
+          ref={scrollRef}
+          className={cn(
+            'tool-result-scroll overscroll-contain thinking-scroll',
+            pending ? 'max-h-36 overflow-y-auto' : expanded ? '' : 'relative max-h-16 overflow-hidden',
+          )}
+          onWheel={(e) => {
+            if (e.currentTarget.scrollHeight > e.currentTarget.clientHeight) {
+              e.stopPropagation();
+            }
+          }}
+        >
+          <div ref={contentRef}>{children}</div>
+        </div>
+      </div>
     </div>
   );
 });

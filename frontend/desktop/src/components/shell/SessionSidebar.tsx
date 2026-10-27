@@ -54,7 +54,7 @@ export function SessionSidebar({
             duration: isDragging ? 0 : PANEL_MS,
             ease: PANEL_EASE,
           }}
-          className="august-session-sidebar relative shrink-0 bg-sidebar text-sidebar-foreground flex flex-col overflow-hidden"
+          className="august-session-sidebar sd-sidebar relative shrink-0 text-sidebar-foreground flex flex-col overflow-hidden"
         >
           <div className="h-full flex-1 overflow-hidden" style={innerStyle}>
             <SessionList

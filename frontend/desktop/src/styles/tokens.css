@@ -16,11 +16,14 @@
 
 @layer base {
   :root {
-    /* Surface palette — warmer, quieter neutrals (off the blue tint) */
-    --dt-background: #fbfbfa;
-    --dt-background-hsl: 60 11.11% 98.24%;
-    --dt-foreground: #1c1c1a;
-    --dt-foreground-hsl: 60 3.7% 10.6%;
+    /* Surface palette — the mockup's warm paper (signal-desk-complete.html).
+     * Light mode used to be a cool #fbfbfa; the mockup is #f4f1e8, and a warm
+     * ground is most of why its serif chrome reads as paper rather than as a
+     * washed-out dark theme. The ink ramp below is warm (hue 60) to match. */
+    --dt-background: #f4f1e8;
+    --dt-background-hsl: 45 30.6% 93.3%;
+    --dt-foreground: #1a1c17;
+    --dt-foreground-hsl: 80 8.2% 10%;
     /* Three sanctioned contrast tiers (2026-09-16 UI scan §3.2):
      * - tier-1: primary body text (~15:1 on dt-background)
      * - tier-2: secondary (timestamps, metadata, ≥11.5px) (~7:1)
@@ -30,22 +33,22 @@
      * The ramp is WARM (hue 60), matching the warm paper it sits on: it used
      * to be hue 240 blue-grey (#4a4a52 / #6b6b70), and warm paper under cool
      * ink is most of why light mode read as muddy next to the dark theme. */
-    --dt-fg-1: #1c1c1a;
-    --dt-fg-2: #4d4d49;
-    --dt-fg-3: #6e6e69;
-    --dt-card: #ffffff;
-    --dt-card-hsl: 0 0% 100%;
-    --dt-card-foreground: #1c1c1a;
-    --dt-card-foreground-hsl: 60 3.7% 10.6%;
-    --dt-muted: #f4f4f3;
-    --dt-muted-hsl: 60 4.35% 95.49%;
-    --dt-muted-foreground: #6e6e69;
-    --dt-muted-foreground-hsl: 60 2.3% 42.2%;
-    --dt-popover: #ffffff;
-    --dt-popover-hsl: 0 0% 100%;
-    --dt-popover-foreground: #1c1c1a;
-    --dt-popover-foreground-hsl: 60 3.7% 10.6%;
-    --dt-elevated: #ffffff;
+    --dt-fg-1: #1a1c17;
+    --dt-fg-2: #42473d;
+    --dt-fg-3: #62695c;
+    --dt-card: #fbf9f2;
+    --dt-card-hsl: 45 53.8% 96.7%;
+    --dt-card-foreground: #1a1c17;
+    --dt-card-foreground-hsl: 80 8.2% 10%;
+    --dt-muted: #eae6da;
+    --dt-muted-hsl: 44 33.3% 88.6%;
+    --dt-muted-foreground: #858b7e;
+    --dt-muted-foreground-hsl: 87 5.5% 52%;
+    --dt-popover: #fbf9f2;
+    --dt-popover-hsl: 45 53.8% 96.7%;
+    --dt-popover-foreground: #1a1c17;
+    --dt-popover-foreground-hsl: 80 8.2% 10%;
+    --dt-elevated: #faf7ef;
 
     /* Shell chrome — one titlebar height, one drawer-header height.
        The CSS classes that used to hardcode 2.85rem !important next to the
@@ -84,14 +87,27 @@
 
     /* Sunken chrome — wells that sit BELOW the page (terminal, file preview,
      * bottom dock). One value replaces the old #181818/#171717/#111 hexes. */
-    --dt-surface-sunken: #f0f0ee;
+    --dt-surface-sunken: #eae6da;
+    /* The mockup's chart/code stage: an off-page panel that is LIGHTER than
+     * the paper in light mode and darker than the charcoal in dark mode. */
+    --dt-stage: #faf7ef;
+    /* The mockup's two hairline weights. `--dt-line` is the default divider;
+     * `--dt-line-strong` is the one a bordered control or a focused surface
+     * uses. Both are alpha over whatever is behind them, which is why the
+     * mockup can put a row on the page and on a card without redefining. */
+    --dt-line: rgb(26 28 23 / 0.11);
+    --dt-line-strong: rgb(26 28 23 / 0.2);
+    /* Accent as TEXT — the mockup's #1e46b8 on paper. `--dt-primary` is a
+     * fill (white text on it); a link or an icon needs this darker rung to
+     * clear AA on the warm ground. */
+    --dt-accent-text: #1e46b8;
     /* Full-screen scrim behind modals/drawers; heavier over dark ground. */
     --dt-overlay-scrim: rgb(17 17 17 / 0.32);
     /* A separator that must stay visible over sunken or imagery surfaces —
      * one step stronger than --dt-border, never a state colour. */
-    --dt-hairline-strong: #d9d9d5;
+    --dt-hairline-strong: #d5d0c2;
     /* "Paper" role — the schematic canvas and other drawing surfaces. */
-    --dt-paper: #fdfdfb;
+    --dt-paper: #fdfbf5;
     /* Schematic ink on the paper canvas: symbol bodies, wires, the live tint.
        Light values are the original hardcoded hexes, so the artifact renderer
        and the editor stay in agreement. */
@@ -119,13 +135,13 @@
      * colour: `accent` and `secondary` were both a byte-copy of the same icy
      * blue (`#eef3ff`), so every dropdown row, chip and rail hover read as a
      * blue flash instead of "this row is under the pointer". */
-    --dt-secondary: #f4f4f3;
-    --dt-secondary-foreground: #1c1c1a;
-    --dt-accent: #f0f0ef;
-    --dt-accent-foreground: #1c1c1a;
-    --dt-border: #dcdcd8;
-    --dt-border-hsl: 60 6% 85.1%;
-    --dt-input: #dededa;
+    --dt-secondary: #eae6da;
+    --dt-secondary-foreground: #1a1c17;
+    --dt-accent: #e6e1d3;
+    --dt-accent-foreground: #1a1c17;
+    --dt-border: #d9d4c6;
+    --dt-border-hsl: 44 20% 81.4%;
+    --dt-input: #d9d4c6;
     --dt-ring: #2456d8;
 
     /* RGB triplets — the alpha-capable channel each of the roles above is
@@ -133,10 +149,10 @@
      * `border-destructive/30`, `text-sidebar-foreground/60` and friends emit
      * real CSS. Keep each triplet equal to its hex twin; the pairing is
      * asserted by src/test/design-tokens.test.ts. */
-    --dt-secondary-rgb: 244 244 243;
-    --dt-accent-rgb: 240 240 239;
+    --dt-secondary-rgb: 234 230 218;
+    --dt-accent-rgb: 230 225 211;
     --dt-destructive-rgb: 210 80 63;
-    --dt-input-rgb: 222 222 218;
+    --dt-input-rgb: 217 212 198;
     --dt-ring-rgb: 36 86 216;
 
     /* Status — muted, not neon */
@@ -186,19 +202,19 @@
     --dt-code-removed-gutter: rgba(248, 113, 113, 0.1);
 
     /* Sidebar */
-    --dt-sidebar: #f8f8f7;
-    --dt-sidebar-foreground: #1c1c1a;
+    --dt-sidebar: #fbf9f2;
+    --dt-sidebar-foreground: #1a1c17;
     --dt-sidebar-primary: #2456d8;
     --dt-sidebar-primary-foreground: #ffffff;
-    --dt-sidebar-accent: #f0f0ef;
-    --dt-sidebar-accent-foreground: #1c1c1a;
-    --dt-sidebar-border: #ececea;
+    --dt-sidebar-accent: #eae6da;
+    --dt-sidebar-accent-foreground: #1a1c17;
+    --dt-sidebar-border: #e2ddcf;
     --dt-sidebar-ring: #2456d8;
-    --dt-sidebar-rgb: 248 248 247;
-    --dt-sidebar-foreground-rgb: 28 28 26;
+    --dt-sidebar-rgb: 251 249 242;
+    --dt-sidebar-foreground-rgb: 26 28 23;
     --dt-sidebar-primary-rgb: 36 86 216;
-    --dt-sidebar-accent-rgb: 240 240 239;
-    --dt-sidebar-border-rgb: 236 236 234;
+    --dt-sidebar-accent-rgb: 234 230 218;
+    --dt-sidebar-border-rgb: 226 221 207;
     --dt-sidebar-ring-rgb: 36 86 216;
 
     /* Chat surfaces — derived from the base palette so they track the theme
@@ -207,7 +223,7 @@
     --dt-chat-input-bg: color-mix(in srgb, var(--dt-card) 95%, transparent);
     /* A solid fill, not a blend: `color-mix(--dt-muted 35%)` measured 1.017:1
        against the page, i.e. the user's own message had no bubble at all. */
-    --dt-user-bubble: #f4f4f2;
+    --dt-user-bubble: #eae6da;
 
     /* ── Elevation ladder (audit P2#17) ───────────────────────────────
        One vocabulary for "how far off the page is this surface", in four
@@ -247,22 +263,27 @@
      * #a6a6a6, and the middle rung was the only one carrying a blue cast. */
     --dt-fg-2: #c8c8c8;
     --dt-fg-3: #a6a6a6;
-    --dt-card: #171717;
-    --dt-card-hsl: 0 0% 9%;
+    --dt-card: #151515;
+    --dt-card-hsl: 0 0% 8.2%;
     --dt-card-foreground: #f0f0f0;
     --dt-card-foreground-hsl: 0 0% 94.1%;
-    --dt-muted: #1E1E1E;
-    --dt-muted-hsl: 0 0% 11.8%;
+    --dt-muted: #1b1b1b;
+    --dt-muted-hsl: 0 0% 10.6%;
     --dt-muted-foreground: #a6a6a6;
     --dt-muted-foreground-hsl: 0 0% 65.1%;
-    --dt-popover: #1A1A1A;
-    --dt-popover-hsl: 0 0% 10.2%;
+    --dt-popover: #1b1b1b;
+    --dt-popover-hsl: 0 0% 10.6%;
     --dt-popover-foreground: #f0f0f0;
     --dt-popover-foreground-hsl: 0 0% 94.1%;
-    --dt-elevated: #232323;
+    --dt-elevated: #242424;
 
     /* Sunken chrome / scrim / hairline / paper / wash — see :root above. */
     --dt-surface-sunken: #121212;
+    /* The mockup's chart/code stage — one rung off the page, see :root. */
+    --dt-stage: #121212;
+    --dt-line: rgb(240 240 240 / 0.08);
+    --dt-line-strong: rgb(240 240 240 / 0.15);
+    --dt-accent-text: #9bb9ff;
     --dt-overlay-scrim: rgb(0 0 0 / 0.55);
     --dt-hairline-strong: #3d3d3d;
     --dt-paper: #161618;
@@ -351,7 +372,7 @@
     --elev-overlay: 0 16px 40px -12px rgb(0 0 0 / 0.70);
 
     /* A solid bubble, not a blend — see the `:root` note. */
-    --dt-user-bubble: #1E1E1E;
+    --dt-user-bubble: #1b1b1b;
   }
 
 	  /* Text-size selector overrides the root font-size (scales all rems) */

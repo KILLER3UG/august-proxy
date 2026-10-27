@@ -2,11 +2,12 @@
 
 import { useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowUpRight, FileText, GitBranch, LineChart, Palette, Send, Wrench } from 'lucide-react';
+import { GitBranch, Send } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { normalizeHarnessMode } from '@/components/chat/HarnessModeChip';
 import { Button } from '@/components/ui/button';
+import { SignalIcon } from '@/components/ui/SignalIcon';
 import { collectArtifacts, type SessionArtifact } from '@/lib/artifacts';
 import { loadMessagesForSession } from '@/sections/chat/chat-stream-manager';
 import { useSessionsStore } from '@/store/sessions';
@@ -37,19 +38,16 @@ const LAUNCH_ACTIONS = [
     label: 'Build something',
     hint: 'Turn a rough idea into a working surface.',
     seed: 'Help me build ',
-    Icon: Wrench,
   },
   {
     label: 'Analyze a dataset',
     hint: 'Find the shape, the outliers, and the story.',
     seed: 'Analyze this dataset. I will attach the file next.',
-    Icon: LineChart,
   },
   {
     label: 'Make a visual',
     hint: 'Charts, diagrams, and artifacts worth opening.',
     seed: 'Create a visual that explains ',
-    Icon: Palette,
   },
 ] as const;
 
@@ -103,82 +101,63 @@ function Launchpad({ children }: { children: ReactNode }) {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0, y: 20 }}
       transition={t.smooth}
-      className="august-empty-state flex-1 min-h-0 overflow-y-auto px-6"
+      className="august-empty-state launchpad flex-1 min-h-0 overflow-y-auto"
     >
-      <div className="august-launchpad mx-auto flex min-h-full w-full max-w-[860px] flex-col justify-center py-10">
-        <div className="text-center">
-          <div className="font-mono text-[0.625rem] uppercase tracking-[0.2em] text-muted-foreground/45">
-            New thread
-          </div>
-          <h1 className="font-editorial mt-3 text-[clamp(2.35rem,4.5vw,3.4rem)] font-medium leading-[1.03] tracking-[-0.045em] text-foreground">
-            What are we
-            <br />
-            building today?
-          </h1>
-          <p className="mx-auto mt-4 max-w-[34rem] text-[0.8125rem] leading-relaxed text-muted-foreground/65">
-            Start with a goal, a file, or a dataset. August can read the workspace, run the work,
-            and leave the output in a canvas.
-          </p>
-        </div>
+      <div className="launchpad-inner">
+        <div className="launch-eyebrow">New thread</div>
+        <h1 className="launch-title">
+          What are we
+          <br />
+          building today?
+        </h1>
+        <p className="launch-sub">
+          Start with a goal, a file, or a dataset. August can read the workspace, run the work,
+          and leave the output in a canvas.
+        </p>
 
-        <div className="mt-8 grid grid-cols-1 gap-2 sm:grid-cols-3">
-          {LAUNCH_ACTIONS.map(({ label, hint, seed: prompt, Icon }) => (
-            <Button
-              key={label}
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => seed(prompt)}
-              className="group h-auto w-full flex-col items-start justify-start gap-0 rounded-xl border border-border/55 bg-card/35 px-3.5 py-3 text-left font-normal whitespace-normal transition-colors hover:border-border hover:bg-card/70"
-            >
-              <span className="flex items-center gap-2 text-[0.78125rem] font-medium text-foreground/90">
-                <Icon className="size-3.5 text-muted-foreground/70 group-hover:text-foreground" />
-                {label}
-              </span>
-              <span className="mt-1 block text-[0.6875rem] leading-snug text-muted-foreground/55">
-                {hint}
-              </span>
-            </Button>
+        <div className="launch-actions">
+          {LAUNCH_ACTIONS.map(({ label, hint, seed: prompt }) => (
+            <button key={label} type="button" className="launch-card" onClick={() => seed(prompt)}>
+              <SignalIcon name={iconFor(label)} size="md" />
+              <h3>{label}</h3>
+              <p>{hint}</p>
+            </button>
           ))}
         </div>
 
         {recent.length > 0 && (
-          <div className="mt-8">
-            <div className="flex items-center gap-3 font-mono text-[0.625rem] uppercase tracking-[0.16em] text-muted-foreground/45">
-              Recent outputs
-              <span className="h-px flex-1 bg-border/50" />
-            </div>
-            <div className="mt-2 divide-y divide-border/35 border-y border-border/35">
-              {recent.map(({ sessionId, sessionTitle, artifact }) => (
-                <Button
+          <div className="recent-strip">
+            <div className="recent-head">Recent outputs</div>
+            <div className="recent-row">
+              {recent.map(({ sessionId, artifact }) => (
+                <button
                   key={`${sessionId}:${artifact.id}`}
                   type="button"
-                  variant="ghost"
-                  size="sm"
+                  className="recent-item"
                   onClick={() => {
                     void navigate(`/c/${sessionId}`);
                     openRightDrawer('artifacts');
                   }}
-                  className="h-auto w-full items-center justify-start gap-3 rounded-none px-1 py-2.5 text-left font-normal"
                 >
-                  <FileText className="size-3.5 shrink-0 text-muted-foreground/55" />
-                  <span className="min-w-0 flex-1 truncate text-[0.78125rem] text-foreground/85">
-                    {artifact.label}
-                  </span>
-                  <span className="hidden sm:block shrink-0 font-mono text-[0.625rem] text-muted-foreground/40">
-                    {sessionTitle}
-                  </span>
-                  <ArrowUpRight className="size-3 shrink-0 text-muted-foreground/35" />
-                </Button>
+                  <SignalIcon name={artifact.kind === 'image' ? 'image' : 'file'} />
+                  {artifact.label}
+                </button>
               ))}
             </div>
           </div>
         )}
 
-        <div className="mt-8 w-full">{children}</div>
+        <div className="launch-composer">{children}</div>
       </div>
     </motion.div>
   );
+}
+
+/** The mockup's three launch cards each carry a different glyph. */
+function iconFor(label: string): 'code' | 'chart' | 'layers' {
+  if (label === 'Analyze a dataset') return 'chart';
+  if (label === 'Make a visual') return 'layers';
+  return 'code';
 }
 
 export function ChatEmptyState({
