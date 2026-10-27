@@ -105,6 +105,12 @@ rendered every fact with an empty description).
   button to them.
 - Scroll-away thread intro above the transcript, virtualizer-safe through a
   measured `scrollMargin`.
+- Mobile tier (`docs/design/signal-desk-mobile.html`, `<760px`): mobile topbar,
+  bottom tabbar (Chat / Charts / Artifacts / Settings), the sessions drawer
+  overlaying at 86%, and settings as a section catalog with a pushed section +
+  back row. It ships in the SPA the mobile companion's WebView loads, so the
+  Expo app needs no change — but the phone sees it only after a desktop
+  release, because the WebView loads the packaged web build.
 - Composer handoff fix: `api/ui-events.ts` and the composer disagreed on the
   event name and the detail shape, so every seed action (launchpad cards,
   command-palette insert/focus, Charts actions) was silently dead. Fixed and
