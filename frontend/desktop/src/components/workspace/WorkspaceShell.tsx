@@ -9,6 +9,8 @@ import { useSettingsFieldLink } from '@/hooks/useSettingsFieldLink';
 import {
   ArrowUpCircle,
   BrainCircuit,
+  ChevronLeft,
+  ChevronRight,
   Globe,
   LineChart,
   Settings2,
@@ -16,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { WorkspaceNavLink } from './WorkspaceNavLink';
+import { Button } from '@/components/ui/button';
 import { SettingsSearch } from '@/components/settings/SettingsSearch';
 import {
   SETTINGS_COLUMN_CLASS,
@@ -55,12 +58,21 @@ interface WorkspaceShellProps {
   sections: WorkspaceSectionMeta[];
   active: string;
   children: ReactNode;
+  /** The phone tier: the rail has nowhere to live at 390px. */
+  mobile?: boolean;
+  /** At `/settings` with no section on a phone: the catalog of sections IS
+   *  the screen (the mockup's settings list), and a section opens over it
+   *  with a back row. On desktop that URL normalises to the landing section
+   *  instead, so this never renders there. */
+  mobileHome?: boolean;
 }
 
 export function WorkspaceShell({
   sections,
   active,
   children,
+  mobile = false,
+  mobileHome = false,
 }: WorkspaceShellProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -256,6 +268,94 @@ export function WorkspaceShell({
     );
   };
 
+
+  /* ── Phone tier ────────────────────────────────────────────────────────
+   * The mockup's settings screen is a LIST of doors; a door opens a section
+   * with a back row. At 390px a 204px rail beside the content would leave
+   * ~150px of panel, so the rail becomes the screen and the section becomes
+   * the pushed view. Everything else about a section is unchanged — the same
+   * components, the same deep links, the same search. */
+  if (mobile) {
+    const groups = isFiltering ? filtered : railGroups;
+    if (mobileHome) {
+      return (
+        <div className={SETTINGS_PAGE_CLASS} data-testid="settings-page">
+          <div className={SETTINGS_CONTENT_CLASS} data-testid="settings-content-region">
+            <div className={cn(SETTINGS_COLUMN_CLASS, 'px-4 pb-8 pt-3')}>
+              <div className="px-1 pb-3">
+                <SettingsSearch value={query} onChange={setQuery} />
+              </div>
+              {isFiltering && totalShown === 0 ? (
+                <div className="px-4 py-8 text-center text-xs text-muted-foreground">
+                  No sections match <span className="font-mono">&ldquo;{query}&rdquo;</span>.
+                </div>
+              ) : (
+                <div className="flex flex-col gap-5">
+                  {Array.from(groups.entries()).map(([category, items]) => (
+                    <div key={category || 'default'}>
+                      <RailGroupHeading
+                        icon={items[0]?.categoryIcon ?? Globe}
+                        label={items[0]?.categoryLabel ?? category}
+                      />
+                      <div className="mt-1.5 overflow-hidden rounded-lg border border-border/60 bg-card">
+                        {items.map((s) => (
+                          <Button
+                            key={s.id}
+                            variant="ghost"
+                            type="button"
+                            data-testid={`settings-door-${s.id}`}
+                            onClick={() => {
+                              setQuery('');
+                              void navigate(`/settings/${s.id}`);
+                            }}
+                            className="flex w-full items-center gap-3 rounded-none border-b border-border/50 px-3 py-2.5 text-left last:border-b-0"
+                          >
+                            <s.icon className="size-4 shrink-0 text-muted-foreground" />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-[0.8125rem] font-medium text-foreground">
+                                {s.label}
+                              </span>
+                              {s.description ? (
+                                <span className="mt-0.5 block truncate text-2xs text-muted-foreground">
+                                  {s.description}
+                                </span>
+                              ) : null}
+                            </span>
+                            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/60" />
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className={SETTINGS_PAGE_CLASS} data-testid="settings-page">
+        <div className={SETTINGS_CONTENT_CLASS} data-testid="settings-content-region">
+          <div className={SETTINGS_COLUMN_CLASS} data-testid="settings-content-column">
+            <div className="px-4 pt-2">
+              <Button
+                variant="ghost"
+                type="button"
+                className="-ml-2 h-8 gap-1 px-2 text-xs text-muted-foreground"
+                onClick={() => void navigate('/settings')}
+                data-testid="settings-back"
+              >
+                <ChevronLeft className="size-3.5" /> Settings
+              </Button>
+            </div>
+            {children}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={SETTINGS_PAGE_CLASS} data-testid="settings-page">

@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { isTauri } from "@/lib/tauri-detect";
 import { revealInFolder } from "@/lib/tauri-shell";
 import { renameSession, useSessionsStore } from "@/store/sessions";
-import { SETTINGS_SECTIONS } from "@/settings/settings-registry";
+import { routeLabelFor } from "@/lib/route-labels";
 import { toggleCommandPalette } from "@/store/command-palette";
 import { setThemeMode, useThemeStore } from "@/lib/theme";
 import {
@@ -84,36 +84,16 @@ export function ChatTitlebar({
   /* Route-aware title (2026-09-16 UI scan B2): the bar used to render
    * `session?.title ?? "New chat"` on EVERY route, so Board/Runs/History/
    * Settings all wore a stale chat title (and Tauri inherits this label as
-   * the OS window title). Session titles stay only on chat routes. */
-  const barTitle = useMemo(() => {
-    /* React Router matches case-INSENSITIVELY, and this comparison was not, so
-     * `/Settings/general` opened the dialog correctly while the bar — and the OS
-     * window title Tauri inherits from it — read "Settings" for General and
-     * "August" for any other section. Section ids are lowercase by construction,
-     * so lowercasing the segment loses no real case. */
-    const path = location.pathname;
-    const lowered = path.toLowerCase();
-    if (path === "/" || lowered.startsWith("/c/")) return session?.title ?? "New chat";
-    if (lowered.startsWith("/settings")) {
-      const section = path.split("/")[2]?.toLowerCase();
-      if (!section) return "Settings";
-      const hit = SETTINGS_SECTIONS.find((s) => s.id === section);
-      return hit ? `Settings · ${hit.label}` : "Settings";
-    }
-    const routeLabels: Record<string, string> = {
-      "/automations": "Automations",
-      "/runs": "Runs",
-      "/board": "Board",
-      "/live": "Live",
-      "/history": "History",
-      "/learning": "Learning",
-      "/artifacts": "Artifacts",
-      "/charts": "Charts",
-      "/docs": "Docs",
-      "/_design": "Design system",
-    };
-    return routeLabels[path] ?? "August";
-  }, [location.pathname, session?.title]);
+   * the OS window title). Session titles stay only on chat routes.
+   *
+   * The rules live in lib/route-labels now, because the phone topbar prints
+   * the same title: `/Settings/general` has to read "Settings · General" on
+   * both chromes, and a second copy of this table is how one of them ends up
+   * saying "August". */
+  const barTitle = useMemo(
+    () => routeLabelFor(location.pathname, session?.title),
+    [location.pathname, session?.title],
+  );
 
 
   // ── Window controls (Tauri only) ──

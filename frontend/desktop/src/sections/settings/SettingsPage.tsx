@@ -21,6 +21,7 @@ import {
   type SettingsSection,
 } from '@/settings/settings-registry';
 import { WorkspaceShell, type WorkspaceSectionMeta } from '@/components/workspace/WorkspaceShell';
+import { MOBILE_QUERY, useMediaQuery } from '@/hooks/useMediaQuery';
 import { SectionHeader as PanelHeader } from '@/components/SectionHeader';
 
 /** Header IA: 4 header groups (Setup / Agent / Data / App), the fourth added
@@ -141,6 +142,11 @@ export function SettingsPage() {
   const active: SettingsSection =
     SETTINGS_SECTIONS.find((s) => s.id === activeId) ?? SETTINGS_SECTIONS[0];
   const prevSectionRef = useRef(activeId);
+  /* The phone tier: `/settings` without a section is the catalog screen, and a
+   * section is a pushed view over it. Bound to the same 760px as the shell's
+   * phone chrome (hooks/useMediaQuery.ts). */
+  const mobile = useMediaQuery(MOBILE_QUERY);
+  const mobileHome = mobile && !rawSection;
 
   // Normalize bare /settings → /settings/<default> so deep links and the
   // left rail stay in sync without remounting this page.
@@ -165,6 +171,10 @@ export function SettingsPage() {
     }
 
     if (!rawSection) {
+      // A phone treats /settings as the section catalog; normalising it to the
+      // landing section would make the list unreachable (and the back row
+      // would bounce straight back into a section).
+      if (mobile) return;
       void navigate(`/settings/${landingSectionId}`, { replace: true });
       return;
     }
@@ -174,7 +184,7 @@ export function SettingsPage() {
     if (rawSection !== activeId) {
       void navigate(`/settings/${activeId}${qs}`, { replace: true });
     }
-  }, [rawSection, activeId, navigate, searchParams, landingSectionId]);
+  }, [rawSection, activeId, navigate, searchParams, landingSectionId, mobile]);
 
   // Tab switch: remounted section queries may still be within the global
   // 5s staleTime. Invalidate only the settings-domain keys so the newly
@@ -197,7 +207,15 @@ export function SettingsPage() {
     <WorkspaceShell
       sections={implementedSections}
       active={activeId}
+      mobile={mobile}
+      mobileHome={mobileHome}
     >
+      {mobileHome ? null : (
+        <>
+      {/* The phone's topbar already names the section and the back row says
+          where it returns to, so the hero is desktop-only — it would spend a
+          third of a 390px screen restating the same thing. */}
+      {!mobile && (
       <div className="mx-auto w-full max-w-5xl px-8 pb-1 pt-8">
         {/* The mockup's page head, verbatim: mono eyebrow, serif display
             title, one-line sub. The section content below keeps the app's
@@ -210,6 +228,7 @@ export function SettingsPage() {
           </div>
         </header>
       </div>
+      )}
       {/* The 150 ms cross-fade was an `AnimatePresence mode="wait"` around a
           keyed motion.div. `mode="wait"` mounts the incoming section only after
           the outgoing one reports its exit as COMPLETE — and in the settings
@@ -231,6 +250,8 @@ export function SettingsPage() {
           ) : null}
         </div>
       </div>
+        </>
+      )}
     </WorkspaceShell>
   );
 }

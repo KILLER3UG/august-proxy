@@ -202,6 +202,8 @@ interface SessionRowHandlers {
 interface Props {
   activeId?: string;
   collapsed: boolean;
+  /** Phone tier: the drawer drops the primary nav (the tabbar owns it). */
+  mobile?: boolean;
   onToggleCollapsed: () => void;
   onSelect: (s: Session) => void;
   onNew: () => void;
@@ -211,7 +213,7 @@ interface Props {
 
 export function SessionList({
   activeId,
-  
+  mobile = false,
   onToggleCollapsed,
   onSelect,
   onNew,
@@ -960,6 +962,7 @@ export function SessionList({
           onToggleCollapsed={onToggleCollapsed}
           activePath={typeof window !== 'undefined' ? window.location.pathname : ''}
           threadCount={visible.length}
+          mobile={mobile}
         />
 
         {/* Sessions | Bots — a two-state switch, and the WRITER for

@@ -654,15 +654,142 @@ details[open] > summary .disclosure-chevron {
   }
 }
 
+/* ── Mobile shell (the phone tier) ──────────────────────────────────────
+   Ported from docs/design/signal-desk-mobile.html. Only rendered below 760px
+   (ChatLayout gates the tree on MOBILE_QUERY), so these rules need no media
+   guard; the safe-area paddings are what make the chrome sit under the notch
+   and above the home indicator in the WebView, which sets viewport-fit=cover.
+   The mockup's 6.5–7.5px type is artboard text at ~half scale; sizes here use
+   the app's own scale so the bar is legible on a real device. */
+.august-mobile-topbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 8px 12px;
+  padding-top: max(8px, env(safe-area-inset-top));
+  border-bottom: 1px solid color-mix(in srgb, var(--dt-border) 70%, transparent);
+  background: color-mix(in srgb, var(--dt-background) 92%, transparent);
+  z-index: 20;
+}
+
+.august-mobile-topbar-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--dt-foreground);
+}
+
+.august-mobile-topbar-sub {
+  margin-top: 1px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.5625rem;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--dt-muted-foreground);
+}
+
+.august-mobile-live {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--dt-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dt-primary) 18%, transparent);
+}
+
+.august-mobile-tabbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  border-top: 1px solid color-mix(in srgb, var(--dt-border) 70%, transparent);
+  background: color-mix(in srgb, var(--dt-background) 96%, transparent);
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 25;
+}
+
+.august-mobile-tab {
+  position: relative;
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 56px;
+  border-radius: 0;
+  color: var(--dt-muted-foreground);
+  font-family: ui-monospace, monospace;
+  font-size: 0.5625rem;
+  letter-spacing: 0.03em;
+}
+
+.august-mobile-tab[data-active='true'] {
+  color: var(--dt-foreground);
+}
+
+.august-mobile-tab[data-active='true'] svg {
+  color: var(--dt-primary);
+}
+
+.august-mobile-tab[data-active='true']::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 18px;
+  height: 1px;
+  transform: translateX(-50%);
+  background: var(--dt-primary);
+}
+
 @container august-shell (max-width: 760px) {
-  /* Unreachable in the packaged desktop window (minWidth 960) but live in the
-     mobile companion, whose WebView loads this same SPA at phone width. */
-  .august-session-sidebar {
+  /* The drawer OVERLAYS the conversation instead of squeezing it: at 390 a
+     335px drawer in the flex row left ~55px of chat behind the scrim.
+     `.sd-app .sd-sidebar` (signal-desk.css, loaded after this file) pins
+     `position: relative; z-index: 2`, so the extra `.sd-sidebar` class here is
+     load-bearing — it out-ranks that rule without `!important`. */
+  .august-shell .august-session-sidebar.sd-sidebar {
     position: absolute;
     inset-block: 0;
     left: 0;
     z-index: 40;
     box-shadow: 16px 0 40px rgb(0 0 0 / 0.28);
+  }
+
+  /* A page head's actions drop to their own line instead of squeezing the
+     title: at 390 the two shared a row and "Add file" broke into two words. */
+  .page-head {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .page-actions {
+    margin-left: 0;
+  }
+
+  /* The font hint is a desktop nicety with three Aa buttons; on a phone it
+     sits between the last message and the composer and takes a quarter of the
+     screen. The setting itself stays in Settings → Appearance. */
+  [data-testid='font-chooser-toast'] {
+    display: none;
+  }
+
+  /* The composer footer: at 390 the project + model chips leave the
+     disclaimer a sliver of a line, so it wraps to its own row above them —
+     the mockup's note row under the card, in the same order. */
+  .composer-foot {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .composer-foot-note {
+    flex: 1 0 100%;
+  }
+
+  .composer-foot > div {
+    margin-left: auto;
   }
 }
 

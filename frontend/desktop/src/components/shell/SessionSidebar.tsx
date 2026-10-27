@@ -1,4 +1,4 @@
-import { type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { SessionList } from "@/components/sidebar/SessionList";
 import { PANEL_EASE, PANEL_MS } from "@/lib/motion";
@@ -7,6 +7,10 @@ import { useResizablePane } from "@/hooks/useResizablePane";
 interface SessionSidebarProps {
   activeId?: string;
   collapsed: boolean;
+  /** The phone tier: the drawer's rows drop the primary nav (the tabbar owns
+   *  those destinations) and the resize handle is meaningless on a touch
+   *  device. */
+  mobile?: boolean;
   onToggleCollapsed: () => void;
   onNew: () => void;
   onNewInFolder: (folderId: string | null) => void;
@@ -26,6 +30,7 @@ function sidebarMax(): number {
 export function SessionSidebar({
   activeId,
   collapsed,
+  mobile = false,
   onToggleCollapsed,
   onNew,
   onNewInFolder,
@@ -40,7 +45,23 @@ export function SessionSidebar({
     "aria-label": "Resize session sidebar",
   });
 
-  const innerStyle: CSSProperties = { width };
+  /* The phone's drawer is a sheet, not the desktop rail: the mockup opens it
+     at ~86% of the screen. The stored pane width is a DESKTOP preference (a
+     220px rail is a fine desktop column and a cramped phone drawer), so the
+     tier ignores it without overwriting it. */
+  const [viewport, setViewport] = useState(
+    () => (typeof window !== 'undefined' ? window.innerWidth : 390),
+  );
+  useEffect(() => {
+    if (!mobile) return;
+    const onResize = () => setViewport(window.innerWidth);
+    onResize();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [mobile]);
+  const paneWidth = mobile ? Math.min(340, Math.round(viewport * 0.86)) : width;
+
+  const innerStyle: CSSProperties = { width: paneWidth };
 
   return (
     <AnimatePresence initial={false}>
@@ -48,7 +69,7 @@ export function SessionSidebar({
         <motion.aside
           key="sidebar"
           initial={{ width: 0, opacity: 0 }}
-          animate={{ width, opacity: 1 }}
+          animate={{ width: paneWidth, opacity: 1 }}
           exit={{ width: 0, opacity: 0 }}
           transition={{
             duration: isDragging ? 0 : PANEL_MS,
@@ -60,6 +81,7 @@ export function SessionSidebar({
             <SessionList
               activeId={activeId}
               collapsed={collapsed}
+              mobile={mobile}
               onToggleCollapsed={onToggleCollapsed}
               onSelect={(s) => onNavigate(`/c/${s.id}`)}
               onNew={onNew}
@@ -68,10 +90,12 @@ export function SessionSidebar({
             />
           </div>
 
-          <div
-            {...handleProps}
-            className={`absolute top-0 right-0 h-full w-1 cursor-col-resize select-none touch-none transition-colors hover:bg-primary/40 ${isDragging ? "bg-primary/50" : "bg-transparent"}`}
-          />
+          {!mobile && (
+            <div
+              {...handleProps}
+              className={`absolute top-0 right-0 h-full w-1 cursor-col-resize select-none touch-none transition-colors hover:bg-primary/40 ${isDragging ? "bg-primary/50" : "bg-transparent"}`}
+            />
+          )}
         </motion.aside>
       )}
     </AnimatePresence>

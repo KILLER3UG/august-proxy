@@ -29,6 +29,10 @@ export interface SessionListNavProps {
   activePath?: string;
   /** Open chats, printed beside Threads the way the mockup prints its count. */
   threadCount?: number;
+  /** The phone tier: the bottom tabbar owns Chat/Charts/Artifacts/Settings,
+   *  so the drawer does not repeat them (the mockup's drawer is threads and a
+   *  way out, not a second nav). */
+  mobile?: boolean;
 }
 
 /** Primary destinations — the mockup's four, in its order. */
@@ -67,6 +71,7 @@ export function SessionListNav({
   onToggleCollapsed,
   activePath = '',
   threadCount,
+  mobile = false,
 }: SessionListNavProps) {
   const moreActive = MORE.some((item) => isActive(item.to, activePath));
   const [moreOpen, setMoreOpen] = useState(moreActive);
@@ -112,6 +117,7 @@ export function SessionListNav({
           <kbd>⌘K</kbd>
         </Button>
 
+        {!mobile && (
         <nav className="nav" aria-label="Workspace">
           {PRIMARY.map(({ key, label, icon, to, pill }) => {
             const active = isActive(to, activePath);
@@ -166,6 +172,7 @@ export function SessionListNav({
               })
             : null}
         </nav>
+        )}
       </div>
     </div>
   );

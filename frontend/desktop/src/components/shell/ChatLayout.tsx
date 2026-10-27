@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useShellWidth } from '@/hooks/useShellWidth';
+import { MOBILE_QUERY, useMediaQuery } from '@/hooks/useMediaQuery';
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -13,9 +14,11 @@ import { startRealtimeBridge } from "@/realtime/bridge";
 import { addWorkspace, useWorkspacesStore } from "@/store/workspaces";
 import { CHAT_SURFACE_ROUTES, SettingsPageRoute } from "@/routes";
 import { ChatTitlebar } from "./ChatTitlebar";
+import { MobileTopbar } from "./MobileTopbar";
+import { MobileTabbar } from "./MobileTabbar";
 import { SessionSidebar } from "./SessionSidebar";
 import { RightDrawer } from "./RightDrawer";
-import { addRightDrawerSection, closeRightDrawer, closeRightDrawerSection, isDrawerPanelVisible, setActiveRightDrawerSection, toggleBottomTerminal, useRightDrawer, useRightDrawerStore } from "./RightDrawerState";
+import { addRightDrawerSection, closeRightDrawer, closeRightDrawerSection, isDrawerPanelVisible, openRightDrawer, setActiveRightDrawerSection, toggleBottomTerminal, useRightDrawer, useRightDrawerStore } from "./RightDrawerState";
 import { BottomTerminalDock } from "./BottomTerminalDock";
 import { getDigest, getNeedsAttention } from "@/api/subagents";
 import { setNeedsAttention } from "@/components/sidebar/needs-handoff-store";
@@ -37,6 +40,8 @@ import { ConfirmDialog } from "@/components/overlays/ConfirmDialog";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { SignalSprite } from "@/components/ui/SignalIcon";
+import { folderNameFromPath } from '@/api/folder';
+import { routeLabelFor } from '@/lib/route-labels';
 
 const SESSIONS_COLLAPSED_KEY = "august-sessions-collapsed";
 
@@ -558,6 +563,33 @@ export function ChatLayout() {
   // Responsive tiers are container queries on the shell (styles/chat.css).
   // The scrims are real DOM so click-outside works and Escape has a target.
   const shell = useShellWidth();
+  /* The phone tier renders a different tree (topbar + tabbar), so it is a
+   * React decision rather than a CSS one. `collapsed` stays the DESKTOP
+   * preference — it is persisted — and the phone keeps its drawer in its own
+   * state so opening it on a phone never writes a collapsed desktop rail. */
+  const mobile = useMediaQuery(MOBILE_QUERY);
+  const [mobileDrawer, setMobileDrawer] = useState(false);
+  const sidebarOpen = mobile ? mobileDrawer : !collapsed;
+  const sessionState = useSessionsStore((s) => (active ? s.sessionStates[active.id] : undefined));
+  const mobileLive =
+    sessionState === 'streaming' || sessionState === 'working' || sessionState === 'awaiting';
+  const mobileSubtitle = (() => {
+    const path = location.pathname;
+    const lowered = path.toLowerCase();
+    if (lowered.startsWith('/settings')) return 'Workspace / preferences';
+    if (lowered === '/charts') return 'Output / data';
+    if (lowered === '/artifacts') return 'Library / everything';
+    if (path === '/' || lowered.startsWith('/c/')) {
+      const ws = active?.workspacePath;
+      return ws ? folderNameFromPath(ws) : 'No workspace';
+    }
+    return 'August';
+  })();
+
+  // Picking a thread (or a tab) dismisses the drawer; so does leaving the tier.
+  useEffect(() => {
+    if (mobile) setMobileDrawer(false);
+  }, [location.pathname, mobile]);
   // One stable key for every /settings/:section path: the page's own section
   // renderer is what swaps, not the whole surface (remounting the rail on
   // every tab would lose its search and flash the panel).
@@ -572,17 +604,18 @@ export function ChatLayout() {
           column now, so nothing here is inerted and the chat does not keep
           rendering behind an overlay. */}
       <div className="august-shell-body flex-1 flex min-h-0 overflow-hidden">
-        {shell.sidebarOverlays && !collapsed && (
+        {shell.sidebarOverlays && sidebarOpen && (
           <div
             className="absolute inset-0 z-30 bg-scrim"
-            onClick={() => setCollapsed(true)}
+            onClick={() => (mobile ? setMobileDrawer(false) : setCollapsed(true))}
             aria-hidden
           />
         )}
         <SessionSidebar
           activeId={active?.id}
-          collapsed={collapsed}
-          onToggleCollapsed={() => setCollapsed((c) => !c)}
+          collapsed={!sidebarOpen}
+          onToggleCollapsed={() => (mobile ? setMobileDrawer(false) : setCollapsed((c) => !c))}
+          mobile={mobile}
           onNew={() => {
             void handleNewSession();
           }}
@@ -595,13 +628,25 @@ export function ChatLayout() {
         />
 
         <div className="august-main-column main">
-          <ChatTitlebar
-            session={active}
-            sidebarCollapsed={collapsed}
-            rightDrawerOpen={showRightSidebar}
-            onToggleSidebar={() => setCollapsed((c) => !c)}
-            workersBadge={workersBadge}
-          />
+          {mobile ? (
+            <MobileTopbar
+              title={routeLabelFor(location.pathname, active?.title)}
+              subtitle={mobileSubtitle}
+              live={mobileLive}
+              onMenu={() => setMobileDrawer(true)}
+              onMore={() =>
+                showRightSidebar ? closeRightDrawer() : openRightDrawer('canvas')
+              }
+            />
+          ) : (
+            <ChatTitlebar
+              session={active}
+              sidebarCollapsed={collapsed}
+              rightDrawerOpen={showRightSidebar}
+              onToggleSidebar={() => setCollapsed((c) => !c)}
+              workersBadge={workersBadge}
+            />
+          )}
           <div className="august-content-area workspace-body">
             {showRightSidebar && shell.drawerOverlays && (
               <div
@@ -673,6 +718,16 @@ export function ChatLayout() {
               </>
             </ErrorBoundary>
           </div>
+
+          {/* The phone's primary navigation. In flow, not fixed: the composer
+              sits above it inside the chat column, so nothing has to reserve
+              space for an overlay that would cover the last message. */}
+          {mobile && (
+            <MobileTabbar
+              pathname={location.pathname}
+              onNavigate={(path) => void navigate(path)}
+            />
+          )}
 
           {/* JetBrains-style terminal strip docked under the whole main
               column (chat + right panel). */}
