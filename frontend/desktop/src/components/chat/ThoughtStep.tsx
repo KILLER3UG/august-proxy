@@ -13,16 +13,17 @@
  * (RailDoneRow), not on the thought.
  *
  * Claude-parity rendering (2026-09-22, revised 2026-10-22, summary-only
- * 2026-10-23): with the collapsed default on (the out-of-box behaviour), a
- * thought renders as the reference's card BODY — one distilled sentence per
- * line, no header, no reveal. The card's TITLE ("Thought for 49s") belongs
- * to the activity line above the pack, which already carries the elapsed
- * time; a per-thought header repeated that run duration on every block. The
- * reference NEVER shows the raw chain of thought — its opened card carries
- * more of the summary, and so does ours: "Show more" raises the distilled
- * line cap (THOUGHT_SUMMARY_LINES → _FULL). The raw prose branch below is
- * reached only when the operator opts out of summary rendering
- * (august.collapseThinking = '0').
+ * 2026-10-23, full-reasoning reveal 2026-10-27): with the collapsed default on
+ * (the out-of-box behaviour), a thought renders as the reference's card BODY —
+ * one distilled sentence per line, no header, no reveal. The card's TITLE
+ * ("Thought for 49s") belongs to the activity line above the pack, which
+ * already carries the elapsed time; a per-thought header repeated that run
+ * duration on every block. The reference stops at that summary; August does
+ * not — "Show full reasoning" swaps the summary for the model's own prose,
+ * which is the whole point of keeping the raw text in the transcript at all.
+ * The operator can still opt out of summary rendering entirely
+ * (august.collapseThinking = '0'), which shows the prose clamped with a
+ * "Show more" that unclamps it.
  */
 
 import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -68,6 +69,10 @@ export function ThoughtStep({
   const text = content.trim();
   const proseRef = useRef<HTMLDivElement>(null);
   const [overflowing, setOverflowing] = useState(false);
+  // Whether this row is showing the model's own prose instead of its distilled
+  // summary. Declared with the other hooks: the render below has an early
+  // return, and a hook after it changes the hook order between renders.
+  const [revealRaw, setRevealRaw] = useState(false);
 
   // Measure the natural prose height against the clamp. The inner prose is
   // never the clip container, so its scrollHeight is the full height whether
@@ -138,15 +143,17 @@ export function ThoughtStep({
   const clamped = longThought && !showFull;
 
   // Claude-style think row: when the collapsed default is on, a thought
-  // renders ONLY as its distilled "what the model is doing" sentences — the
-  // raw chain-of-thought is not part of either state. "Show more" raises the
-  // summary cap; the raw prose branch is the operator's opt-out only.
-  const summaryCollapsed = collapsedDefault;
-  // A summary row is expandable only when expansion actually reveals more:
-  // a thought with fewer distilled lines than the collapsed cap has nothing
-  // behind "Show more".
+  // renders as its distilled "what the model is doing" sentences, and the one
+  // control beneath it — "Show full reasoning" — swaps in the raw chain of
+  // thought itself. The reveal is local to this row: the parent's `showFull`
+  // still owns the streaming/expansion seed, and reading the whole reasoning
+  // is not a decision the transcript should remember across reloads.
+  const summaryCollapsed = collapsedDefault && !revealRaw;
+  // A summary row is expandable whenever there IS a full reasoning behind it;
+  // in the operator's opt-out layout the control only exists when the parent
+  // wired a toggle to unclamp the prose.
   const canReveal = collapsedDefault
-    ? !isGenerating && distilledLines.length > THOUGHT_SUMMARY_LINES && typeof onToggle === 'function'
+    ? !isGenerating && !!text
     : !!text && typeof onToggle === 'function';
 
   const clockIcon = isGenerating ? (
@@ -242,13 +249,20 @@ export function ThoughtStep({
           <button
             type="button"
             className={cn('thought-toggle-btn', isGenerating && 'is-live')}
-            onClick={onToggle}
-            aria-expanded={showFull}
+            onClick={collapsedDefault ? () => setRevealRaw((v) => !v) : onToggle}
+            aria-expanded={collapsedDefault ? revealRaw : showFull}
             aria-controls={panelId}
           >
-            <span>{showFull ? 'Show less' : 'Show more'}</span>
+            <span>
+              {collapsedDefault
+                ? revealRaw ? 'Show less' : 'Show full reasoning'
+                : showFull ? 'Show less' : 'Show more'}
+            </span>
             <ChevronDown
-              className={cn('thought-toggle-chevron', showFull && 'is-open')}
+              className={cn(
+                'thought-toggle-chevron',
+                (collapsedDefault ? revealRaw : showFull) && 'is-open',
+              )}
               aria-hidden
             />
           </button>

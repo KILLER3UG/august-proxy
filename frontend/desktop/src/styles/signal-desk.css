@@ -84,7 +84,6 @@
      `font: inherit` stays on the element because a typeface is not a fill. */
   .sd-app .nav-item,
   .sd-app .thread,
-  .sd-app .quick-search,
   .sd-app .icon-button,
   .sd-app .project-head,
   .sd-app .tool-button,
@@ -230,23 +229,15 @@
   }
   .sd-app .new-thread kbd { border-color: rgba(16,20,11,.15); background: rgba(16,20,11,.09); color: rgba(16,20,11,.58); box-shadow: none; }
 
-  .sd-app .quick-search {
-    width: 100%;
-    height: 33px;
-    margin-top: 7px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 0 9px;
-    border-radius: var(--radius-sm);
-    color: var(--ink-3);
-    font-size: 0.7188rem;
-    transition: background .15s var(--ease), color .15s var(--ease);
-  }
-  .sd-app .quick-search:hover { background: var(--panel-2); color: var(--ink-2); }
-  .sd-app .quick-search kbd { margin-left: auto; }
-
   .sd-app .nav { margin-top: 14px; display: flex; flex-direction: column; gap: 2px; }
+  /* The "More" card opens to the right of the rail like the composer's model
+     menu. Its rows reuse `.nav-item` so the rail keeps one voice; the focus
+     ring is restated because Radix paints `focus:bg-accent`, which is not the
+     mockup's hover colour. */
+  .sd-app .nav-more-panel { min-width: 190px; padding: 4px; }
+  .sd-app .nav-more-panel .nav-item { height: 32px; }
+  .sd-app .nav-more-panel .nav-item:focus { background: var(--panel-2); color: var(--ink); }
+  .sd-app .nav-more-panel .nav-item:focus svg { color: var(--accent-text); }
   .sd-app .nav-item {
     width: 100%;
     height: 34px;
@@ -419,7 +410,6 @@
     transition: background .15s var(--ease), border-color .15s var(--ease), color .15s var(--ease);
   }
   .sd-app .cmd-button:hover { background: var(--panel-2); border-color: var(--line-strong); color: var(--ink-2); }
-  .sd-app .cmd-button kbd { height: 17px; font-size: 0.5rem; }
   .sd-app .canvas-toggle {
     height: 29px; display: flex; align-items: center; gap: 6px;
     padding: 0 10px; border: 1px solid var(--line); border-radius: 7px;
@@ -1124,9 +1114,6 @@
   .sd-app .new-thread:hover { background: color-mix(in srgb, var(--ink) 88%, var(--bg)); transform: none; }
   .sd-app .new-thread .plus-box { background: color-mix(in srgb, var(--bg) 14%, transparent); }
   .sd-app .new-thread kbd { border-color: color-mix(in srgb, var(--bg) 18%, transparent); background: color-mix(in srgb, var(--bg) 10%, transparent); color: color-mix(in srgb, var(--bg) 60%, transparent); }
-  .sd-app .quick-search { color: var(--ink-3); }
-  .sd-app .quick-search:hover { background: var(--panel-2); }
-
   .sd-app .nav-item[data-active="true"] { background: transparent; }
   .sd-app .nav-item[data-active="true"]::before { width: 1px; background: var(--accent-text); }
   .sd-app .nav-item[data-active="true"] svg { color: var(--accent-text); }

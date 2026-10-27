@@ -239,7 +239,6 @@ export function ChatTitlebar({
         >
           <SignalIcon name="search" />
           <span>Search or run</span>
-          <kbd>⌘K</kbd>
         </Button>
 
         <Button variant="bare"

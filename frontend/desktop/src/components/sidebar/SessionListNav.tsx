@@ -1,9 +1,14 @@
 /* ── Session list nav — the mockup's sidebar head and destinations ─────
  *
  * Copied from docs/design/signal-desk-complete.html: the brand row, New
- * thread, the quick-search field, and the four primary destinations. The
- * mockup shows exactly four; every other surface stays reachable under
- * "More", which uses the same row so the rail has one voice.
+ * thread, and the four primary destinations. The mockup shows exactly four;
+ * every other surface stays reachable under "More", which uses the same row
+ * so the rail has one voice.
+ *
+ * The mockup's quick-search field is deliberately NOT here. It only opened the
+ * command palette, which the titlebar's "Search or run" button and the Ctrl+K
+ * binding already reach, so the rail carried a third door to one thing — and
+ * its `⌘K` chip advertised the macOS binding on a Windows-only app.
  *
  * The mockup's workspace card is deliberately NOT here: the project decision
  * belongs beside the composer, and that is where the picker already lives
@@ -12,13 +17,18 @@
  * the same binding twice and its full path read like a file manager.
  *
  * Behaviour is unchanged from the Tailwind version this replaced: the same
- * onNew / onNavigate / onToggleCollapsed props, the same command-palette
- * door, the same workspace picker event.
+ * onNew / onNavigate / onToggleCollapsed props, the same workspace picker
+ * event.
  */
 
-import { useEffect, useState } from 'react';
-import { toggleCommandPalette } from '@/store/command-palette';
+import { useEffect, useRef, useState } from 'react';
 import { SignalIcon, type SignalIconName } from '@/components/ui/SignalIcon';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Button } from "@/components/ui/button";
 
 export interface SessionListNavProps {
@@ -74,14 +84,51 @@ export function SessionListNav({
   mobile = false,
 }: SessionListNavProps) {
   const moreActive = MORE.some((item) => isActive(item.to, activePath));
-  const [moreOpen, setMoreOpen] = useState(moreActive);
-
+  // Starts closed even when a destination inside it is current: the trigger
+  // carries `data-active`, and a menu that opens itself at launch is a popup
+  // the user did not ask for.
+  const [moreOpen, setMoreOpen] = useState(false);
+  // The card must portal INTO `.sd-app`, not to document.body: the mockup's
+  // stylesheet is scoped to that subtree and declares its colour tokens
+  // there, so a body-level card loses `.nav-item`, `.icon-sm` and every
+  // `--panel-*` at once and renders as an unstyled menu with oversized icons.
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [portal, setPortal] = useState<HTMLElement | null>(null);
   useEffect(() => {
-    if (moreActive) setMoreOpen(true);
-  }, [moreActive]);
+    setPortal(rootRef.current?.closest<HTMLElement>('.sd-app') ?? null);
+  }, []);
+
+  // Hover opened the card, so the pointer leaving it must close it. The close
+  // is delayed rather than immediate: the card sits 6px clear of the trigger
+  // and the pointer crosses that gap, so an instant leave would kill the menu
+  // on the way from the row into the list. Entering either half cancels it.
+  const leaveTimer = useRef<number | null>(null);
+  const cancelLeave = () => {
+    if (leaveTimer.current !== null) window.clearTimeout(leaveTimer.current);
+    leaveTimer.current = null;
+  };
+  // Radix hands focus back to the trigger when the menu closes, which paints a
+  // focus ring on a row the user only ever hovered — the box that stayed
+  // behind after the cursor left. It has to be refused at Radix's own
+  // close-auto-focus hook: blurring the button from the leave timer runs
+  // first, and Radix then focuses it again. The keyboard path must keep its
+  // ring, so the origin is tracked rather than guessed.
+  const hoverOpened = useRef(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const setMore = (next: boolean) => {
+    // The flag is read by the card's own close-focus handler, so it is not
+    // cleared here — pointerenter sets it and a keyboard open clears it.
+    if (!next && hoverOpened.current) triggerRef.current?.blur();
+    setMoreOpen(next);
+  };
+  const scheduleLeave = () => {
+    cancelLeave();
+    leaveTimer.current = window.setTimeout(() => setMore(false), 140);
+  };
+  useEffect(() => cancelLeave, []);
 
   return (
-    <div className="august-sidebar-nav shrink-0">
+    <div ref={rootRef} className="august-sidebar-nav shrink-0">
       <div className="sidebar-head">
         <div className="brand-copy">
           <span className="brand-name">August</span>
@@ -103,18 +150,6 @@ export function SessionListNav({
             <SignalIcon name="plus" />
           </span>
           <span>New thread</span>
-        </Button>
-
-        <Button variant="bare"
-          type="button"
-          className="quick-search"
-          onClick={() => toggleCommandPalette()}
-          title="Search or run a command (Ctrl+K)"
-          aria-keyshortcuts="Control+K"
-        >
-          <SignalIcon name="search" />
-          <span>Search or jump to…</span>
-          <kbd>⌘K</kbd>
         </Button>
 
         {!mobile && (
@@ -140,37 +175,80 @@ export function SessionListNav({
             );
           })}
 
-          <Button variant="bare"
-            type="button"
-            className="nav-item"
-            data-active={moreActive}
-            aria-expanded={moreOpen}
-            onClick={() => setMoreOpen((open) => !open)}
-          >
-            <SignalIcon name="more" />
-            <span>More</span>
-            <span className="nav-count">
-              <SignalIcon name={moreOpen ? 'chev' : 'chev-right'} />
-            </span>
-          </Button>
-          {moreOpen
-            ? MORE.map(({ label, icon, to }) => {
-                const active = isActive(to, activePath);
-                return (
-                  <Button variant="bare"
-                    key={to}
-                    type="button"
-                    className="nav-item"
-                    data-active={active}
-                    aria-current={active ? 'page' : undefined}
-                    onClick={() => onNavigate(to)}
-                  >
-                    <SignalIcon name={icon} />
-                    <span>{label}</span>
-                  </Button>
-                );
-              })
-            : null}
+          {/* "More" opens the way the composer's model menu does: a card to
+              the RIGHT of the rail, not rows that push the list down. Radix
+              owns open/close, so click, Escape, outside-click and the arrow
+              keys all drive one piece of state — the hand-rolled pair of
+              handlers this replaced fought each other, because a click
+              arrives after pointerenter and toggled the menu straight back
+              shut. `modal={false}` keeps the rail live underneath it. Radix
+              tracks the pointer for SUB-menus only, so a top-level menu that
+              opens on hover has to report its own leave: the trigger and the
+              card each hand their enter/leave to the same grace timer. */}
+          <DropdownMenu open={moreOpen} onOpenChange={setMore} modal={false}>
+            <DropdownMenuTrigger asChild>
+              <Button variant="bare"
+                ref={triggerRef}
+                type="button"
+                className="nav-item"
+                data-active={moreActive}
+                onPointerEnter={(event) => {
+                  // Hover opens for a mouse only: a tap dispatches pointerenter
+                  // as well, and would pre-open the menu before its own click.
+                  if (event.pointerType === 'mouse') {
+                    hoverOpened.current = true;
+                    cancelLeave();
+                    setMore(true);
+                  }
+                }}
+                onPointerLeave={(event) => {
+                  if (event.pointerType === 'mouse') scheduleLeave();
+                }}
+                onKeyDown={() => {
+                  // Opened from the keyboard: the ring is wanted here, so the
+                  // close handler must not refuse the focus return.
+                  hoverOpened.current = false;
+                }}
+              >
+                <SignalIcon name="more" />
+                <span>More</span>
+                <span className="nav-count">
+                  <SignalIcon name={moreOpen ? 'chev' : 'chev-right'} />
+                </span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              className="nav-more-panel"
+              container={portal}
+              onPointerEnter={(event) => {
+                if (event.pointerType === 'mouse') cancelLeave();
+              }}
+              onPointerLeave={(event) => {
+                if (event.pointerType === 'mouse') scheduleLeave();
+              }}
+              side="right"
+              align="start"
+              sideOffset={6}
+              onCloseAutoFocus={(event) => {
+                // Refuse Radix's focus return when the menu was only ever
+                // hovered; that focus is what painted the ring box on the row
+                // after the cursor had gone.
+                if (hoverOpened.current) event.preventDefault();
+              }}
+            >
+              {MORE.map(({ label, icon, to }) => (
+                <DropdownMenuItem
+                  key={to}
+                  className="nav-item"
+                  data-active={isActive(to, activePath)}
+                  onSelect={() => onNavigate(to)}
+                >
+                  <SignalIcon name={icon} />
+                  <span>{label}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </nav>
         )}
       </div>
