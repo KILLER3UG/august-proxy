@@ -119,6 +119,7 @@ import {
   formatContextWindow,
   estimateContextWindow,
 } from './model-display';
+import { chipModelLabel } from './composer/ModelEffortMenu';
 import {
   loadMessagesForSession as loadMessagesForSessionBase,
   loadComposerDraft,
@@ -1449,9 +1450,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             {workspaceName || 'No workspace'}
           </p>
         </div>
-        <span className="mt-1 inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border/50 px-2.5 py-1 font-mono text-[0.6rem] uppercase tracking-[0.1em] text-muted-foreground/55">
+        <span className="mt-1 inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border/50 px-2.5 py-1 font-mono text-[0.6rem] tracking-[0.02em] text-muted-foreground/55">
           <span className="size-1.5 rounded-full bg-primary" />
-          {selectedModel?.name ?? 'Local'}
+          {/* The same label the composer chip prints ("KiloCode · Beam (Free)").
+              `selectedModel.name` is a raw alias on installs whose model rows
+              carry no label, which the intro then shouted as
+              "REFLECTION/BEAM-FREE" — an identifier where a name belongs. */}
+          {chipModelLabel(selectedModel ?? null)}
         </span>
       </div>
     </div>
