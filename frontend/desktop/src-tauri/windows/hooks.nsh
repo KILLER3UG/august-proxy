@@ -8,8 +8,10 @@
 ;   3) Kill whatever still listens on 8085 — but ONLY when the owning process
 ;      also matches the August markers (never an unrelated service)
 ;   4) Rename locked python trees out of the way so the copy can proceed
-;   5) Retry a few times; only then show a plain-language Retry prompt
-;      (skipped in silent/updater installs — MessageBox would strand the update)
+;   5) Retry a few times; only then show a plain-language Retry prompt.
+;      A silent/updater install shows no box — it aborts the install rather
+;      than copy over a file a live process holds, so the previous version
+;      stays intact and the waiter relaunches it.
 ;
 ; After install: silent/updater mode must relaunch August — Tauri NSIS does not
 ; auto-start the app after a quiet update (known gap; see tauri#6955).
@@ -115,16 +117,34 @@
     IfFileExists "$INSTDIR\resources\python\DLLs\_asyncio.pyd" 0 stop_done
 
     IntOp $R1 $R1 + 1
-    IntCmp $R1 3 stop_ask stop_retry_loop stop_ask
+    ; Four attempts, not three: each one is cheaper now that the sweep stops as
+    ; soon as nothing August-shaped is alive, so the extra try costs time only
+    ; when something really is still holding the file.
+    IntCmp $R1 4 stop_ask stop_retry_loop stop_ask
 
   stop_ask:
-    ; Silent/updater installs must never block on MessageBox — that leaves the
-    ; app quit with no UI and no relaunch.
-    IfSilent stop_done
+    ; Reached only when the probe file is STILL locked after every retry. The
+    ; old code fell through to `stop_done` here, which started copying over a
+    ; file a live process holds: NSIS then half-writes the install, or raises
+    ; its own Abort/Retry box — and in a silent update nobody is there to
+    ; answer that box, which is the stranded-update failure this file exists to
+    ; prevent. Refuse instead. Nothing has been copied yet (this macro is the
+    ; first thing `Section Install` runs), so the installed version stays
+    ; intact, and the detached post-update waiter sees "no installer running,
+    ; no marker" and relaunches August by itself.
+    DetailPrint "August is still holding its own files — the update was cancelled and nothing was changed."
+    Delete "$TEMP\august-preinstall-stop.ps1"
+    IfSilent stop_refuse stop_ask_user
+
+  stop_ask_user:
     MessageBox MB_RETRYCANCEL|MB_ICONINFORMATION \
-      "August is still finishing in the background.$\r$\n$\r$\nClick Retry — we will close it for you.$\r$\nNo need to open Task Manager." \
+      "August is still finishing in the background.$\r$\n$\r$\nClick Retry — we will close it for you.$\r$\nCancel leaves your current version untouched." \
       IDRETRY stop_retry_loop
-    Goto stop_done
+    ; Cancel must not proceed either — same reason as the silent path.
+    Abort
+
+  stop_refuse:
+    Abort
 
   stop_done:
   Delete /REBOOTOK "$INSTDIR\resources\python\DLLs\_asyncio.pyd.old"
