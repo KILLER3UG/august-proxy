@@ -595,20 +595,9 @@ export function ModelEffortMenu({
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-baseline gap-1.5">
                       <span className="text-[0.6875rem] leading-4 text-muted-foreground">Effort</span>
-                      {/* Keyed on the level so a change FADES the new word in
-                          instead of swapping it between frames — the knob is
-                          already sliding underneath, and a hard word swap next
-                          to it read as a different control updating. */}
-                      <motion.span
-                        key={effortOpt.value}
-                        initial={{ opacity: 0, y: 3 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.16, ease: [0.2, 0.75, 0.2, 1] }}
-                        className="text-[0.75rem] font-semibold leading-4 text-foreground"
-                        data-testid="effort-value"
-                      >
+                      <span className="text-[0.75rem] font-semibold leading-4 text-foreground">
                         {effortOpt.triggerLabel}
-                      </motion.span>
+                      </span>
                     </div>
                     <button
                       type="button"
@@ -619,29 +608,20 @@ export function ModelEffortMenu({
                       Ctrl+T
                     </button>
                   </div>
-                  {/* The track and knob are DRAWN here and animated by CSS; the
-                      range input sits invisibly on top as the real control, so
-                      keyboard, screen readers and drag keep working while the
-                      knob can slide between stops (a native thumb teleports,
-                      and cannot be transitioned at all). `data-stop` picks the
-                      thumb position from the stylesheet — no inline styles. */}
-                  <div className="model-effort-track mt-2" data-stop={effortIndex}>
-                    <span className="model-effort-knob" aria-hidden />
-                    <input
-                      type="range"
-                      min={0}
-                      max={EFFORT_OPTIONS.length - 1}
-                      step={1}
-                      value={effortIndex}
-                      aria-label="Effort"
-                      aria-valuetext={effortOpt.label}
-                      onChange={(e) => {
-                        const next = EFFORT_OPTIONS[Number(e.target.value)];
-                        if (next) onEffortChange(next.value);
-                      }}
-                      className="model-effort-slider"
-                    />
-                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={EFFORT_OPTIONS.length - 1}
+                    step={1}
+                    value={effortIndex}
+                    aria-label="Effort"
+                    aria-valuetext={effortOpt.label}
+                    onChange={(e) => {
+                      const next = EFFORT_OPTIONS[Number(e.target.value)];
+                      if (next) onEffortChange(next.value);
+                    }}
+                    className="model-effort-slider mt-2 w-full"
+                  />
                   {/* The extended-thinking switch lived in its own effort
                       popover. That popover is gone — the effort row IS the
                       control now — so the switch moves in beside it rather
