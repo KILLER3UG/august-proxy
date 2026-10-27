@@ -2,7 +2,7 @@
   "expo": {
     "name": "August",
     "slug": "august",
-    "version": "0.18.17",
+    "version": "0.18.21",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -10,6 +10,8 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.august.proxy",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#0e0e10",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -26,7 +28,7 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": [],
+    "plugins": ["./plugins/withCleartextTraffic"],
     "scheme": "august",
     "splash": {
       "image": "./assets/splash-icon.png",
