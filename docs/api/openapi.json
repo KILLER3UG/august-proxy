@@ -4078,7 +4078,7 @@
   },
   "info": {
     "title": "August Proxy",
-    "version": "0.18.19"
+    "version": "0.18.20"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -6838,6 +6838,30 @@
           }
         },
         "summary": "Getmemorymetrics",
+        "tags": [
+          "brain-config"
+        ]
+      }
+    },
+    "/api/brain/memory/open-folder": {
+      "post": {
+        "description": "Open the markdown memory mirror in the OS file browser.\n\nThe mirror (`<dataDir>/memory/`) is the human-readable view of the facts\nstore; this is the door that makes it a surface rather than a file tree\na person has to find by hand. Returns the path even when the open fails,\nso the UI can still show where the folder lives.",
+        "operationId": "openMemoryFolder_api_brain_memory_open_folder_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Openmemoryfolder Api Brain Memory Open Folder Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Openmemoryfolder",
         "tags": [
           "brain-config"
         ]

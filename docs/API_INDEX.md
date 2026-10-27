@@ -5,7 +5,7 @@
 
 # API Index — every route
 
-425 routes across 352 paths,
+426 routes across 353 paths,
 grouped by family. **This file is generated.** For the prose that explains what
 these are for and when to reach for them, read
 [`API_REFERENCE.md`](./API_REFERENCE.md) — it covers the families that matter in
@@ -112,7 +112,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `PATCH` | `/api/sessions/{sessionId}/messages/enrichment` | Attach the client-authored structured transcript to one message. |
 | `GET` | `/api/sessions/search` | Full-text search across conversation messages (C8). |
 
-## Memory & brain (26)
+## Memory & brain (27)
 
 | Method | Path | Summary |
 | --- | --- | --- |
@@ -130,6 +130,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `POST` | `/api/brain/decisions/resolve` | Run one journal resolution pass now (the Learning page → "Run now"). |
 | `GET` | `/api/brain/integrity` | ``PRAGMA integrity_check`` on the live DB plus what could be recovered. |
 | `GET` | `/api/brain/memory/metrics` | Phase D item 4: recall + latency instrument. |
+| `POST` | `/api/brain/memory/open-folder` | Open the markdown memory mirror in the OS file browser. |
 | `GET` | `/api/brain/memory/preview` | The literal durable-memory text a turn would receive for one query. |
 | `GET` | `/api/brain/routing/arena` | Recent arena verdicts (the durable archive the UI groups per session). |
 | `POST` | `/api/brain/routing/arena` | Record one arena/debate verdict: a winner row (ok=1) + one loser row (ok=0) per competing model, all tagged s… |
@@ -544,4 +545,4 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 
 ---
 
-Generated from `docs/api/openapi.json` (425 operations).
+Generated from `docs/api/openapi.json` (426 operations).

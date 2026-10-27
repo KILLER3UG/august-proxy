@@ -1280,6 +1280,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/brain/memory/open-folder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Openmemoryfolder
+         * @description Open the markdown memory mirror in the OS file browser.
+         *
+         *     The mirror (`<dataDir>/memory/`) is the human-readable view of the facts
+         *     store; this is the door that makes it a surface rather than a file tree
+         *     a person has to find by hand. Returns the path even when the open fails,
+         *     so the UI can still show where the folder lives.
+         */
+        post: operations["openMemoryFolder_api_brain_memory_open_folder_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/brain/memory/preview": {
         parameters: {
             query?: never;
@@ -11976,6 +12001,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    openMemoryFolder_api_brain_memory_open_folder_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
