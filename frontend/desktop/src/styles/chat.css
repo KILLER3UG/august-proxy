@@ -152,49 +152,114 @@ details[open] > summary .disclosure-chevron {
   display: none !important;
 }
 
-/* Effort slider in the composer model card. The reference's track is a
- * green→blue gradient with a white knob; the four effort levels are the
- * stops, so the native range keeps keyboard and screen-reader behavior. */
-.model-effort-slider {
-  -webkit-appearance: none;
-  appearance: none;
-  height: 7px;
+/* Effort slider in the composer model card, matched to the reference picker:
+ * a fat pill track whose UNFILLED remainder is the muted ground, over a
+ * green→teal→blue gradient that stays fixed to the FULL track width —
+ * so "Low" shows only the gradient's green lead-in and "Max" reveals the
+ * whole run, exactly like the reference at each stop. The white knob and the
+ * small end-of-track marker complete it.
+ *
+ * The rail and the knob are DRAWN here; the range input is an invisible
+ * control layer on top of them. A native thumb teleports between stops and
+ * cannot be transitioned at all, so the drawn knob owns the movement: it
+ * slides on `left`, and the muted remainder follows with the same easing, so
+ * Ctrl+T (or a click on the track) reads as one control moving rather than
+ * two values being swapped. The stops are the four effort levels; the
+ * component publishes the selected index as `data-stop` and the stylesheet
+ * turns it into the knob's position, so nothing sets an inline style. */
+.model-effort-track {
+  --effort-left: 10px;
+  position: relative;
+  height: 20px;
   border-radius: 9999px;
-  background: linear-gradient(90deg, #2bd6a3 0%, #37b7ff 100%);
-  outline: none;
   cursor: pointer;
 }
 
-.model-effort-slider:focus-visible {
+/* The knob's centre travels from the rail's left cap to its right cap — the
+   same 10px inset the UA gives a native thumb — so the drawn knob sits
+   exactly where the invisible input's hit mapping expects it. */
+.model-effort-track[data-stop='1'] { --effort-left: calc((100% + 20px) / 3); }
+.model-effort-track[data-stop='2'] { --effort-left: calc((200% + 20px) / 3); }
+.model-effort-track[data-stop='3'] { --effort-left: calc(100% - 10px); }
+
+.model-effort-track::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 50%;
+  height: 14px;
+  transform: translateY(-50%);
+  border-radius: 9999px;
+  background:
+    radial-gradient(circle 2.5px at calc(100% - 11px) 50%, rgb(255 255 255 / 0.5) 0 2.5px, transparent 2.5px),
+    linear-gradient(90deg, #2ecc71 0%, #2bd6a3 40%, #37b7ff 100%);
+}
+
+.model-effort-track::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: var(--effort-left);
+  height: 14px;
+  transform: translateY(-50%);
+  border-radius: 0 9999px 9999px 0;
+  background: var(--dt-muted);
+  transition: left 180ms cubic-bezier(0.2, 0.75, 0.2, 1);
+}
+
+.model-effort-knob {
+  position: absolute;
+  top: 50%;
+  left: var(--effort-left);
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  border-radius: 9999px;
+  background: rgb(255 255 255);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.45);
+  pointer-events: none;
+  transition:
+    left 180ms cubic-bezier(0.2, 0.75, 0.2, 1),
+    transform 140ms ease;
+}
+
+.model-effort-track:has(.model-effort-slider:active) .model-effort-knob {
+  transform: scale(1.1);
+}
+
+.model-effort-track:has(.model-effort-slider:focus-visible) {
   box-shadow: 0 0 0 2px hsl(var(--dt-ring-hsl, 223 71% 49%) / 0.35);
+}
+
+/* The real control: full-size, keyboard-reachable, invisible. */
+.model-effort-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 20px;
+  margin: 0;
+  background: transparent;
+  opacity: 0;
+  cursor: pointer;
 }
 
 .model-effort-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   border: 0;
-  border-radius: 9999px;
-  background: #ffffff;
-  box-shadow: 0 2px 6px rgb(0 0 0 / 0.45);
-  cursor: pointer;
+  background: transparent;
 }
 
-.model-effort-slider::-moz-range-track {
-  height: 7px;
-  border-radius: 9999px;
-  background: linear-gradient(90deg, #2bd6a3 0%, #37b7ff 100%);
-}
-
-.model-effort-slider::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  border: 0;
-  border-radius: 9999px;
-  background: #ffffff;
-  box-shadow: 0 2px 6px rgb(0 0 0 / 0.45);
-  cursor: pointer;
+@media (prefers-reduced-motion: reduce) {
+  .model-effort-track::after,
+  .model-effort-knob {
+    transition: none;
+  }
 }
 
 /* 5. Thinking indicator animations */
