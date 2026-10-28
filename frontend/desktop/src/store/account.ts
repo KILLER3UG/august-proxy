@@ -28,8 +28,16 @@ interface AccountState {
 const STORAGE_KEY = 'august-accounts-v1';
 const ACTIVE_KEY = 'august-active-account';
 
-const DEFAULT_AVATAR =
+const STOCK_PLACEHOLDER_AVATAR =
   'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=96&h=96&fit=crop&crop=face';
+
+/** No avatar means "show the initials" — a real picture only comes from a
+ *  Google sign-in. Profiles saved before this still carry the retired stock
+ *  photo, and an offline app must not fetch it, so it reads back as empty. */
+function avatarFrom(value: unknown): string {
+  const url = typeof value === 'string' ? value.trim() : '';
+  return url === STOCK_PLACEHOLDER_AVATAR ? '' : url;
+}
 
 function loadAccounts(): AugustAccount[] {
   if (typeof localStorage === 'undefined') return [];
@@ -40,6 +48,7 @@ function loadAccounts(): AugustAccount[] {
     if (!Array.isArray(parsed)) return [];
     return parsed.map((a) => ({
       ...a,
+      avatar: avatarFrom(a.avatar),
       provider: a.provider ?? (a.googleSub || a.email ? 'google' : 'local'),
     }));
   } catch {
@@ -111,7 +120,7 @@ export function createAccount(input: CreateAccountInput): AugustAccount {
     displayName,
     username: normalizeUsername(input.username ?? '', displayName),
     email: (input.email ?? '').trim(),
-    avatar: (input.avatar ?? '').trim() || DEFAULT_AVATAR,
+    avatar: avatarFrom(input.avatar),
     initials: initialsFromName(displayName),
     status: input.status ?? 'online',
     provider: input.provider ?? 'local',
@@ -188,7 +197,7 @@ export function updateAccount(
       ? normalizeUsername(patch.username, displayName)
       : prev.username,
     email: patch.email != null ? patch.email.trim() : prev.email,
-    avatar: patch.avatar != null ? (patch.avatar.trim() || DEFAULT_AVATAR) : prev.avatar,
+    avatar: patch.avatar != null ? avatarFrom(patch.avatar) : prev.avatar,
     initials: patch.displayName != null ? initialsFromName(displayName) : prev.initials,
     updatedAt: new Date().toISOString(),
   };
@@ -231,7 +240,7 @@ export function setAccountStatus(status: UserStatus): void {
 export const GUEST_ACCOUNT_VIEW = {
   name: 'Guest',
   username: '@guest',
-  avatar: DEFAULT_AVATAR,
+  avatar: '',
   initials: 'G',
   status: 'online' as UserStatus,
 };

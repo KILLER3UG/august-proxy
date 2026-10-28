@@ -283,7 +283,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     icon: UserRound,
     category: 'app',
     tier: 'hidden',
-    keywords: ['account', 'login', 'sign up', 'display name', 'avatar', 'sign out'],
+    keywords: ['account', 'login', 'sign up', 'display name', 'sign out'],
     legacyAliases: ['accounts', 'user'],
   },
   {

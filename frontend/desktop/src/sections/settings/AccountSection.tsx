@@ -10,7 +10,7 @@ import { SettingsCard } from '@/components/settings/SettingsCard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   useAccountStore,
   createAccount,
@@ -36,6 +36,9 @@ export function AccountSection() {
   const [displayName, setDisplayName] = useState(active?.displayName ?? '');
   const [username, setUsername] = useState(active?.username.replace(/^@/, '') ?? '');
   const [email, setEmail] = useState(active?.email ?? '');
+  // Carried, not edited: Settings no longer offers an avatar image, but saving
+  // a profile must not blank an avatar that came from a Google account or an
+  // earlier build.
   const [avatar, setAvatar] = useState(active?.avatar ?? '');
   const [creating, setCreating] = useState(accounts.length === 0);
   const [googleBusy, setGoogleBusy] = useState(false);
@@ -181,7 +184,6 @@ export function AccountSection() {
                     onClick={() => handleSelect(account.id)}
                   >
                     <Avatar className="size-9 border border-border">
-                      <AvatarImage src={account.avatar} alt={account.displayName} />
                       <AvatarFallback>{account.initials}</AvatarFallback>
                     </Avatar>
                     <div className="min-w-0">
@@ -242,22 +244,10 @@ export function AccountSection() {
         <SettingsCard
           icon={UserRound}
           title={formTitle}
-          description="Name and avatar appear in the Settings menu."
+          description="Name appears in the Settings menu."
           inert
         >
           <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <Avatar className="size-12 border border-border">
-                <AvatarImage src={avatar || undefined} alt={displayName || 'Avatar'} />
-                <AvatarFallback>
-                  {(displayName || 'AU').slice(0, 2).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <div className="min-w-0 flex-1 text-xs text-muted-foreground">
-                Paste an image URL for your avatar, or leave blank for the default.
-              </div>
-            </div>
-
             <label className="block space-y-1.5">
               <span className="text-xs font-medium text-muted-foreground">Display name</span>
               <Input
@@ -283,15 +273,6 @@ export function AccountSection() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-              />
-            </label>
-
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">Avatar URL</span>
-              <Input
-                value={avatar}
-                onChange={(e) => setAvatar(e.target.value)}
-                placeholder="https://…"
               />
             </label>
 
