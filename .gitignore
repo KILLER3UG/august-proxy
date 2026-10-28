@@ -5,8 +5,10 @@ request-log.json
 .kimchi/
 # August Proxy workspace artifacts (AUG.md plan/todo persistence — local, never commit)
 .aug/
-# ZCode agent cache (local only, never commit)
+# ZCode / Cursor / OpenCode agent caches (local only, never commit)
 .zcode/
+.cursor/
+.opencode/
 # Dependencies (never commit)
 node_modules/
 backend/host-agent/node_modules/
