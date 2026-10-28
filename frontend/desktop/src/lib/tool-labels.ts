@@ -37,8 +37,8 @@ const TOOL_LABEL_MAP: Record<string, string> = {
   search: 'Searching',
   grep: 'Searching files',
   grep_search: 'Searching',
-  web_search: 'Searching',
-  search_web: 'Searching',
+  web_search: 'Searching the web',
+  search_web: 'Searching the web',
   web_fetch: 'Fetching',
   list_dir: 'Listing',
   list_directory: 'Listing',
@@ -148,8 +148,8 @@ const TOOL_VERB_DONE: Record<string, string> = {
   search: 'Searched',
   grep: 'Searched files',
   grep_search: 'Searched',
-  web_search: 'Searched',
-  search_web: 'Searched',
+  web_search: 'Searched the web',
+  search_web: 'Searched the web',
   web_fetch: 'Fetched',
   list_dir: 'Listed',
   list_directory: 'Listed',
@@ -337,7 +337,7 @@ function derivePastTense(running: string): string {
  */
 export function getToolLabel(
   toolName: string,
-  context?: { agentId?: string; filename?: string; command?: string; status?: 'running' | 'done' | 'error' | 'stalled' },
+  context?: { agentId?: string; filename?: string; command?: string; subject?: string; status?: 'running' | 'done' | 'error' | 'stalled' },
 ): string {
   const clean = normalizeToolName(toolName);
   const status = context?.status ?? 'running';
@@ -368,18 +368,25 @@ export function getToolLabel(
     return verb;
   }
 
+  // The verb every subject-bearing row hangs off. One definition, because the
+  // file row, the subject row and the bare row used to each rebuild it and
+  // drift the moment one of them learned a new status.
+  const baseLabel = (): string => {
+    if (isRunning) return TOOL_LABEL_MAP[clean] || formatFallbackLabel(toolName);
+    return TOOL_VERB_DONE[clean] || derivePastTense(TOOL_LABEL_MAP[clean] || formatFallbackLabel(toolName));
+  };
+
   // File/dir tools: basename only ("Read app.ts", "Listed backend") — full path via tooltip.
   if (context?.filename) {
-    const base =
-      (isRunning ? TOOL_LABEL_MAP[clean] : undefined) ??
-      (!isRunning ? TOOL_VERB_DONE[clean] : undefined) ??
-      TOOL_LABEL_MAP[clean] ??
-      (isRunning ? formatFallbackLabel(toolName) : derivePastTense(formatFallbackLabel(toolName)));
-    return `${base} ${truncateLabel(pathBasename(context.filename), 80)}`;
+    return `${baseLabel()} ${truncateLabel(pathBasename(context.filename), 80)}`;
   }
 
-  if (isRunning) {
-    return TOOL_LABEL_MAP[clean] || formatFallbackLabel(toolName);
+  // Everything that acted on a named thing — a skill, a search, a memory key —
+  // says which one. Without this the row reads "Loaded skill" and the only way
+  // to learn which is to open the card the row was meant to summarise.
+  if (context?.subject) {
+    return `${baseLabel()}: ${truncateLabel(context.subject, 80)}`;
   }
-  return TOOL_VERB_DONE[clean] || derivePastTense(TOOL_LABEL_MAP[clean] || formatFallbackLabel(toolName));
+
+  return baseLabel();
 }

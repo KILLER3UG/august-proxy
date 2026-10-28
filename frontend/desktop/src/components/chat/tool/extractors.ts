@@ -71,6 +71,54 @@ export function extractAgentId(context?: string): string | null {
 }
 
 /**
+ * The thing a non-file, non-command tool acted on: which skill was loaded,
+ * what was searched, which memory key was written.
+ *
+ * The reference's activity rows carry their subject — "Searched the web
+ * Bionic local LLM app run GGUF models" — while August's said "Loaded skill"
+ * and nothing else, so the row that exists to save you from opening the card
+ * made you open the card. Keys are ordered from most specific to least: a
+ * generic `name` is only read when nothing more particular is present, and
+ * then only if it is short and path-free, because `name` is also how unrelated
+ * tools label a model, a file and a server.
+ */
+export function extractSubject(context?: string): string | null {
+  if (!context) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(context);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  const obj = parsed as Record<string, unknown>;
+  const take = (keys: string[]): string | null => {
+    for (const key of keys) {
+      const v = obj[key];
+      if (typeof v === 'string' && v.trim().length > 0) return v.replace(/\s+/g, ' ').trim();
+    }
+    return null;
+  };
+  const specific = take([
+    'skill',
+    'skill_name',
+    'skillName',
+    'query',
+    'search_query',
+    'searchQuery',
+    'q',
+    'key',
+    'fact_key',
+    'factKey',
+    'url',
+  ]);
+  if (specific) return specific;
+  const loose = take(['name']);
+  if (loose && loose.length <= 64 && !/[\\/]/.test(loose)) return loose;
+  return null;
+}
+
+/**
  * Best-effort extraction of diff inputs from a tool's args / result.
  * Returns a payload compatible with <DiffView> props.
  */

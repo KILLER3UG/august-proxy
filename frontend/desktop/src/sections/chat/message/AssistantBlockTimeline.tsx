@@ -5,13 +5,14 @@ import { Brain, ChevronDown, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Task, TaskContent, TaskTrigger } from '@/components/ui/task';
+import { ToolCallItemBody } from '@/components/chat/ToolCallItem';
 import {
-  ToolCallItemBody,
   extractAgentId,
   extractCommand,
   extractDiffData,
   extractFilename,
-} from '@/components/chat/ToolCallItem';
+  extractSubject,
+} from '@/components/chat/tool/extractors';
 import { PromptDisclosure } from '@/components/chat/PromptDisclosure';
 import { ThoughtStep } from '@/components/chat/ThoughtStep';
 import { useCollapseThinking } from '@/hooks/useThinkingPreference';
@@ -643,6 +644,7 @@ export function AssistantBlockTimeline({
           command: extractCommand(block.tool.context) ?? undefined,
           filename: extractFilename(block.tool.context) ?? undefined,
           agentId: extractAgentId(block.tool.context) ?? undefined,
+          subject: extractSubject(block.tool.context) ?? undefined,
         });
         const detail =
           block.tool.preview?.slice(-120) ||
@@ -959,6 +961,7 @@ export function AssistantBlockTimeline({
                         filename: !rbIsCommand
                           ? extractFilename(rt.context) ?? undefined
                           : undefined,
+                        subject: extractSubject(rt.context) ?? undefined,
                         status: rt.status,
                       })}
                       isCommand={rbIsCommand}
@@ -1066,6 +1069,7 @@ export function AssistantBlockTimeline({
           agentId: agentId ?? undefined,
           filename: filename ?? undefined,
           command: isCommand ? extractCommand(tool.context) ?? undefined : undefined,
+          subject: extractSubject(tool.context) ?? undefined,
           status: tool.status,
         });
 

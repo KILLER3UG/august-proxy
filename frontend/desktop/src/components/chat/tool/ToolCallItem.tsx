@@ -7,7 +7,7 @@ import { type ProgressEntry } from '@/lib/tool-progress';
 import { getToolLabel } from '@/lib/tool-labels';
 import { classifyTool } from '@/lib/tool-classify';
 import { useLiveBackendAction } from '@/hooks/useLiveBackendAction';
-import { extractFilename, extractCommand, extractAgentId } from './extractors';
+import { extractFilename, extractCommand, extractAgentId, extractSubject } from './extractors';
 import type { ToolEntry } from './types';
 import { ToolCallItemBody } from './ToolCallItemBody';
 
@@ -118,6 +118,7 @@ export const ToolCallItem = memo(function ToolCallItem({
     agentId: agentId ?? undefined,
     filename: filename ?? undefined,
     command: commandText ?? undefined,
+    subject: !isCommand && !filename ? extractSubject(tool.context) ?? undefined : undefined,
     status: tool.status
   });
   const labelTitle =

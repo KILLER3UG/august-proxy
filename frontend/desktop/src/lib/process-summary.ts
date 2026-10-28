@@ -30,10 +30,14 @@ export function splitThinkingSentences(content: string): string[] {
 export function distillThoughtLines(content: string): string[] {
   const out: string[] = [];
   for (const line of splitThinkingSentences(content)) {
+    // Recitation is dropped here rather than distilled into a placeholder, so
+    // a thought made of five measurements yields its actions and not five
+    // copies of one filler line (the dedupe below would collapse them anyway).
+    if (isThoughtRecitation(line)) continue;
     const distilled = summarizeThoughtHeader(line, false);
     if (distilled && distilled !== out[out.length - 1]) out.push(distilled);
   }
-  return out;
+  return out.length > 0 ? out : ['Working through the details.'];
 }
 
 export function buildProcessSummaryLine(thinkingParts: string[]): string | null {
@@ -188,6 +192,25 @@ function cleanThinkingText(raw: string): string {
     .trim();
 }
 
+/** A thought that states a fact is not an activity.
+ *
+ *  The card is a list of what the model was DOING. Sentences that recite —
+ *  "the KV cache is about 36 KiB per token", "Q4_K_M is 2.6 GB", "this means
+ *  the default is 512" — are the CONTENT of the reasoning, and printing them
+ *  is what made the card read as a transcript of the thought instead of a
+ *  summary of it. The test is deliberately narrow: a measurement with a unit,
+ *  or a copula definition. A long action sentence stays. */
+export function isThoughtRecitation(sentence: string): boolean {
+  const s = sentence.toLowerCase();
+  if (/\b\d+(?:\.\d+)?\s*(?:kib|mib|gib|kb|mb|gb|tb|ms|s|sec|w|v|a|hz|tokens?|layers?|params?)\b/.test(s)) {
+    return true;
+  }
+  if (/^(?:the|this|that|these|those|a|an|it)\s+[\w -]{1,34}\b(?:is|are|means|refers to|stands for|equals)\b/.test(s)) {
+    return true;
+  }
+  return false;
+}
+
 function formatHeader(sentence: string): string {
   let h = sentence
     .replace(/^(?:so|and|then|also|okay|ok|well|now|next|sure),?\s*/i, '')
@@ -269,16 +292,66 @@ export function summarizeThoughtHeader(text: string, isGenerating = false): stri
     }
   }
 
-  // Pass 3: Skip meta filler sentences ("The user is asking...", "The user wants...", "This is likely...")
+  // Pass 2b: a first-person declarative is an activity wearing a subject.
+  // "I'm checking the offload settings" is the same act as "Checking the
+  // offload settings", and quoting the first is what made the card read as the
+  // model's own words.
+  //
+  // The rewrite is deliberately conservative about the verb. Stripping "We are"
+  // from "We are past 6 GB" and participle-ising the next word would mint
+  // "Pasting 6 GB", so a bare word is only converted when an auxiliary that
+  // takes one preceded it ("I will check", "I need to weigh"); otherwise the
+  // first word has to already be a participle ("I'm checking").
+  const BARE_VERB_AUX = /^(?:'ll|will|shall|would|should|must|can|could|need\s+to|have\s+to)\b/i;
+  for (const original of candidateSentences) {
+    // Expand the contraction first. Matching `^i\b[\s']*` instead leaves a bare
+    // "m" at the head of the remainder, which is why "I'm checking…" survived
+    // the first version of this pass and printed verbatim.
+    const s = original.replace(
+      /^(i|we|you)'(m|ll|re|ve|d)\b/i,
+      (_x, p: string, c: string) =>
+        `${p} ${c === 'm' ? 'am' : c === 'll' ? 'will' : c === 're' ? 'are' : c === 've' ? 'have' : 'would'}`,
+    );
+    const head = s.match(/^(?:i|we|you)\s+(.*)$/i);
+    if (!head) continue;
+    let tail = head[1];
+    const aux = tail.match(/^(?:am|are|will|shall|would|should|must|can|could|need\s+to|have\s+to)\b\s*/i);
+    // Only an auxiliary that governs a bare infinitive licenses converting the
+    // next word ("I will check" → "Checking"). "We are past 6 GB" must not
+    // become "Pasting 6 GB".
+    const bareVerb = aux ? BARE_VERB_AUX.test(aux[0]) : false;
+    if (aux) tail = tail.slice(aux[0].length);
+    tail = tail
+      .replace(/^(?:also|first|now|then|just|still|probably|definitely|going\s+to)\s+/i, '')
+      .trim();
+    if (!tail) continue;
+    const first = tail.split(/\s+/)[0].replace(/[^a-zA-Z]/g, '').toLowerCase();
+    if (!first) continue;
+    let participle: string | null = null;
+    if (first.endsWith('ing')) participle = first;
+    else if (bareVerb)
+      participle =
+        VERB_PARTICIPLES[first] || (first.endsWith('e') ? `${first.slice(0, -1)}ing` : `${first}ing`);
+    if (!participle) continue;
+    const rest = tail.split(/\s+/).slice(1).join(' ');
+    const capitalized = participle[0].toUpperCase() + participle.slice(1);
+    return formatHeader(rest ? `${capitalized} ${rest}` : `${capitalized}.`);
+  }
+
+  // Pass 3: Skip meta filler ("The user is asking...", "This is likely...") and
+  // recitation — a stated fact is the thought's content, not the model's action.
   const informative = candidateSentences.filter(
-    (s) => !/^(?:the user|user is|this is likely|i should not|just show)\b/i.test(s),
+    (s) =>
+      !/^(?:the user|user is|this is likely|i should not|just show)\b/i.test(s) &&
+      !isThoughtRecitation(s),
   );
 
   if (informative.length > 0) {
     return formatHeader(informative[0]);
   }
 
-  // Fallback: Take the first candidate sentence
-  return formatHeader(candidateSentences[0]);
+  // Every sentence was filler or recitation. There is no honest activity to
+  // name, so say that plainly instead of quoting the model to fill the row.
+  return isGenerating ? 'Thinking…' : 'Working through the details.';
 }
 

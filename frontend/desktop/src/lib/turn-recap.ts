@@ -8,7 +8,7 @@
  */
 
 import { classifyTool, normalizeToolName } from '@/lib/tool-classify';
-import { extractCommand, extractFilename } from '@/components/chat/ToolCallItem';
+import { extractCommand, extractFilename } from '@/components/chat/tool/extractors';
 import type { ChatMessage, MessageBlock } from '@/types/chat';
 
 export interface TurnRecapInput {
