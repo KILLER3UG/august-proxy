@@ -26,8 +26,6 @@ Worker-returned ``status: failed`` dicts are marked failed on the handle (they
 must not count as completed).  They do **not** currently open the peer-help
 wait (no recovery would run anyway).
 
-See docs/REFACTOR_PROGRESS.md decision table + Phase 6 **B27**.
-
 API
     orchestrator = SubagentOrchestrator(bus)
     handle = await orchestrator.spawn(request)

@@ -540,11 +540,7 @@ previously described as vestigial-but-present are **gone from the tree**, so the
 registry's two tiers are the whole model. (Counted 2026-10-07 from the tier assignments
 in `settings-registry.ts`, excluding its own doc comment near `:149` — that comment names
 both tiers in prose, so a plain `grep -c "tier: '"` over-counts by two.)
-`docs/settings-audit.md` describes the
-superseded 2026-08-28 IA; the registry is the source of truth.
-
 Settings source of truth: [`settings-registry.ts`](../frontend/desktop/src/settings/settings-registry.ts).
-[`settings-audit.md`](settings-audit.md) is a historical IA record.
 
 ---
 

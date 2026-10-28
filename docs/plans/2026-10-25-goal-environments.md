@@ -83,7 +83,7 @@ six probes totalling **106 checks, 0 failed**, every one on a temp `AUGUST_DATA_
   **in-file audit** with hard rules: section ids are immutable, every icon must be unique across the
   registry, every keyword must be owned by exactly one section, and each entry declares
   `tier: 'basic' | 'hidden'`. A `goals` section has to satisfy all four, and
-  `docs/settings-audit.md` records the movement history the audit refers to.
+  `settings-registry.ts` records the movement history the audit refers to.
 - `components/settings/SettingsTabs.tsx` is referenced only by its own module and
   `settingsTabIds.ts` — the settings surface is **not** a simple tab→panel map, which is why an
   assumed `sections/panel` path was wrong on the first look.

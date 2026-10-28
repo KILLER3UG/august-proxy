@@ -6,10 +6,8 @@ tools, and "reachable from the local network" is not a property a local app
 should acquire by accident. The owner ruled on 2026-10-20 that LAN access
 may be turned on — by a person, deliberately, with a warning.
 
-The design and its reasoning live in
-[plans/2026-10-20-lan-access.md](plans/2026-10-20-lan-access.md). This page
-is the operational summary: what the switch is, where it lives, what it
-changes, and what the phone panel needs to know.
+This page is the operational summary: what the switch is, where it lives, what
+it changes, and what the phone panel needs to know.
 
 ---
 

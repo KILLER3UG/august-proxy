@@ -80,8 +80,8 @@ kept here because the code's shape depends on it:
 ## NEXT — after this round: the mobile companion
 
 **Once the work in this round has shipped, the next build is the mobile
-companion.** This is stated here so it is not lost between rounds. The
-plan for it is `docs/plans/2026-10-20-after-this-round.md`.
+companion.** This is stated here so it is not lost between rounds; the
+decision and the work list are in this section.
 
 The mobile app already exists in the tree — `frontend/mobile/` is an Expo
 app with its own `tsc --noEmit` and a parity audit (`npm run test -w

@@ -1,6 +1,6 @@
 """The decision ledger — one row per decision, with its counterfactual.
 
-Why this exists (measured 2026-10-17, ``docs/HARNESS_AND_MEMORY_DEEP_DIVE_2026-10-17.md`` §5-6):
+Why this exists (measured 2026-10-17):
 
 The harness kept five per-turn records and no key between them, and the only
 measurement it had — ``harness_outcome`` — compared a 14-day window before an

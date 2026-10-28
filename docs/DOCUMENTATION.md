@@ -1,78 +1,95 @@
-# August Proxy — Documentation
+# August Proxy — documentation
 
-## Current documentation
+This is the one index. If a document is not listed here, it is either generated
+or it was history; the history was removed on 2026-10-29 and remains in git.
+
+## Start here
 
 | Document | Audience | Contents |
 |----------|----------|----------|
-| [**README.md**](../README.md) | Everyone | Project overview, highlights, repo layout, quick start |
-| [**AGENTS.md**](../AGENTS.md) | Agents / contributors | Desktop is the product; harness, per-model `apiFormat`, version files |
-| [**SETUP.md**](SETUP.md) | All users | Installation (Docker, local, desktop), first-run, connecting a client |
+| [**README.md**](../README.md) | Everyone | What August is, quick start, repo layout |
+| [**AGENTS.md**](../AGENTS.md) | Agents / contributors | The binding contract: non-negotiables, read-first map, gate commands |
+| [**docs/agent/**](agent/README.md) | Agents / contributors | The area guides behind the contract |
+| `docs/PRODUCT.md` | Everyone | The product goal, users, UX principles, and the memory/skills experience |
+| `docs/STATUS.md` | Agents / maintainers | What shipped, what is next, and the open owner decisions |
+| `docs/specs/memory-and-skills.md` | Agents / maintainers | The current memory and skills specification, with open UX items |
+
+## Current reference
+
+| Document | Audience | Contents |
+|----------|----------|----------|
+| [**SETUP.md**](SETUP.md) | All users | Installation (Docker, local, desktop), first run, connecting a client |
 | [**CONFIGURATION.md**](CONFIGURATION.md) | Operators | `config.json` / `providers.json` / MCP / `.env` reference |
-| [**ARCHITECTURE.md**](ARCHITECTURE.md) | Developers | Request flow, adapters, workbench, brain, gateway, data persistence |
+| [**ARCHITECTURE.md**](ARCHITECTURE.md) | Developers | Request flow, adapters, workbench, brain, gateway, persistence |
+| [**ARCHITECTURE_FLOW.md**](ARCHITECTURE_FLOW.md) | Developers | Six diagrams, every box a real file and symbol |
 | [**API_REFERENCE.md**](API_REFERENCE.md) | Integrators | HTTP endpoints, request/response shapes, SSE events |
-| [**DEVELOPER_GUIDE.md**](DEVELOPER_GUIDE.md) | Contributors | Dev setup, tests, conventions, extending the codebase |
+| [**API_INDEX.md**](API_INDEX.md) | Integrators | **Generated** operation index; CI-gated by `check:api-index` |
+| [**DEVELOPER_GUIDE.md**](DEVELOPER_GUIDE.md) | Contributors | Dev setup, conventions, extending the codebase |
 | [**TROUBLESHOOTING.md**](TROUBLESHOOTING.md) | All users | Common issues and fixes |
-| [**SKILL_AUTHORING.md**](SKILL_AUTHORING.md) | Agents / contributors | How skills are structured: SKILL.md frontmatter, canonical body sections, the description-as-trigger rule, the learning pipeline |
-| [**GAPS_AND_BUGS.md**](GAPS_AND_BUGS.md) | Maintainers | Closed ledger + the open/deferred list |
-| [**ROADMAP.md**](ROADMAP.md) | Everyone | What was deliberately **not** done and why — the reference-app features deferred, and the decisions still open |
-| [**UPDATE_VERIFICATION.md**](UPDATE_VERIFICATION.md) | Maintainers | The manual matrix for the update flow: the one thing no static gate can verify |
-| [**CHANGELOG.md**](../CHANGELOG.md) | Everyone | Release history (root file) |
-| [**settings-audit.md**](settings-audit.md) | UI contributors | **Superseded** 2026-08-28 Settings IA — registry is SoT |
+| [**LAN_ACCESS.md**](LAN_ACCESS.md) | Operators | Opt-in LAN access and what it changes |
+| [**SKILL_AUTHORING.md**](SKILL_AUTHORING.md) | Agents / contributors | SKILL.md format: frontmatter, canonical sections, description-as-trigger |
+| [**GAPS_AND_BUGS.md**](GAPS_AND_BUGS.md) | Maintainers | Living ledger: closed fixes and the open/deferred list |
+| [**ROADMAP.md**](ROADMAP.md) | Everyone | What was deliberately not done and why, plus the decisions still open |
+| [**UPDATE_VERIFICATION.md**](UPDATE_VERIFICATION.md) | Maintainers | The manual matrix for the update flow — the one thing no static gate verifies |
 
-### Verification matrices
+## Agent area guides
 
-| Document | Contents |
-|----------|----------|
-| [**FEATURE_INVENTORY_TEST_MATRIX.md**](FEATURE_INVENTORY_TEST_MATRIX.md) | **Retired 2026-10-17** — the Phase 7 coverage map, kept as history: every suite it maps was deleted |
-| [**AUDIT_RECOMMENDATIONS_2026-08-11.md**](AUDIT_RECOMMENDATIONS_2026-08-11.md) | **Superseded** by `audit-2026-08/` + `research/` |
-| [`audit-2026-08/`](audit-2026-08/) | 12-agent August audit sweep — per-area findings, most **not** dispositioned |
-| [**HARNESS-FINDINGS-2026-09-15.md**](HARNESS-FINDINGS-2026-09-15.md) | Harness findings, same-day implementation status |
-| [**CHAT_UI_DEEP_DIVE_2026-08-23.md**](CHAT_UI_DEEP_DIVE_2026-08-23.md) | Chat UI inventory |
-| [**API_INDEX.md**](API_INDEX.md) | **Generated** operation index over `api/openapi.json`; CI-gated by `check:api-index`, so it cannot drift silently — the one to read for "what exists" |
-| [**HARNESS_ENHANCEMENTS_2026-09-27.md**](HARNESS_ENHANCEMENTS_2026-09-27.md) | Harness hardening round: runaway backstop, gate-participation audit, coverage ratchet — all 14 items landed |
-| [**AUDIT_REPORT_2026-10-01.md**](AUDIT_REPORT_2026-10-01.md) | Most recent full-repo audit |
+The contract is [AGENTS.md](../AGENTS.md); the index is
+[docs/agent/](agent/README.md). Read the area file before changing that area.
 
-<!-- UI-SCAN-2026-09-16.md was removed 2026-10-07 rather than indexed: 6 of its 8 items
-     were fixed by research/august-frontend-ui-audit.md, which supersedes it, and its
-     evidence directory is gone so nothing in it is re-verifiable. -->
-| [**CIRCUIT_SIMULATION_RESEARCH.md**](CIRCUIT_SIMULATION_RESEARCH.md) | Circuit / EDA feature research and `[implemented]` notes |
+| Guide | Covers |
+|---|---|
+| [workflow.md](agent/workflow.md) | Gates, no-test policy, scratch rule, directory routing |
+| [product.md](agent/product.md) | Desktop shell, update flow, chat surface, Settings IA |
+| [providers.md](agent/providers.md) | Base URLs, wire formats, upstream serialization, pricing |
+| [harness.md](agent/harness.md) | Turn loop, budgets, self-correction, subagents, bots, context relief |
+| [memory.md](agent/memory.md) | Facts store, recall lanes, write doors, backups, mirror |
+| [skills.md](agent/skills.md) | SKILL.md discovery, mutation/undo, learning pipeline, review pass |
+| [security.md](agent/security.md) | Sandbox, hardline, listing/shell/write doors, secrets, file ceilings |
+| [release.md](agent/release.md) | Version sources, OpenAPI generation, tag flow |
 
-### Design research (current)
+## The system map
 
-| Document | Contents |
-|----------|----------|
-| [`research/`](research/) | Two research programs. **2026-09-24/25** — read-only audits of August itself (backend harness, frontend UI, lifecycle, sub-agent output); the freshest *August* analysis in the tree, and it supersedes `settings-audit.md`. **2026-10-22** — the three-repo harness study: `STATUS.md` (coverage ledger: 19,643 tracked files across pi, SimulIDE and DeepSeek harness, 115 shards, 3,154 citations checked), `august-baseline.md` (what August actually does, verified first-hand, so no proposal re-suggests shipped work), and `AUGUST-IMPROVEMENTS.md` (nine ranked proposals with ADOPT/ADAPT/SKIP verdicts). Read the baseline before acting on any proposal — parts of the baseline were true when written and have moved since. |
+[`docs/state/`](state/) is a live product feature: the backend validates these
+pages and the app browses them (Docs in the sidebar). It is also the fastest
+architectural read in the repo.
 
-### Refactor program (closed — archaeology)
+| Page | Contents |
+|---|---|
+| [August system map](state/README.md) | The parts a chat turn touches and which one owns each step |
+| [One chat turn](state/chat-turn.md) | The turn lifecycle and the eight named stop reasons |
+| [Memory lanes](state/memory-lanes.md) | Profile, delta and recall — and which one is automatic |
 
-The multi-session refactor is **signed off**. These files remain as history and
-sign-off evidence; do not treat them as the product feature list.
-
-| Document | Contents |
-|----------|----------|
-| [**REFACTOR_PROGRESS.md**](REFACTOR_PROGRESS.md) | Closed tracker — phases, bug ledger, residual debt |
-| [**REFACTOR_HANDOFF_PROMPT.md**](REFACTOR_HANDOFF_PROMPT.md) | Historical handoff prompt |
-| [**FEATURE_INVENTORY_TEST_MATRIX.md**](FEATURE_INVENTORY_TEST_MATRIX.md) | **Retired 2026-10-17** — Phase 7 coverage map, history only (no suites exist) |
-| [**PHASE4_SQLITE_SCHEMA_RENAME_PLAN.md**](archive/PHASE4_SQLITE_SCHEMA_RENAME_PLAN.md) | Schema rename — **CLOSED** |
-| [**PHASE_PERF_AND_FLEXIBILITY_PLAN.md**](archive/PHASE_PERF_AND_FLEXIBILITY_PLAN.md) | Phase P — **CLOSED** |
-| [**PHASE8_FINAL_DELIVERABLES.md**](archive/PHASE8_FINAL_DELIVERABLES.md) | Final deliverables + sign-off |
-
-### Product history (not current how-to)
+## Research and design references
 
 | Path | Contents |
 |------|----------|
-| [`archive/`](archive/) | Shipped / superseded plans and design notes — `archive/README.md` states the policy. Do not restore as active plans |
-| [`archive/design/`](archive/design/) | Cognitive architecture and UI harness design notes |
-| [`archive/superpowers-plans/`](archive/superpowers-plans/) | June–July 2026 implementation plans |
-| [`plans/`](plans/) | Dated design dossiers (Parts 15–27). Most are **implemented** and tagged as provenance; read the tag before acting on one |
-| [`superpowers/`](superpowers/) | June–July 2026 feature specs — all point-in-time snapshots |
-| [`releases/`](releases/) | Release notes by version. **Archaeology only** — nothing reads this tree; `/api/whats-new` uses GitHub Releases and falls back to root `CHANGELOG.md`. Covers 0.12.21–0.13.0; 53 later tags have no notes |
-| [**SETTINGS_UX_REDESIGN.md**](SETTINGS_UX_REDESIGN.md) | Superseded 2026-08 redesign roadmap |
-| [**plan-cross-map-2026-09-01.md**](plan-cross-map-2026-09-01.md) | The 2026-09-01 map of the plans tree — its own file inventory is out of date |
-| [**CHANGES_AUDIT_PASS_2026-08.md**](CHANGES_AUDIT_PASS_2026-08.md) | Change record of the 0.12.55 audit pass |
-| [**REFACTOR_HANDOFF_PROMPT.md**](REFACTOR_HANDOFF_PROMPT.md) · [**REFACTOR_PROGRESS.md**](REFACTOR_PROGRESS.md) | Closed refactor program |
+| [`research/`](research/) | Read-only studies of August and of the reference harnesses (pi, SimulIDE, DeepSeek harness), with citation ledgers |
+| [`design/`](design/) | The Signal Desk desktop and mobile mockups — the source of truth for the UI port |
 
----
+## Active plans
+
+Plans are working documents, not reference. Closed plans, audits and deep dives
+were deleted on 2026-10-29; `git log -- docs/plans/<name>` recovers any of them.
+
+| Plan | Status |
+|---|---|
+| [2026-10-25-goal-environments.md](plans/2026-10-25-goal-environments.md) | Owner goal: the harness as the agent's environment |
+| [2026-10-25-self-modification-autonomy.md](plans/2026-10-25-self-modification-autonomy.md) | Phase 0: environment + audit-and-undo autonomy |
+| [2026-10-26-signal-desk-ui-port.md](plans/2026-10-26-signal-desk-ui-port.md) | The whole-desktop Signal Desk port |
+| [AUGUST-UI-ENHANCEMENTS.md](plans/AUGUST-UI-ENHANCEMENTS.md) | The UI enhancement backlog, merged from the retired audits |
+| [2026-10-11-ui-reference-capture.md](plans/2026-10-11-ui-reference-capture.md) | The captured UI reference the port measures against |
+| [2026-10-07-google-workspace-classroom-capability.md](plans/2026-10-07-google-workspace-classroom-capability.md) | Proposed; needs an architecture decision |
+| [2026-10-07-hermes-august-capability-bridge.md](plans/2026-10-07-hermes-august-capability-bridge.md) | Capability-sharing design and rulings |
+| [2026-10-07-plugin-discovery-and-credential-storage.md](plans/2026-10-07-plugin-discovery-and-credential-storage.md) | Proposed; plugin discovery + credential storage |
+
+## Generated
+
+| Path | Source | Gate |
+|---|---|---|
+| [`api/openapi.json`](api/openapi.json) | The running app (`npm run gen:openapi`) | `check:api` |
+| [`API_INDEX.md`](API_INDEX.md) | The committed spec (`npm run gen:api-index`) | `check:api-index` |
+| `frontend/desktop/src/api/gen/openapi.ts` | The committed spec (`npm run gen:api`) | CI type-generation diff |
 
 ## How to navigate
 
@@ -82,9 +99,10 @@ sign-off evidence; do not treat them as the product feature list.
 | Configure keys / aliases / gateway | [CONFIGURATION.md](CONFIGURATION.md) |
 | Understand request flow & persistence | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Call HTTP APIs | [API_REFERENCE.md](API_REFERENCE.md) |
-| Contribute code / tests | [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) |
+| Contribute code | [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) and [AGENTS.md](../AGENTS.md) |
 | Fix a runtime issue | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
 | See known mismatches | [GAPS_AND_BUGS.md](GAPS_AND_BUGS.md) |
+| Know what to build next | `docs/STATUS.md` and [ROADMAP.md](ROADMAP.md) |
 
 **Backend:** Python **3.12+** FastAPI in [`backend-py/`](../backend-py/)
 (`requires-python >=3.12`; Docker image `python:3.12-slim`).
