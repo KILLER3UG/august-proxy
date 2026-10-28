@@ -38,7 +38,11 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-const DOC = 'AGENTS.md';
+const HARNESS = 'docs/agent/harness.md';
+const SECURITY = 'docs/agent/security.md';
+const WORKFLOW = 'docs/agent/workflow.md';
+const RELEASE = 'docs/agent/release.md';
+const PRODUCT = 'docs/agent/product.md';
 
 /**
  * Each assertion pairs a capture in the doc with a capture in the code and
@@ -48,7 +52,7 @@ const DOC = 'AGENTS.md';
 const assertions = [
   {
     label: 'tool-round cap default',
-    doc: { file: DOC, re: /`MAX_MANAGED_TOOL_ROUNDS`\s+defaults to\s+\*\*(\d+)/ },
+    doc: { file: HARNESS, re: /`MAX_MANAGED_TOOL_ROUNDS`\s+defaults to\s+\*\*(\d+)/ },
     code: {
       file: 'backend-py/app/services/workbench/workbench.py',
       re: /^MAX_MANAGED_TOOL_ROUNDS\s*=\s*(\d+)/m,
@@ -56,7 +60,7 @@ const assertions = [
   },
   {
     label: 'stall nudge threshold',
-    doc: { file: DOC, re: /never advances across\s+(\d+)\+\s+stalled rounds/ },
+    doc: { file: HARNESS, re: /never advances across\s+(\d+)\+\s+stalled rounds/ },
     code: {
       file: 'backend-py/app/services/workbench/loop/guards.py',
       re: /^MIN_ROUNDS_BEFORE_STALL_CHECK\s*=\s*(\d+)/m,
@@ -91,7 +95,7 @@ const assertions = [
   // (audit 2026-09-27 #12). Both are stated in MB; both are `N * 1024 * 1024`.
   {
     label: 'read_file size ceiling',
-    doc: { file: DOC, re: /`_MAXFileSize`\s+\(\*\*(\d+) MB\*\*\)/ },
+    doc: { file: SECURITY, re: /`_MAXFileSize`\s+\(\*\*(\d+) MB\*\*\)/ },
     code: {
       file: 'backend-py/app/services/tool_registrations/file_tools.py',
       re: /^_MAXFileSize = (\d+) \* 1024 \* 1024$/m,
@@ -99,7 +103,7 @@ const assertions = [
   },
   {
     label: 'read_file paged size ceiling',
-    doc: { file: DOC, re: /`_MAXPageFileSize`\s+\(\*\*(\d+) MB\*\*\)/ },
+    doc: { file: SECURITY, re: /`_MAXPageFileSize`\s+\(\*\*(\d+) MB\*\*\)/ },
     code: {
       file: 'backend-py/app/services/tool_registrations/file_tools.py',
       re: /^_MAXPageFileSize = (\d+) \* 1024 \* 1024$/m,
@@ -116,7 +120,7 @@ const assertions = [
   {
     label: 'inline Rust test-block count',
     mode: 'count',
-    doc: { file: DOC, re: /the (\d+) inline Rust/ },
+    doc: { file: WORKFLOW, re: /the (\d+) inline Rust/ },
     code: {
       dir: 'frontend/desktop/src-tauri',
       ext: '.rs',
@@ -129,7 +133,7 @@ const assertions = [
   {
     label: 'version source count',
     mode: 'count',
-    doc: { file: DOC, re: /All (\d+) sources must match/ },
+    doc: { file: RELEASE, re: /All (\d+) sources must match/ },
     code: {
       file: 'scripts/check-version-sync.mjs',
       re: /^ {4}label: '/gm,
@@ -140,7 +144,7 @@ const assertions = [
   // never be written with 0 — which is what "0 means off" means.
   {
     label: 'brain-config fallback range',
-    doc: { file: DOC, re: /maxWorkbenchLoopsRange`?\s*\((\d+)[–-](\d+)\)/ },
+    doc: { file: HARNESS, re: /maxWorkbenchLoopsRange`?\s*\((\d+)[–-](\d+)\)/ },
     code: {
       file: 'backend-py/app/services/brain_config_service.py',
       re: /^maxWorkbenchLoopsRange = \((\d+), (\d+)\)/m,
@@ -152,7 +156,7 @@ const assertions = [
   {
     label: 'updater launch flags',
     mode: 'contains',
-    doc: { file: DOC, re: /launched with `(\/UPDATE \/S)`/ },
+    doc: { file: PRODUCT, re: /launched with `(\/UPDATE \/S)`/ },
     code: {
       file: 'frontend/desktop/src-tauri/src/backend.rs',
       re: /\.arg\("\/UPDATE"\)[\s\S]{0,200}?\.arg\("\/S"\)/,
@@ -168,7 +172,7 @@ const assertions = [
   // says "4" while the code says 8 is a doc telling an agent to go look.
   {
     label: 'compaction head floor',
-    doc: { file: DOC, re: /`DEFAULT_HEAD_COUNT` \((\d+)\) messages/ },
+    doc: { file: HARNESS, re: /`DEFAULT_HEAD_COUNT` \((\d+)\) messages/ },
     code: {
       file: 'backend-py/app/services/workbench/context_compressor.py',
       re: /^DEFAULT_HEAD_COUNT = (\d+)$/m,
@@ -176,7 +180,7 @@ const assertions = [
   },
   {
     label: 'compaction head window fraction',
-    doc: { file: DOC, re: /`COMPACT_HEAD_RATIO` \((0\.\d+)/ },
+    doc: { file: HARNESS, re: /`COMPACT_HEAD_RATIO` \((0\.\d+)/ },
     code: {
       file: 'backend-py/app/services/workbench/context_compressor.py',
       re: /^COMPACT_HEAD_RATIO = (\d\.\d+)$/m,
@@ -187,7 +191,7 @@ const assertions = [
   // claiming a bound the running app does not enforce.
   {
     label: 'runaway backstop defaults',
-    doc: { file: DOC, re: /nudge (\d+), stop (\d+)/ },
+    doc: { file: HARNESS, re: /nudge (\d+), stop (\d+)/ },
     code: {
       file: 'backend-py/app/services/workbench/loop/guards.py',
       re: /^RUNAWAY_NUDGE_ROUNDS = (\d+)\r?\nRUNAWAY_STOP_ROUNDS = (\d+)/m,
@@ -196,7 +200,7 @@ const assertions = [
   {
     label: 'recovery kinds the doc names',
     mode: 'each',
-    doc: { file: DOC, re: /recovery\s*\{kind:\s*'([a-z-]+)'/g },
+    doc: { file: HARNESS, re: /recovery\s*\{kind:\s*'([a-z-]+)'/g },
     code: { file: 'backend-py/app/services/workbench/workbench.py' },
   },
 ];
