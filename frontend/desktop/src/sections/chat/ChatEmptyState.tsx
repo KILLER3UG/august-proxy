@@ -11,7 +11,6 @@ import { SignalIcon } from '@/components/ui/SignalIcon';
 import { collectArtifacts, type SessionArtifact } from '@/lib/artifacts';
 import { loadMessagesForSession } from '@/sections/chat/chat-stream-manager';
 import { useSessionsStore } from '@/store/sessions';
-import { dispatchInsertComposerText } from '@/api/ui-events';
 import { openRightDrawer } from '@/components/shell/RightDrawerState';
 import { t } from '@/lib/motion';
 
@@ -32,24 +31,6 @@ const ORCH_EXAMPLES = [
     goals: 'explore: summarize architecture and risks',
   },
 ];
-
-const LAUNCH_ACTIONS = [
-  {
-    label: 'Build something',
-    hint: 'Turn a rough idea into a working surface.',
-    seed: 'Help me build ',
-  },
-  {
-    label: 'Analyze a dataset',
-    hint: 'Find the shape, the outliers, and the story.',
-    seed: 'Analyze this dataset. I will attach the file next.',
-  },
-  {
-    label: 'Make a visual',
-    hint: 'Charts, diagrams, and artifacts worth opening.',
-    seed: 'Create a visual that explains ',
-  },
-] as const;
 
 interface RecentOutput {
   sessionId: string;
@@ -90,10 +71,6 @@ function Launchpad({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const recent = useRecentOutputs();
 
-  const seed = (text: string) => {
-    dispatchInsertComposerText(text, { replace: true });
-  };
-
   return (
     <motion.div
       key="launchpad"
@@ -114,16 +91,6 @@ function Launchpad({ children }: { children: ReactNode }) {
           Start with a goal, a file, or a dataset. August can read the workspace, run the work,
           and leave the output in a canvas.
         </p>
-
-        <div className="launch-actions">
-          {LAUNCH_ACTIONS.map(({ label, hint, seed: prompt }) => (
-            <button key={label} type="button" className="launch-card" onClick={() => seed(prompt)}>
-              <SignalIcon name={iconFor(label)} size="md" />
-              <h3>{label}</h3>
-              <p>{hint}</p>
-            </button>
-          ))}
-        </div>
 
         {recent.length > 0 && (
           <div className="recent-strip">
@@ -151,13 +118,6 @@ function Launchpad({ children }: { children: ReactNode }) {
       </div>
     </motion.div>
   );
-}
-
-/** The mockup's three launch cards each carry a different glyph. */
-function iconFor(label: string): 'code' | 'chart' | 'layers' {
-  if (label === 'Analyze a dataset') return 'chart';
-  if (label === 'Make a visual') return 'layers';
-  return 'code';
 }
 
 export function ChatEmptyState({

@@ -947,17 +947,6 @@
   .sd-app .launch-eyebrow .brand-mark { width: 22px; height: 22px; border-radius: 6px; }
   .sd-app .launch-title { margin: 20px 0 0; text-align: center; font-family: var(--display); font-size: clamp(35px, 4.4vw, 56px); font-weight: 500; line-height: 1.02; letter-spacing: -.045em; }
   .sd-app .launch-sub { margin: 11px auto 0; text-align: center; max-width: 430px; color: var(--ink-3); font-size: 0.75rem; line-height: 1.65; }
-  .sd-app .launch-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 28px; }
-  .sd-app .launch-card {
-    min-height: 105px; text-align: left; padding: 12px;
-    border: 1px solid var(--line); border-radius: var(--radius-md);
-    background: color-mix(in srgb, var(--panel) 62%, transparent);
-    transition: background .16s var(--ease), border-color .16s var(--ease), transform .16s var(--ease);
-  }
-  .sd-app .launch-card:hover { background: var(--panel-2); border-color: var(--line-strong); transform: translateY(-2px); }
-  .sd-app .launch-card svg { color: var(--accent-text); }
-  .sd-app .launch-card h3 { margin: 11px 0 3px; font-size: 0.7188rem; font-weight: 600; color: var(--ink); }
-  .sd-app .launch-card p { margin: 0; color: var(--ink-3); font-size: 0.5938rem; line-height: 1.5; }
   .sd-app .recent-strip { margin-top: 26px; }
   .sd-app .recent-head { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 0.4688rem; letter-spacing: .13em; color: var(--ink-4); text-transform: uppercase; }
   .sd-app .recent-head::after { content: ""; height: 1px; flex: 1; background: var(--line); }
@@ -1090,8 +1079,6 @@
     .sd-app .canvas { position: absolute; right: 0; top: 0; bottom: 0; box-shadow: -18px 0 50px rgba(0,0,0,.24); }
     .sd-app .dashboard { grid-template-columns: 1fr; }
     .sd-app .dashboard-side { display: grid; grid-template-columns: repeat(3, 1fr); }
-    .sd-app .launch-actions { grid-template-columns: 1fr; }
-    .sd-app .launch-card { min-height: auto; }
   }
   @media (prefers-reduced-motion: reduce) {
     .sd-app *::before, .sd-app *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .001ms !important; }
