@@ -160,32 +160,35 @@
   ;    knows the file copy finished (it must NOT relaunch mid-install).
   ; 2) Start August via ShellExecute after a short settle delay.
   ;
-  ; The marker is written UNCONDITIONALLY, silent or not. The detached waiter
-  ; (backend.rs::schedule_post_update_relaunch) polls for it, and under
-  ; /UPDATE it is the ONLY thing that brings the app back — the installer's
-  ; own relaunch below is skipped in update mode. Writing it only in the
-  ; non-silent branch meant a silent update wrote nothing at all, and the
-  ; app never came back.
+  ; The marker is written UNCONDITIONALLY, silent or not, so a waiter that is
+  ; still running can stop polling. Writing it only in the non-silent branch
+  ; meant a silent update wrote nothing at all and the app never came back.
   FileOpen $R9 "$INSTDIR\.august-update-complete" w
   FileWrite $R9 "ok$\r$\n"
   FileClose $R9
   ;
-  ; Under /UPDATE the waiter owns the relaunch. Starting the app here as
-  ; well would RACE it: this block sleeps 800ms before ExecShell, while the
-  ; waiter sleeps 600ms after it sees the marker, so with both active the
-  ; waiter can win and start a second August. /UPDATE is only ever passed by
-  ; August itself (backend.rs::launch_installer_and_exit), and the app
-  ; always schedules the waiter before launching the installer.
+  ; The installer starts the app for EVERY silent install, including /UPDATE.
   ;
-  ; A manual install has no waiter behind it, so the installer starts the
-  ; app itself.
-  ${If} $UpdateMode = 0
-    IfSilent 0 august_postinstall_skip
+  ; It used to skip /UPDATE on the theory that this races the detached waiter
+  ; and starts a second August. That theory is now wrong in a way that mattered:
+  ; the waiter lives in the app that is being replaced, so a user on an older
+  ; build runs the OLD waiter — the one that expired at 600 s and exited without
+  ; relaunching — and the installer was the only component in the update that
+  ; could not help. The installer is the only part of this path that is always
+  ; current, so it is the one that must own bringing the app back.
+  ;
+  ; The race itself is harmless: a second August hits the single-instance guard
+  ; in lib.rs::setup, calls acquireInstanceLock, sees the live owner's pid and
+  ; exits — and because INSTANCE_LOCK_OWNED was never set, its exit path neither
+  ; kills the first instance's backend nor deletes the other instance's lock
+  ; file. Two launches now cost one extra process for a few hundred ms.
+  ;
+  ; A non-silent install is left alone: NSIS's own finish page starts the app.
+  IfSilent 0 august_postinstall_skip
     DetailPrint "Starting August…"
     ; Let file handles / AV scanners settle before launch.
     Sleep 800
     ; ShellExecute is more reliable than Exec for GUI apps after silent NSIS.
     ExecShell "open" "$INSTDIR\August.exe" "" SW_SHOWNORMAL
-    august_postinstall_skip:
-  ${EndIf}
+  august_postinstall_skip:
 !macroend
