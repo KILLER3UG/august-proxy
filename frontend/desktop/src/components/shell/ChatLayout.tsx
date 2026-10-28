@@ -35,9 +35,6 @@ import { toast } from "sonner";
 import type { WorkbenchSession } from "@/types/workbench";
 import type { RightDrawerSectionId } from "./RightDrawerState";
 import { dispatchFocusComposer, dispatchInsertComposerText, onUiAction } from "@/api/ui-events";
-import { loadComposerDraft } from "@/sections/chat/message-storage";
-import { ConfirmDialog } from "@/components/overlays/ConfirmDialog";
-import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { SignalSprite } from "@/components/ui/SignalIcon";
 import { folderNameFromPath } from '@/api/folder';
@@ -48,7 +45,6 @@ const SESSIONS_COLLAPSED_KEY = "august-sessions-collapsed";
 export function ChatLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { state: confirmState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
   // Quiet toasts when memory/skills change (auto-review, skill genesis,
   // boot maintenance) — the "you can see it worked" feedback channel.
   const { sessionId } = useParams<{ sessionId?: string }>();
@@ -375,37 +371,17 @@ export function ChatLayout() {
     }
   }, [location.pathname, sessionId, sessions, navigate, currentWorkspacePath]);
 
-  const handleNewSession = async (folderId?: string | null) => {
-    // Dirty confirm: streaming or unsent composer draft.
-    try {
-      const sid = active?.id;
-      if (sid) {
-        /* Through `loadComposerDraft`, not a local copy of the prefix: this
-         * read is what makes the "unsent draft" confirm fire, and a key drift
-         * here would silently make it always read blank. */
-        const draft = loadComposerDraft(sid).trim();
-        const status =
-          useSessionsStore.getState().sessionStates[sid] ||
-          useSessionsStore.getState().sessionStates[active?.workbenchSessionId || ''];
-        const streaming =
-          status === 'streaming' || status === 'working' || status === 'awaiting';
-        if (streaming || draft) {
-          const msg = streaming
-            ? 'A run is still active. Start a new chat anyway? It continues in the background until you stop it.'
-            : 'You have an unsent draft. Discard it and start a new chat?';
-          const ok = await confirm({
-            title: 'Start new chat?',
-            message: msg,
-            confirmLabel: 'Start New Chat',
-            variant: 'destructive',
-          });
-          if (!ok) return;
-        }
-      }
-    } catch {
-      /* ignore */
-    }
-
+  const handleNewSession = (folderId?: string | null) => {
+    // No "are you sure?" here, on purpose. This used to confirm on two
+    // conditions, and neither one had a consequence:
+    //   • a live run — the dialog's own words said "It continues in the
+    //     background until you stop it", so it was asking permission for
+    //     something that interrupts nothing;
+    //   • an unsent draft — the draft is keyed per session in localStorage
+    //     (message-storage.ts) and ChatThread re-reads it on session change,
+    //     so starting a new chat discards nothing and returning restores it.
+    // A confirm that protects nothing is not a safety net, it is a tax on the
+    // most common action in the app.
     const folders = useSessionsStore.getState().folders;
 
     // Explicit "Tasks" target — the "+" on the Tasks header passes null on
@@ -743,16 +719,6 @@ export function ChatLayout() {
               it. The dead `StatusBar` component was deleted with this comment. */}
         </div>
       </div>
-      <ConfirmDialog
-        open={confirmState.open}
-        title={confirmState.title}
-        message={confirmState.message}
-        confirmLabel={confirmState.confirmLabel}
-        cancelLabel={confirmState.cancelLabel}
-        variant={confirmState.variant}
-        onConfirm={handleConfirm}
-        onCancel={handleCancel}
-      />
     </div>
   );
 }
