@@ -12,6 +12,23 @@ export interface FriendlyError {
 
 const KNOWN_PATTERNS: Array<{ re: RegExp; title: string; detail: string }> = [
   {
+    // FIRST, and deliberately before the provider patterns: every string here
+    // is a transport failure in the webview, which means the request never left
+    // the machine — the provider never saw it, so no provider-flavoured copy is
+    // true of it. `Failed to fetch` is Chromium's whole message for a rejected
+    // same-origin fetch (backend restarting, the socket dropped mid-SSE, the
+    // window suspended), and it used to fall through to the catch-all below,
+    // which told the user their provider had rejected the request and sent them
+    // to Settings → Models & Providers to fix a thing that was never the
+    // provider. `backend.log` shows the matching side of it:
+    // `_ProactorBasePipeTransport._call_connection_lost` while uvicorn is
+    // otherwise healthy.
+    re: /failed to fetch|networkerror|load failed|network request failed|err_network|err_connection|\beconnrefused\b|\benetunreach\b|\beconnreset\b|stream read error|stream ended without/i,
+    title: 'Cannot reach August',
+    detail:
+      'The app could not reach its own backend, so this request never left the computer — the provider was not involved. Retry; if it keeps happening, restart August.',
+  },
+  {
     re: /session_id.*expected string, received null|session_id.*null/i,
     title: 'Provider rejected the request',
     detail:
@@ -62,9 +79,16 @@ export function friendlyError(message: string | null | undefined): FriendlyError
       return { title: p.title, detail: p.detail, raw };
     }
   }
+  // Unmatched text must not accuse the provider: this branch is reached by an
+  // empty message, a local failure, or a provider sentence that matches none of
+  // the shapes above, and only the last of those is the provider's doing. Say
+  // what is actually known — nothing — and hand the raw text to the details
+  // element, which is the one place that can show the truth.
   return {
     title: 'Request failed',
-    detail: 'The provider rejected the request. Retry, or check the provider settings.',
+    detail: raw
+      ? 'Nothing matched a known failure, so this could be the provider or the local backend. The raw message below is exactly what arrived.'
+      : 'The request failed without a reason coming back. Retry — if it persists, restart August and check the raw details below.',
     raw,
   };
 }

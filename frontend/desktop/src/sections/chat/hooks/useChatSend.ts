@@ -316,8 +316,12 @@ export function useChatSend(opts: UseChatSendOptions) {
       if (result === 'error') {
         // Actionable error: retry the same message or jump to provider
         // settings — never leave the user with a dead-end "Chat failed".
+        // The description stays neutral about the cause on purpose: this branch
+        // only knows the turn failed, and the banner in the transcript has the
+        // classified reason (which is often the local backend, not the
+        // provider — see lib/error-copy.ts).
         toast.error('Chat failed', {
-          description: 'The backend or model provider rejected the request.',
+          description: 'August could not complete this request — the message above says why.',
           action: {
             label: 'Retry',
             // Retry the CLEAN user text, not `requestText` — requestText
