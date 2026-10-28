@@ -122,15 +122,16 @@ integrity test, and with them the CI jobs, npm scripts (`npm run test:backend`,
 `pyproject.toml` and the coverage floor. Nothing in this repo runs a test.
 
 ```bash
-cd backend-py
-uv run ruff check .          # the whole backend gate now
-uv run mypy app/
-
-# From repo root
-npm run check -w frontend/desktop   # tsc + eslint
-npm run check:design && npm run check:docs && npm run check:api
-npm run check:sse && npm run check:naming && npm run check:version
+npm run gates:all        # the whole gate set CI runs
+# or the group you touched:
+npm run gates:static     # naming, api-index, SSE, minisign, version, docs, links
+npm run gates:backend    # OpenAPI, brain-config, ruff + mypy, startup smoke
+npm run gates:frontend   # truncate/design/ratchet, tsc + eslint, build, gen:api
+npm run gates:mobile     # Expo typecheck + parity audit
 ```
+
+The one gate list is `scripts/gates.mjs`. CI and the release workflow call the
+same groups; do not hand-list gates in a workflow.
 
 `npm run test -w frontend/mobile` still exists and is not a test run: mobile's
 `test` script is its own `tsc --noEmit` plus a parity audit.

@@ -208,19 +208,25 @@ Memory / Access / Appearance already follow that pattern.
 
 ### Verifying a change
 
+One list drives everything: [`scripts/gates.mjs`](scripts/gates.mjs).
+
 ```bash
-cd backend-py && uv run ruff check . && uv run mypy app/
-npm run check -w frontend/desktop   # tsc + eslint
-npm run check:design && npm run check:docs && npm run check:api
+npm run gates:all                 # the whole gate set CI runs
+npm run gates:static              # Node-only checks
+npm run gates:backend             # OpenAPI, brain-config, ruff + mypy, smoke
+npm run gates:frontend            # truncate/design/ratchet, tsc, build, gen:api
+npm run gates:mobile              # Expo typecheck + parity audit
 ```
+
+CI and the release workflow call the same groups, so a gate added to the list
+cannot be skipped by a workflow that forgot to name it.
 
 **There is no test suite.** Every test file (backend `tests/`, the frontend
 `*.test.ts(x)` and `e2e/` suites, the payload-integrity test) was deleted on
 2026-10-17 at the owner's request, along with the CI jobs, npm scripts, pytest
 configuration and coverage ratchet that ran them. `npm test` does not exist, and
-`pyproject.toml` keeps no pytest configuration; what remains is the static gate
-set above plus `Type check` on every push (ruff, mypy, tsc, eslint, `check:api`,
-`check:design`, `lint:ratchet`, mobile typecheck) and a human running the app.
+`pyproject.toml` keeps no pytest configuration; what remains is the gate set
+above and a human running the app.
 
 ### High-risk files
 
@@ -249,16 +255,15 @@ Do not bump these unless you are shipping. Release: push the **tag**
 `v*.*.*` tag pushes, with a `workflow_dispatch` fallback that takes the version
 without the `v`. Two things to know before you push it:
 
-- The release job **builds; it does not test** — there is nothing left to test.
-  It runs `check:version`, `check:docs`, `check:naming`, `check:sse`, the frontend
-  typecheck, `uv lock --check`, ruff and mypy, then produces the signed installer.
-  The pytest suite, the vitest suite, the payload-integrity test and
-  `check:coverage` were deleted on 2026-10-17 along with the whole test tree (see
-  "Verifying a change" above).
-- `Type check` runs on every branch push and pull request — **not on a tag
-  push**, because the workflow filters on branches — and does not gate
-  publication, so
-  confirm it is green before pushing the tag.
+- The release job **builds; it does not test**. It depends on the same reusable
+  CI workflow every branch push runs (`.github/workflows/ci.yml`), then runs
+  `uv lock --check`, the tag-vs-package version assertion, and produces the
+  signed installer. The pytest suite, the vitest suite, the payload-integrity
+  test and `check:coverage` were deleted on 2026-10-17 along with the whole test
+  tree (see "Verifying a change" above).
+- CI runs on every branch push and pull request. The release job calls the same
+  workflow with `needs: ci`, so a tag cannot publish a commit whose gates never
+  ran — but confirm the branch's CI is green before pushing the tag anyway.
 
 Known product gap: one provider `apiFormat` cannot serve mixed families on
 OpenCode Zen without per-model overrides — details in `AGENTS.md` and

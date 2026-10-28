@@ -28,31 +28,39 @@ for a missing test: the gates that remain are static.
 
 ## What verifies a change
 
-The static gates:
+One list drives everything: `scripts/gates.mjs`. CI, the release workflow and a
+developer's terminal run the same groups.
 
 ```
-npm run check:docs          # numbers in AGENTS.md and area docs match the code
-npm run check:design        # px/hex/raw button/drift ratchet
-npm run check:naming        # no new camelCase service params
-npm run check:api           # committed OpenAPI matches the app
-npm run check:api-index     # generated API index is current
-npm run check:sse           # backend frames vs schema vs dispatcher, incl. supply
-npm run check:version       # 9 version sources agree
-npm run check:doc-links     # relative links resolve
-npm run check:minisign      # verifier matches the app's format and key
-npm run check:truncate      # truncate sits on an element that can truncate
-npm run check:brain-config  # Settings keys/ranges exist in the backend
-npm run check:tool-registration  # every register() module is claimed
-npm run lint:ratchet        # eslint warnings do not grow
+npm run gates:static    # cross-cutting Node checks
+npm run gates:backend   # needs the backend interpreter
+npm run gates:frontend  # needs npm dependencies
+npm run gates:mobile    # Expo typecheck + parity audit
+npm run gates:smoke     # startup smoke only (the Windows job)
+npm run gates:all       # static + backend + frontend + mobile
 ```
 
-Backend and frontend:
+Inside the groups:
 
 ```
-cd backend-py && uv run ruff check . && uv run mypy app/
-npm run check -w frontend/desktop     # tsc + eslint
-npm run e2e:smoke                     # starts the real app against a throwaway data dir
+check:docs          # numbers in the agent docs match the code
+check:design        # px/hex/raw button/drift ratchet
+check:naming        # no new camelCase service params
+check:api           # committed OpenAPI matches the app
+check:api-index     # generated API index is current
+check:sse           # backend frames vs schema vs dispatcher, incl. supply
+check:version       # 9 version sources agree
+check:doc-links     # relative links resolve
+check:minisign      # verifier matches the app's format and key
+check:truncate      # truncate sits on an element that can truncate
+check:brain-config  # Settings keys/ranges exist in the backend
+check:tool-registration  # every register() module is claimed
+lint:ratchet        # eslint warnings do not grow
 ```
+
+The backend group also runs `uv run ruff check .` and `uv run mypy app/` (or
+`python -m ruff` / `python -m mypy` where uv is absent), and the frontend group
+runs `tsc` + `eslint`, the Vite build and the generated-API-types diff.
 
 `e2e:smoke` is the floor under everything a linter cannot see. A module that
 fails to import, a migration that does not apply, a lifespan hook that raises

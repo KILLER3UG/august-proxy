@@ -63,9 +63,8 @@ Run the gate set for the area you touched. The full list, the smoke check and
 the reason each gate exists are in [workflow.md](docs/agent/workflow.md).
 
 ```bash
-cd backend-py && uv run ruff check . && uv run mypy app/
-npm run check -w frontend/desktop
-npm run check:docs && npm run check:doc-links && npm run check:version
+npm run gates:all
+# or the group you touched: gates:static / gates:backend / gates:frontend / gates:mobile
 ```
 
 ## Directory map

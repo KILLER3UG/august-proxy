@@ -23,7 +23,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  ci:
+    name: CI gates
+    # The same reusable workflow every push runs. `build` needs it, so a tag
+    # can never publish a commit whose gates did not run — including a tag
+    # pushed onto a commit that never went through a branch push.
+    uses: ./.github/workflows/ci.yml
+
   build:
+    needs: ci
     runs-on: windows-latest
     # A cold Tauri build on a windows runner is 15–25 minutes; the node
     # sidecar download and the NSIS packaging are on top of that. The
@@ -99,29 +107,9 @@ jobs:
           "RELEASE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Host "Releasing version $version"
 
-      - name: Sync backend environment for the config probe
+      - name: Sync backend environment for the payload
         working-directory: backend-py
         run: uv sync --frozen --python 3.12
-
-      - name: Check version, documentation, naming, and SSE parity gates
-        # `check:sse` is here because it is a pure static comparison of the
-        # backend's emitted frames against the frontend's hand-written schema
-        # and dispatcher: no interpreter and no build, so it costs nothing in a
-        # build-only job. `check:coverage` and pytest are gone from the repo
-        # entirely (the suite was deleted on 2026-10-17), so there is nothing
-        # for this job to skip.
-        #
-        # `check:brain-config` asks the REAL backend service for its keys, so
-        # the backend environment must exist before this step. The sync above
-        # creates backend-py/.venv for that probe.
-        run: |
-          npm run check:version
-          npm run check:docs
-          npm run check:naming
-          npm run check:sse
-          npm run check:minisign
-          npm run check:truncate
-          npm run check:brain-config
 
       - name: Verify release version against package sources
         shell: pwsh
@@ -132,40 +120,27 @@ jobs:
           }
           Write-Host "Verified release version $packageVersion"
 
-      - name: Frontend typecheck
-        run: |
-          npm run typecheck -w frontend/desktop
-
       - name: Download Node sidecars
         run: npm run download:node-binaries
 
       - name: Prepare portable Python and backend resources
         run: node scripts/prepare-desktop-backend.mjs --release
 
-      - name: Backend lockfile, lint and typecheck
+      - name: Backend lockfile
         working-directory: backend-py
         shell: pwsh
-        # Check EVERY command's exit code, not just the last one. A multi-line
-        # `run:` under pwsh reports only the final command's status, so
-        # `uv lock --check` could fail here and the step still went green —
-        # and this is the one gate that runs late, AFTER the payload and
-        # backend-runtime.stamp were already staged from the same lockfile.
-        # Mirrors the per-command style used above in this file.
+        # ruff and mypy run in the CI job this build depends on. `uv lock
+        # --check` stays here because it is release-specific: the payload and
+        # backend-runtime.stamp are staged from this lockfile, so a lock that
+        # drifted must abort the build before it stages anything.
         run: |
           uv lock --check --python 3.12; if ($LASTEXITCODE -ne 0) { throw 'uv lock --check failed' }
-          uv run ruff check .; if ($LASTEXITCODE -ne 0) { throw 'ruff check failed' }
-          uv run mypy app/; if ($LASTEXITCODE -ne 0) { throw 'mypy failed' }
 
-      # No test suite anywhere in this repo on purpose: the backend + frontend
-      # suites were deleted on 2026-10-17 at the owner's request, along with the
-      # CI jobs that ran them. What remains as verification is the static gate
-      # set above (version/docs/naming/SSE), `Type check` on every push (ruff,
-      # mypy, tsc, eslint, check:api, check:design, lint:ratchet, mobile
-      # typecheck) and a human running the app.
-      #
-      # That leaves exactly one thing that checks nothing else: the circuit
-      # tests that need a staged ngspice. They used to run in `Type check` and
-      # then only locally; now they do not exist at all.
+      # The gates are not repeated here: this job depends on `ci`, which runs
+      # the same reusable workflow every branch push runs. What remains below
+      # is the build itself (and the release-specific lockfile check above).
+      # There is no test suite anywhere in this repo on purpose — the backend
+      # and frontend suites were deleted on 2026-10-17 at the owner's request.
 
       - name: Build web UI
         # `generate_context!` in src-tauri reads the frontendDist path at compile

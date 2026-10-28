@@ -37,14 +37,15 @@ The release is built in GitHub Actions, never on a developer machine. Push the
 without the `v`. The job:
 
 1. verifies the working tree is clean (release provenance);
-2. runs the static gates (version, docs, naming, SSE, minisign, truncate,
-   brain-config), the frontend typecheck, `uv lock --check`, ruff and mypy;
-3. builds the web UI and the Rust shell;
-4. signs the installer with the key from CI secrets and publishes the assets.
+2. depends on the reusable CI workflow (`ci.yml`), which runs the same gate
+   groups every branch push runs;
+3. checks `uv lock --check` and that the tag matches `package.json`;
+4. builds the web UI and the Rust shell;
+5. signs the installer with the key from CI secrets and publishes the assets.
 
 **The release job builds; it does not test.** The test suite was deleted on
-2026-10-17, so there is nothing to test. What remains is the static gate set,
-`Type check` on every branch push, and a human running the app.
+2026-10-17, so there is nothing to test. What remains is the gate set, the
+reusable CI workflow, and a human running the app.
 
 **A desktop release must include backend changes.** Installed apps copy bundled
 `backend-py` into AppData from the installer stamp; a UI-only rebuild does not
@@ -52,14 +53,15 @@ update the runtime.
 
 ## The gate before the tag
 
-`Type check` runs on every **branch** push and pull request — **not on a tag
-push**, because the workflow filters on branches — and publication does not
-wait for it. Confirm it is green before pushing the tag:
-`git push origin master v0.18.16` does not wait for it.
+CI runs on every **branch** push and pull request. The release job calls the
+same reusable workflow with `needs: ci`, so a tag cannot publish a commit whose
+gates never ran — including a tag pushed onto a commit that never went through
+a branch push. Confirm the branch's CI is green before tagging anyway:
+`git push origin master v0.18.16` does not wait for a separate check.
 
-The release workflow duplicates part of that gate list today. Treat the tag as
-the last step, not the first: run the local gate set
-([workflow.md](workflow.md)) and wait for the branch's CI before tagging.
+There is no second gate list. If you add a gate, add it to
+`scripts/gates.mjs`; CI and the release pick it up.
+
 
 ## Install and update
 
