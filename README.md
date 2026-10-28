@@ -186,7 +186,10 @@ The override wins in workbench, Test, Live, and `/v1` adapters.
 
 ## For contributors
 
-Start with [`AGENTS.md`](AGENTS.md) and [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md).
+Start with [`AGENTS.md`](AGENTS.md), [`CONTRIBUTING.md`](CONTRIBUTING.md) and
+[`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md). The product goal and the
+current round are in [`docs/PRODUCT.md`](docs/PRODUCT.md) and
+[`docs/STATUS.md`](docs/STATUS.md).
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) is the request-flow map.
 
 ### Chat UI map (desktop)

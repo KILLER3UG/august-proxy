@@ -8,6 +8,7 @@ or it was history; the history was removed on 2026-10-29 and remains in git.
 | Document | Audience | Contents |
 |----------|----------|----------|
 | [**README.md**](../README.md) | Everyone | What August is, quick start, repo layout |
+| [**CONTRIBUTING.md**](../CONTRIBUTING.md) | Contributors | Branches, commits, staging, the local gate, the release flow |
 | [**AGENTS.md**](../AGENTS.md) | Agents / contributors | The binding contract: non-negotiables, read-first map, gate commands |
 | [**docs/agent/**](agent/README.md) | Agents / contributors | The area guides behind the contract |
 | [**PRODUCT.md**](PRODUCT.md) | Everyone | The product goal, users, UX principles, and the memory/skills experience |

@@ -108,6 +108,11 @@ floor, and it is deliberately not a behaviour test.
 
 ## Two standing rules
 
+The branch, commit and staging flow — naming, what goes in a commit message,
+what to stage, when to merge and when to tag — is
+[CONTRIBUTING.md](../../CONTRIBUTING.md). The two rules below are the ones an
+agent is most likely to break.
+
 **Delete your scratch files before you commit.** When you finish a session,
 delete the scratch files *you* created — scan outputs, generator scripts,
 unused drafts, probe scripts left in the tree. The repo carries no `_*.py` /

@@ -14,6 +14,7 @@ that area.
 | Area | Read before touching |
 |---|---|
 | How to work, gates, no-test policy | [docs/agent/workflow.md](docs/agent/workflow.md) |
+| Branches, commits, staging, release flow | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Desktop shell, update flow, chat UI | [docs/agent/product.md](docs/agent/product.md) |
 | Providers, wire formats, pricing | [docs/agent/providers.md](docs/agent/providers.md) |
 | Turn loop, budgets, subagents, bots | [docs/agent/harness.md](docs/agent/harness.md) |
