@@ -782,16 +782,17 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
    *  may keep a few extra turns, the UI transcript is always the prefix.) */
   const handleFork = useCallback(
     (index: number) => {
-      if (streaming) {
-        toast.message('Stop the current run first, then fork the chat.');
-        return;
-      }
+      // No streaming guard. The backend's branch route copies persisted
+      // messages up to `index` and refuses nothing — there is no in-flight
+      // check to respect — and `index` always names a settled row, because a
+      // partial stream is not a row you can fork from. The refusal was a UI
+      // rule protecting a copy of a chat that the original survives anyway.
       const wbId =
         workbenchSessionId ||
         activeSession?.workbenchSessionId ||
         (sessionId?.startsWith('wb_') ? sessionId : null);
       if (!wbId) {
-        toast.message('Start a chat first, then fork it.');
+        toast.message('This chat has no conversation to fork yet.');
         return;
       }
       void branchWorkbenchSession(wbId, index)
@@ -817,7 +818,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         });
     },
     [
-      streaming,
       workbenchSessionId,
       activeSession?.workbenchSessionId,
       activeSession?.folderId,
@@ -1134,7 +1134,16 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             const trimmed = msgs.slice(0, lastUserIdx + 1);
             setChatMessagesRef.current(trimmed);
             const wbId = resolveWorkbenchSessionId(sid);
-            void truncateWorkbenchSession(wbId, lastUserIdx).catch(() => undefined);
+            // Not silent: if the server keeps the turn the UI just dropped, the
+            // re-answer carries the interrupted turn back with it, and the
+            // user sees a repeat with no explanation of where it came from.
+            void truncateWorkbenchSession(wbId, lastUserIdx).catch((err: unknown) => {
+              toast.warning(
+                `The server kept the interrupted turn, so the re-answer may repeat it: ${
+                  err instanceof Error ? err.message : String(err)
+                }`,
+              );
+            });
             // Sequence AFTER the server handoff settles so the re-send carries
             // the upgraded summary + the notice card is placed before the new
             // turn (the switch race). Capped so a slow summary never hangs the
@@ -1163,7 +1172,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           const trimmed = msgs.slice(0, lastUserIdx + 1);
           setChatMessagesRef.current(trimmed);
           const wbId = resolveWorkbenchSessionId(sid);
-          void truncateWorkbenchSession(wbId, lastUserIdx).catch(() => undefined);
+          void truncateWorkbenchSession(wbId, lastUserIdx).catch((err: unknown) => {
+            toast.warning(
+              `The server kept the interrupted turn, so the re-answer may repeat it: ${
+                err instanceof Error ? err.message : String(err)
+              }`,
+            );
+          });
           const expectedLen = trimmed.length;
           window.setTimeout(() => {
             if (chatMessagesRef.current.length !== expectedLen) return;

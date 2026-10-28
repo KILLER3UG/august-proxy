@@ -19,6 +19,7 @@ import {
 } from './arena-store';
 import { launchArenaRun, type ArenaLaunchOpts } from './launchArenaRun';
 import { ArenaPane } from './ArenaPane';
+import { toast } from 'sonner';
 import { stopChatStream, startChatStream } from '../chat-stream-manager';
 import {
   $sessionStreamStates,
@@ -278,7 +279,15 @@ export function ArenaView() {
     updateSessionStreamState(lane.uiSessionId, () => ({ messages: chatHistory }));
     const wbId = resolveWorkbenchSessionId(lane.uiSessionId);
     if (lastUserIdx >= 0) {
-      void truncateWorkbenchSession(wbId, lastUserIdx).catch(() => undefined);
+      void truncateWorkbenchSession(wbId, lastUserIdx).catch((err: unknown) => {
+        // The lane's history was just rewritten locally; a server that kept the
+        // old turn will answer from a history the pane no longer shows.
+        toast.warning(
+          `The server kept the earlier turns for this lane: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      });
     }
     let session = null;
     try {

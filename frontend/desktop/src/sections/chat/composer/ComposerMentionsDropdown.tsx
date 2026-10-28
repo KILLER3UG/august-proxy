@@ -15,6 +15,7 @@ export function ComposerMentionsDropdown({
   skillMentions,
   conversationMentions,
   skillsLoading,
+  skillsError,
   highlightedMentionIndex,
   onPick,
   onInsertToolText,
@@ -26,6 +27,7 @@ export function ComposerMentionsDropdown({
   skillMentions: MentionItem[];
   conversationMentions?: MentionItem[];
   skillsLoading: boolean;
+  skillsError: boolean;
   highlightedMentionIndex: number;
   onPick: (item: MentionItem) => void;
   onInsertToolText: (text: string) => void;
@@ -88,6 +90,16 @@ export function ComposerMentionsDropdown({
         <span>{mentionQuery !== null ? 'Mentions' : 'Skills & tools'}</span>
         {skillsLoading && <Loader2 className="size-3 animate-spin" />}
       </div>
+      {/* A failed skills fetch has to be said on its own line: the list below
+          still fills with tools, so an empty `skillMentions` never renders an
+          empty state — and "no skills" was indistinguishable from "the request
+          failed". */}
+      {skillsError && (
+        <div className="px-2.5 py-1.5 text-2xs text-warning-fg">
+          August could not load your skills — the entries below are tools only,
+          not an empty library.
+        </div>
+      )}
       {mentionQuery !== null && mentionItems.length === 0 && !skillsLoading && (
         <div className="px-2.5 py-2 text-2xs text-muted-foreground">
           No skills match “{mentionQuery}”. Try another name or pick a tool.

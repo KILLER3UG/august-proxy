@@ -25,6 +25,7 @@ import { claimChatSurface, onUiAction } from '@/api/ui-events';
 import type { ChatMessage } from '@/types/chat';
 import { downloadConversation, copyConversationToClipboard, exportConversationToPdf } from '@/lib/export-conversation';
 import { persistMessages } from '../message-storage';
+import { stopChatStream } from '../chat-stream-manager';
 
 export interface UseChatUiActionsOptions {
   sessionId: string | null;
@@ -110,42 +111,62 @@ export function useChatUiActions(opts: UseChatUiActionsOptions): void {
       }
 
       if (e.action === 'undo_last_turn') {
+        const performUndo = () => {
+          const lastUserIdx = [...messages].map((m) => m.role).lastIndexOf('user');
+          if (lastUserIdx < 0) {
+            toast.message('Nothing to undo yet.');
+            return;
+          }
+          const wbId = resolveWbId();
+          const next = messages.slice(0, lastUserIdx);
+          setMessages(next);
+          persistMessages(sessionId, next);
+          if (wbId) {
+            void undoWorkbenchLastTurn(wbId)
+              .then((res) => {
+                if (res.session) setWorkbenchSession(res.session);
+                toast.success(res.message || 'Undid last turn');
+              })
+              .catch((err: unknown) => {
+                toast.error(
+                  `Undo failed on server (local chat was updated): ${
+                    err instanceof Error ? err.message : String(err)
+                  }`,
+                );
+              });
+          } else {
+            toast.success('Undid last turn');
+          }
+        };
+
         if (streaming) {
-          toast.message('Stop the current run first, then undo.');
+          // This one DOES have a consequence: undo truncates the transcript the
+          // live stream is still appending to, so the tail of a running turn
+          // would land on a list that no longer contains its own prompt. But
+          // the old refusal sent the user off to find the Stop button and
+          // repeat themselves — so stop the run here and undo after it, in one
+          // click, with the cost stated on the button.
+          toast.message('A run is still going. Undo waits for it.', {
+            action: {
+              label: 'Stop and undo',
+              onClick: () => {
+                void (async () => {
+                  if (sessionId) await stopChatStream(sessionId);
+                  performUndo();
+                })();
+              },
+            },
+          });
           return;
         }
-        const lastUserIdx = [...messages].map((m) => m.role).lastIndexOf('user');
-        if (lastUserIdx < 0) {
-          toast.message('Nothing to undo yet.');
-          return;
-        }
-        const wbId = resolveWbId();
-        const next = messages.slice(0, lastUserIdx);
-        setMessages(next);
-        persistMessages(sessionId, next);
-        if (wbId) {
-          void undoWorkbenchLastTurn(wbId)
-            .then((res) => {
-              if (res.session) setWorkbenchSession(res.session);
-              toast.success(res.message || 'Undid last turn');
-            })
-            .catch((err: unknown) => {
-              toast.error(
-                `Undo failed on server (local chat was updated): ${
-                  err instanceof Error ? err.message : String(err)
-                }`,
-              );
-            });
-        } else {
-          toast.success('Undid last turn');
-        }
+        performUndo();
         return;
       }
 
       if (e.action === 'compact_now') {
         const wbId = resolveWbId();
         if (!wbId) {
-          toast.message('Start a chat first, then free up memory.');
+          toast.message('This chat has no conversation to free up yet.');
           return;
         }
         void compactWorkbenchSession(wbId)
@@ -164,7 +185,7 @@ export function useChatUiActions(opts: UseChatUiActionsOptions): void {
       if (e.action === 'branch_session') {
         const wbId = resolveWbId();
         if (!wbId) {
-          toast.message('Start a chat first, then branch it.');
+          toast.message('This chat has no conversation to branch yet.');
           return;
         }
         void branchWorkbenchSession(wbId)

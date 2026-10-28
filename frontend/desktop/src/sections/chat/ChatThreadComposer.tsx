@@ -363,6 +363,7 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
         mentionQuery={popovers.mentionQuery}
         mentionItems={popovers.mentionItems}
         skillMentions={popovers.skillMentions}
+        skillsError={popovers.skillsError}
         conversationMentions={popovers.conversationMentions}
         skillsLoading={popovers.skillsLoading}
         highlightedMentionIndex={popovers.highlightedMentionIndex}

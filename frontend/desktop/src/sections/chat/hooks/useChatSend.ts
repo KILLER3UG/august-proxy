@@ -393,7 +393,15 @@ export function useChatSend(opts: UseChatSendOptions) {
         activeWorkbenchSessionId,
         sessionId,
       );
-      void dequeueWorkbenchMessage(wbId, first.id).catch(() => undefined);
+      // Not silent: the queue was rewritten locally, so a server that never
+      // drops the message will deliver it a second time on the next turn.
+      void dequeueWorkbenchMessage(wbId, first.id).catch((err: unknown) => {
+        toast.warning(
+          `That queued message may still arrive: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      });
       setTimeout(() => {
         void generateAIResponse(remaining);
       }, 0);

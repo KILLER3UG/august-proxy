@@ -110,6 +110,10 @@ export function useComposerPopovers({
   const [harnessMentions, setHarnessMentions] = useState<MentionItem[]>([]);
   const [botMentions, setBotMentions] = useState<MentionItem[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(false);
+  // The @mention list cleared itself on a failed fetch, so "the skills service
+  // is down" and "you have no skills" rendered identically — the same silence
+  // as a returning 0 that reads as an empty store.
+  const [skillsError, setSkillsError] = useState(false);
   const [highlightedMentionIndex, setHighlightedMentionIndex] = useState(0);
 
   const composerActionsTriggerRef = useRef<HTMLButtonElement>(null);
@@ -146,6 +150,7 @@ export function useComposerPopovers({
     if (mentionQuery === null) return;
     let cancelled = false;
     setSkillsLoading(true);
+    setSkillsError(false);
     const q = mentionQuery.trim();
     const url = '/api/skills' + (q ? `?q=${encodeURIComponent(q)}` : '');
     api
@@ -163,7 +168,10 @@ export function useComposerPopovers({
         setSkillMentions(items);
       })
       .catch(() => {
-        if (!cancelled) setSkillMentions([]);
+        if (!cancelled) {
+          setSkillMentions([]);
+          setSkillsError(true);
+        }
       })
       .finally(() => {
         if (!cancelled) setSkillsLoading(false);
@@ -406,7 +414,9 @@ export function useComposerPopovers({
           })),
         );
       })
-      .catch(() => undefined);
+      .catch(() => {
+        setSkillsError(true);
+      });
   }, [skillMentions.length]);
 
   const openMentionPicker = useCallback(() => {
@@ -614,6 +624,7 @@ export function useComposerPopovers({
     setMentionQuery,
     skillMentions,
     skillsLoading,
+    skillsError,
     conversationMentions,
     mentionItems,
     highlightedMentionIndex,

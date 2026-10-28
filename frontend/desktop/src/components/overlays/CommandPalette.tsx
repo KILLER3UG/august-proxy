@@ -138,6 +138,18 @@ export function CommandPalette() {
             >
               <Search className="size-3" /> Search conversations…
             </Command.Item>
+            {/* Everything below is dispatched to the chat thread, and the
+                thread only exists on the chat route — so on /settings, /board,
+                /runs, /automations and /history these commands had no
+                listener. `chatAction` said why for six of them; the guard-mode
+                and drawer-section items used raw `dispatchUiAction`, so
+                selecting "Mode: Full access" or "Open plan panel" changed
+                nothing and reported nothing. A command that cannot run where
+                you are should not be offered there, which is what this gate
+                does — `hasChatSurface()` is the same test the palette already
+                used for its toast. */}
+            {hasChatSurface() && (
+              <>
             <Command.Item
               value="action undo last turn"
               onSelect={chatAction('undo_last_turn')}
@@ -290,6 +302,8 @@ export function CommandPalette() {
             >
               <GalleryVertical className="size-3" /> Artifacts — Browse generated outputs
             </Command.Item>
+              </>
+            )}
           </Command.Group>
 
           <Command.Separator className="my-2 border-t border-border" />
