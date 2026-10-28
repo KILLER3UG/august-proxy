@@ -9,7 +9,7 @@ sources:
   - backend-py/app/services/memory_store/rest.py
   - backend-py/app/services/memory_store/fact_retrieval.py
   - backend-py/app/services/tools/model_tools.py
-sourceRevision: "ee582dc8c76a88090655cec600448da73d4956cc"
+sourceRevision: "224e8ab53e7bd8e1e16057e2ba0a680a5c8f902a"
 diagramLinks:
   Store: august-map
 ---
@@ -47,8 +47,9 @@ like a new write and a retired row cannot resurface. The comparison is on
 opening second of a chat be visible on the next request.
 
 **Recall.** A BM25 search over the facts table, gated by the `memoryAutoInject`
-setting, which is **off by default**. With it off, recall happens only when the
-model itself calls `brain_query`. A fact dropped for budget reasons is named in a
+setting, which is **armed by default** since 2026-10-24 (an explicit stored
+`false` wins). With it off, recall happens only when the model itself calls
+`brain_query`. A fact dropped for budget reasons is named in a
 `recall partial:` line rather than disappearing silently.
 
 ## Writing

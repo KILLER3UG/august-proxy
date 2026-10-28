@@ -9,7 +9,7 @@ sources:
   - backend-py/app/services/workbench/workbench.py
   - backend-py/app/services/workbench/tool_protocol.py
   - frontend/desktop/src/lib/turn-end.ts
-sourceRevision: "ee582dc8c76a88090655cec600448da73d4956cc"
+sourceRevision: "224e8ab53e7bd8e1e16057e2ba0a680a5c8f902a"
 diagramDetails:
   Ended: What ends a turn
 ---

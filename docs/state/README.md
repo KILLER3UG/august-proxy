@@ -9,10 +9,11 @@ sources:
   - frontend/desktop/src/components/shell/ChatLayout.tsx
   - backend-py/app/services/workbench/workbench.py
   - backend-py/app/main.py
-sourceRevision: "ee582dc8c76a88090655cec600448da73d4956cc"
+sourceRevision: "224e8ab53e7bd8e1e16057e2ba0a680a5c8f902a"
 diagramLinks:
   Turn: chat-turn
   Memory: memory-lanes
+  Skills: skills-lanes
 ---
 
 # August system map
@@ -37,11 +38,14 @@ flowchart LR
   Shell -->|SSE frames| Shell
   Backend --> Turn[One chat turn]
   Memory --> Mem[Memory lanes]
+  Backend --> SkillRoutes[Skill discovery]
+  SkillRoutes --> SkillLanes[Skills lanes]
 ```
 
 Open **One chat turn** for the lifecycle a single send goes through, including
 the three ways it can stop without an answer. Open **Memory lanes** for what the
-model can see and write.
+model can see and write. Open **Skills lanes** for how a skill is found, loaded
+and learned.
 
 ## Who owns what
 

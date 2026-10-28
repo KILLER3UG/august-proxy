@@ -46,7 +46,8 @@ lives in [`frontend/mobile/`](frontend/mobile).
   chips (no tabs, no meters). The "Memory files" card the 0.18 restyle removed is
   back, as **Backups & restore** — see Settings → Memory.
   The model manages memory through the `remember` / `list_facts` / `forget` core
-  tools. Automatic recall is gated by `memoryAutoInject` (**default off**), but
+  tools. Automatic recall is gated by `memoryAutoInject` (**armed by default
+  since 2026-10-24**; an explicit stored `false` wins), but
   `kind='profile'` facts always ride in — that is what makes August remember who
   you are without a keyword coincidence. Proposals that need a human surface on
   the decide queue; approving a retire keeps the row, so it is reversible.

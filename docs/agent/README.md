@@ -20,6 +20,7 @@ the edge cases and the defects each rule exists to prevent.
 | Security | [security.md](security.md) | sandbox, hardline, listing/shell/write doors, secrets |
 | Release | [release.md](release.md) | version sources, OpenAPI generation, tag flow, CI |
 
-The user-facing goal and the UX we are building are in `docs/PRODUCT.md`. The
-current round and the open decisions are in `docs/STATUS.md`. The memory and
-skills specification lives under `docs/specs/`.
+The user-facing goal and the UX we are building are in
+[../PRODUCT.md](../PRODUCT.md). The current round and the open decisions are in
+[../STATUS.md](../STATUS.md). The memory and skills specification is
+[../specs/memory-and-skills.md](../specs/memory-and-skills.md).

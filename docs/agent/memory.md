@@ -118,6 +118,6 @@ in-process swap or a second version constant.
 ## The memory-user experience
 
 The current user-facing surfaces (Settings → Memory list, Library, save chip,
-proposals, backups) and the open UX work live in the memory and skills
-specification under `docs/specs/`. This file is the rule set; that one is the
-product state.
+proposals, backups) and the open UX work are in
+[../specs/memory-and-skills.md](../specs/memory-and-skills.md). This file is the
+rule set; that one is the product state.

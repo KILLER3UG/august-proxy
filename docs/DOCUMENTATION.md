@@ -10,9 +10,9 @@ or it was history; the history was removed on 2026-10-29 and remains in git.
 | [**README.md**](../README.md) | Everyone | What August is, quick start, repo layout |
 | [**AGENTS.md**](../AGENTS.md) | Agents / contributors | The binding contract: non-negotiables, read-first map, gate commands |
 | [**docs/agent/**](agent/README.md) | Agents / contributors | The area guides behind the contract |
-| `docs/PRODUCT.md` | Everyone | The product goal, users, UX principles, and the memory/skills experience |
-| `docs/STATUS.md` | Agents / maintainers | What shipped, what is next, and the open owner decisions |
-| `docs/specs/memory-and-skills.md` | Agents / maintainers | The current memory and skills specification, with open UX items |
+| [**PRODUCT.md**](PRODUCT.md) | Everyone | The product goal, users, UX principles, and the memory/skills experience |
+| [**STATUS.md**](STATUS.md) | Agents / maintainers | What shipped, what is next, and the open owner decisions |
+| [**specs/memory-and-skills.md**](specs/memory-and-skills.md) | Agents / maintainers | The current memory and skills specification, with open UX items |
 
 ## Current reference
 
@@ -96,13 +96,15 @@ were deleted on 2026-10-29; `git log -- docs/plans/<name>` recovers any of them.
 | Goal | Start here |
 |------|------------|
 | Install and run | [SETUP.md](SETUP.md) |
+| Know the product goal and UX standard | [PRODUCT.md](PRODUCT.md) |
+| Know what to work on next | [STATUS.md](STATUS.md) |
 | Configure keys / aliases / gateway | [CONFIGURATION.md](CONFIGURATION.md) |
 | Understand request flow & persistence | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Call HTTP APIs | [API_REFERENCE.md](API_REFERENCE.md) |
 | Contribute code | [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) and [AGENTS.md](../AGENTS.md) |
 | Fix a runtime issue | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
 | See known mismatches | [GAPS_AND_BUGS.md](GAPS_AND_BUGS.md) |
-| Know what to build next | `docs/STATUS.md` and [ROADMAP.md](ROADMAP.md) |
+| Understand memory and skills | [specs/memory-and-skills.md](specs/memory-and-skills.md) |
 
 **Backend:** Python **3.12+** FastAPI in [`backend-py/`](../backend-py/)
 (`requires-python >=3.12`; Docker image `python:3.12-slim`).

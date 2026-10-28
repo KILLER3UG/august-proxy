@@ -154,5 +154,5 @@ commit message is a defect, not a citation.
 | the version number, a release, the OpenAPI artifacts | [release.md](release.md) | `npm run check:version`, `gen:openapi`, `gen:api` |
 
 The user-facing goal, the UX principles and the current round are in
-`docs/PRODUCT.md` and `docs/STATUS.md` once those exist; this file does not
-duplicate them.
+[docs/PRODUCT.md](../PRODUCT.md) and [docs/STATUS.md](../STATUS.md); this file
+does not duplicate them.

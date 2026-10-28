@@ -82,11 +82,11 @@ npm run check:docs && npm run check:doc-links && npm run check:version
 ## Goal, status and memory/skills UX
 
 - The product goal, users, principles and what a good memory/skills UX looks
-  like: `docs/PRODUCT.md`.
+  like: [docs/PRODUCT.md](docs/PRODUCT.md).
 - What is shipped, what is next and what is waiting on an owner decision:
-  `docs/STATUS.md`.
+  [docs/STATUS.md](docs/STATUS.md).
 - The current memory and skills specification, including open UX items:
-  `docs/specs/memory-and-skills.md`.
+  [docs/specs/memory-and-skills.md](docs/specs/memory-and-skills.md).
 - The in-app system map (a live product feature, not just docs) is
   `docs/state/`; it is validated by the backend and browsable in the app.
 

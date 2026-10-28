@@ -15,9 +15,9 @@ because a future agent sees only name + description before loading. Bundled
 parser also reads the nested Hermes `metadata.hermes` block, and unknown keys
 round-trip through every patch.
 
-Discovery walks four roots — bot → project → agent → bundled, earlier wins —
-through one shared walker (`_iterSkillMd`) that is depth- and count-bounded and
-never descends a dot-directory or a symlinked directory. A malformed skill is
+Discovery walks five roots — bot → project → agent → external → bundled,
+earlier wins — through one shared walker (`_iterSkillMd`) that is depth- and
+count-bounded and never descends a dot-directory or a symlinked directory. A malformed skill is
 skipped with a logged reason while its siblings still load. An optional
 category level is supported (`<root>/<category>/<name>/SKILL.md`). A config
 `externalSkillRoots` layer is read-only. The four roots are
@@ -114,5 +114,5 @@ model gets less index rather than a truncated prefix. The subagent descriptive
 index is bound to the combined memory+skills envelope. `alias_preread_skills`
 adds a hint-only line when the user's message names a skill; the body still
 loads only through `load_skill`. The current UX (Library, install preview,
-patch proposals) and the open items are in the memory and skills specification
-under `docs/specs/`.
+patch proposals) and the open items are in
+[../specs/memory-and-skills.md](../specs/memory-and-skills.md).
