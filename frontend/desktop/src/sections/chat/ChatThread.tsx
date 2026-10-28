@@ -193,6 +193,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
   const {
     attachments,
+    setAttachments,
     attachFiles,
     attachPaths,
     handleFileUpload,
@@ -739,6 +740,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     setMessages,
     input,
     setInput,
+    attachments,
+    setAttachments,
     streaming,
     generateAIResponse,
   });

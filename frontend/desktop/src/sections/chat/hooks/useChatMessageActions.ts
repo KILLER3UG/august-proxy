@@ -4,7 +4,7 @@
 import { useCallback, useState, type Dispatch, type SetStateAction } from 'react';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { toast } from 'sonner';
-import type { ChatMessage } from '@/types/chat';
+import type { ChatMessage, FileAttachment } from '@/types/chat';
 import { persistMessages } from '../message-storage';
 import { truncateWorkbenchSession } from '@/api/workbench';
 import { resolveWorkbenchSessionId } from '../stream/session-id-map';
@@ -15,6 +15,8 @@ export function useChatMessageActions({
   setMessages,
   input,
   setInput,
+  attachments,
+  setAttachments,
   streaming,
   generateAIResponse,
 }: {
@@ -23,6 +25,9 @@ export function useChatMessageActions({
   setMessages: Dispatch<SetStateAction<ChatMessage[]>>;
   input: string;
   setInput: Dispatch<SetStateAction<string>>;
+  /** Composer attachment chips, so a revert can put them back too. */
+  attachments: FileAttachment[];
+  setAttachments: Dispatch<SetStateAction<FileAttachment[]>>;
   streaming: boolean;
   generateAIResponse: (msgs: ChatMessage[]) => Promise<unknown>;
 }) {
@@ -63,10 +68,21 @@ export function useChatMessageActions({
 
       const originalMessages = [...messages];
       const originalInput = input;
+      const originalAttachments = attachments;
+      // The files are part of the prompt, so the prompt is not fully put back
+      // until they are too — a reverted turn that only restored the text sent
+      // a question about a file the composer no longer carried.
+      const carried = new Set(originalAttachments.map((a) => a.id));
+      const restoredFiles = (userMsg.attachments ?? []).filter(
+        (a) => !a.id || !carried.has(a.id),
+      );
       setRevertingIndex(userMsgIndex);
 
       setTimeout(() => {
         setInput(userMsg.content);
+        if (restoredFiles.length > 0) {
+          setAttachments((prev) => [...prev, ...restoredFiles]);
+        }
         setMessages((prev) => {
           const next = prev.slice(0, userMsgIndex);
           persistMessages(sessionId, next);
@@ -75,7 +91,12 @@ export function useChatMessageActions({
         setRevertingIndex(null);
 
         toast.success('Conversation reverted', {
-          description: `Put prompt back into composer and removed ${deleted} message${deleted > 1 ? 's' : ''}`,
+          description:
+            restoredFiles.length > 0
+              ? `Prompt and ${restoredFiles.length} attached file${
+                  restoredFiles.length === 1 ? '' : 's'
+                } are back in the composer — removed ${deleted} message${deleted > 1 ? 's' : ''}`
+              : `Put prompt back into composer and removed ${deleted} message${deleted > 1 ? 's' : ''}`,
           duration: 5000,
           action: {
             label: 'Undo',
@@ -85,12 +106,23 @@ export function useChatMessageActions({
                 return originalMessages;
               });
               setInput(originalInput);
+              setAttachments(originalAttachments);
             },
           },
         });
       }, 300);
     },
-    [streaming, messages, input, setInput, setMessages, sessionId, truncateBackend],
+    [
+      streaming,
+      messages,
+      input,
+      attachments,
+      setInput,
+      setAttachments,
+      setMessages,
+      sessionId,
+      truncateBackend,
+    ],
   );
 
   const handleEdit = useCallback(
