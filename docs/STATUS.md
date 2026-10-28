@@ -10,15 +10,17 @@ waiting on the owner, and how to resume.
 
 - `AGENTS.md` is a short contract (~120 lines) with a read-before-touching
   table; the detail moved to [`docs/agent/`](agent/README.md).
-- Closed plans, dated audits, deep dives, release notes and archive trees were
-  deleted. [`docs/DOCUMENTATION.md`](DOCUMENTATION.md) is the one index; git
-  history keeps the removed documents.
+- Closed plans, dated audits, deep dives, benchmark captures, release notes and
+  archive trees were deleted. [`docs/DOCUMENTATION.md`](DOCUMENTATION.md) is the
+  one index; git history keeps the removed documents.
 - Added [`docs/PRODUCT.md`](PRODUCT.md), this file, and
   [`docs/specs/memory-and-skills.md`](specs/memory-and-skills.md).
 - CI is one reusable workflow; the release job calls it; one gate command set
   is shared by CI, release and developers. See
   [`docs/agent/workflow.md`](agent/workflow.md).
-- Branch, commit and staging rules are in `CONTRIBUTING.md`.
+- Branch, commit and staging rules are in `CONTRIBUTING.md`. Two stale branches
+  were deleted: `fix/user-row-attachments` (one unmerged commit) and the
+  fully-merged `harness-skill-autonomy`.
 
 ## Recently shipped before this round
 
