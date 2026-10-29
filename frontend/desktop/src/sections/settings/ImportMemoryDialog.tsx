@@ -14,14 +14,51 @@
 /* provider label (e.g. "claude", "chatgpt") and a default category, then   */
 /* confirms the import. Each row is persisted with a per-row `source` of     */
 /* `imported:<provider>` so the Memory UI can badge imported rows.          */
+/*                                                                          */
+/* A fifth shape skips the preview: the WHOLE-EXPORT door hands the folder   */
+/* (or .zip) Claude shipped to `/api/august/memory/import-claude`, which     */
+/* reads every file, maps profile/preferences onto the always-in-context     */
+/* lanes, and merges each line against the rows already in the store.       */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, FileUp, Loader2, Asterisk, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
+import { openFolderViaTauri, pickFileViaTauri } from '@/api/folder';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 import { useModels } from '@/hooks/useModels';
 import { findModelByKey, loadLastModel, modelKey } from '@/sections/chat/model-display';
+
+/** The whole-export door: the backend reads the folder/.zip and merges each
+ *  bullet into the facts store, so the report is counts, not a preview list. */
+interface ExportReport {
+  ok: boolean;
+  error?: string;
+  files?: number;
+  entries?: number;
+  created?: number;
+  updated?: number;
+  unchanged?: number;
+  merged?: number;
+  refused?: number;
+  capped?: number;
+}
+
+function exportReportLine(r: ExportReport): string {
+  if (!r.ok) return r.error || 'The export could not be read.';
+  const parts = [
+    `${r.files ?? 0} file${(r.files ?? 0) === 1 ? '' : 's'}`,
+    `${r.entries ?? 0} memories`,
+    r.created ? `${r.created} added` : '',
+    r.updated ? `${r.updated} refreshed` : '',
+    r.unchanged ? `${r.unchanged} already exact` : '',
+    r.merged ? `${r.merged} folded into existing` : '',
+    r.refused ? `${r.refused} refused` : '',
+    r.capped ? `${r.capped} past the cap` : '',
+  ].filter(Boolean);
+  return parts.join(' · ');
+}
 
 interface ParsedEntry {
   /** Stable id used by the React list (file basename + line index). */
@@ -387,6 +424,10 @@ export function ImportMemoryDialog({
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Whole-export door: one path (folder or .zip), one POST, one merged corpus.
+  const [exportPath, setExportPath] = useState('');
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportReport, setExportReport] = useState<string | null>(null);
 
   const { models } = useModels();
   const [model, setModel] = useState<{ id: string; name: string; provider: string } | null>(() => {
@@ -405,6 +446,7 @@ export function ImportMemoryDialog({
       setAiOps(null);
       setAiError(null);
       setAiLoading(false);
+      setExportReport(null);
     }
   }, [open]);
 
@@ -484,6 +526,42 @@ export function ImportMemoryDialog({
   function applyCategoryOverride() {
     if (!entries) return;
     setEntries(entries.map((e) => ({ ...e, category: defaultCategory })));
+  }
+
+  async function pickExport(kind: 'folder' | 'zip') {
+    const picked =
+      kind === 'folder'
+        ? (await openFolderViaTauri()).path
+        : await pickFileViaTauri('Claude memory export (.zip)', ['zip']);
+    if (!picked) {
+      setExportReport('No native picker here — type the export path instead.');
+      return;
+    }
+    setExportPath(picked);
+    setExportReport(null);
+  }
+
+  async function runExportImport() {
+    const path = exportPath.trim();
+    if (!path) return;
+    setExportBusy(true);
+    setExportReport(null);
+    try {
+      const res = await api.post<ExportReport>('/api/august/memory/import-claude', { path });
+      setExportReport(exportReportLine(res));
+      if (res.ok) {
+        toast.success(`Memory import · ${res.created ?? 0} new of ${res.entries ?? 0} lines`);
+        onImported();
+      } else {
+        toast.error(res.error || 'Nothing was imported');
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Import failed';
+      setExportReport(message);
+      toast.error(message);
+    } finally {
+      setExportBusy(false);
+    }
   }
 
   async function doImport() {
@@ -842,6 +920,46 @@ export function ImportMemoryDialog({
               </div>
             </>
           )}
+          {/* Whole-export door. Claude ships memory as a FOLDER of .md files (or a
+              .zip of one), and picking them one at a time is how a migration turns
+              into 18 dialogs. The backend reads the archive and merges each line
+              into what is already stored, so this is one action, not a preview. */}
+          <div className="space-y-2 rounded-lg border border-border/60 bg-card/60 p-3">
+            <div className="text-2xs text-muted-foreground">
+              Whole export — the folder Claude exported, or its <code className="font-mono">.zip</code>.
+              Every line merges into what August already remembers instead of restating it.
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                value={exportPath}
+                onChange={(e) => setExportPath(e.target.value)}
+                placeholder="…/claude-memory-2026-10-29.zip or the folder"
+                aria-label="Claude memory export path"
+                data-testid="import-export-path"
+                className="min-w-0 flex-1 rounded-md border border-border/60 bg-background px-2 py-1.5 text-xs font-mono"
+              />
+              <Button size="sm" variant="outline" onClick={() => void pickExport('folder')}>
+                Folder
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => void pickExport('zip')}>
+                .zip
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => void runExportImport()}
+                disabled={!exportPath.trim() || exportBusy}
+                data-testid="import-export-run"
+              >
+                {exportBusy ? <Loader2 className="size-3 animate-spin" /> : null}
+                Import export
+              </Button>
+            </div>
+            {exportReport && (
+              <p className="text-2xs text-muted-foreground" data-testid="import-export-report">
+                {exportReport}
+              </p>
+            )}
+          </div>
         </div>
 
         <footer className="flex items-center justify-end gap-2 border-t border-border bg-muted/20 px-5 py-3">

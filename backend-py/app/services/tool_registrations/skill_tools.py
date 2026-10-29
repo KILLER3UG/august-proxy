@@ -228,7 +228,10 @@ async def _listSkills(query: str = '') -> str:
             return 'No skills found.' if not query else f"No skills matching '{query}'."
         lines = [f'Available skills ({len(skills)}):\n']
         for s in skills:
-            lines.append(f'  - {s["name"]:30s} {as_str(s.get("description"), "")[:60]}')
+            # The description IS the trigger — it names when to fire and when NOT
+            # to. A fixed 60-char cut deleted the second half, so the listing
+            # advertised the skill and hid the rule for using it.
+            lines.append(f'  - {s["name"]:30s} {as_str(s.get("description"), "")}')
         return '\n'.join(lines)
     except Exception as exc:
         return f'Error listing skills: {exc}'

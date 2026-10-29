@@ -585,6 +585,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/august/memory/import-claude": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Claude Memory
+         * @description Import a WHOLE Claude memory export, merged into the facts store.
+         *
+         *     ``/memory/import`` parses one file in the webview; an export is a folder of
+         *     them, so this door takes the archive as shipped and does the move in one
+         *     action. Each bullet merges rather than restates: an existing row under the
+         *     same key is updated, a near-duplicate under a different key is reported as
+         *     folded into that key and not written, and ``save_fact`` still owns the
+         *     credential refusal. ``dryRun`` answers what would change, writing nothing.
+         */
+        post: operations["import_claude_memory_api_august_memory_import_claude_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/august/memory/import/ai": {
         parameters: {
             query?: never;
@@ -5207,50 +5234,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/skills/revoke-trust": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Revokeskillworkspace
-         * @description Withdraw approval; the next catalogue build drops the project root.
-         */
-        post: operations["revokeSkillWorkspace_api_skills_revoke_trust_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/skills/trust": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Skilltruststatus
-         * @description Whether this workspace's project skills are trusted, plus what is waiting.
-         */
-        get: operations["skillTrustStatus_api_skills_trust_get"];
-        put?: never;
-        /**
-         * Trustskillworkspace
-         * @description Approve loading an opened workspace's repo-supplied skills.
-         */
-        post: operations["trustSkillWorkspace_api_skills_trust_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/skills/{name}": {
         parameters: {
             query?: never;
@@ -8709,6 +8692,19 @@ export interface components {
             workspace?: string | null;
         };
         /**
+         * MemoryImportClaudeBody
+         * @description A Claude memory export on this machine — the folder or its ``.zip``.
+         */
+        MemoryImportClaudeBody: {
+            /**
+             * Dryrun
+             * @default false
+             */
+            dryRun: boolean;
+            /** Path */
+            path: string;
+        };
+        /**
          * MessageCreate
          * @description Session message body. Internals are snake_case; JSON stays camelCase.
          *
@@ -9377,14 +9373,6 @@ export interface components {
             trigger?: string | null;
             /** Workspace */
             workspace?: string | null;
-        };
-        /** SkillTrustRequest */
-        SkillTrustRequest: {
-            /**
-             * Workspace
-             * @description Project workspace path to trust or revoke.
-             */
-            workspace: string;
         };
         /** SlackBody */
         SlackBody: {
@@ -10927,6 +10915,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["MemoryImportBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_claude_memory_api_august_memory_import_claude_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryImportClaudeBody"];
             };
         };
         responses: {
@@ -18290,104 +18313,6 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    revokeSkillWorkspace_api_skills_revoke_trust_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SkillTrustRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    skillTrustStatus_api_skills_trust_get: {
-        parameters: {
-            query?: {
-                /** @description Project workspace path */
-                workspace?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    trustSkillWorkspace_api_skills_trust_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SkillTrustRequest"];
-            };
-        };
         responses: {
             /** @description Successful Response */
             200: {

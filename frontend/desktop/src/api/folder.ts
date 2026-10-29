@@ -86,3 +86,29 @@ export function folderNameFromPath(path: string): string {
   const segments = normalized.split('/').filter(Boolean);
   return segments.length > 0 ? segments[segments.length - 1] : 'workspace';
 }
+
+/**
+ * Pick ONE file by native dialog and return its real path (a whole memory
+ * export ships as a .zip, which the webview cannot read on its own).
+ * Returns null when the user cancels or when running outside Tauri, where no
+ * native path exists — the caller keeps its typed-path fallback.
+ */
+export async function pickFileViaTauri(
+  title: string,
+  extensions: string[],
+): Promise<string | null> {
+  if (!isTauri) return null;
+  try {
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    const selected = await open({
+      multiple: false,
+      directory: false,
+      title,
+      filters: [{ name: title, extensions }],
+    });
+    return typeof selected === 'string' ? selected.replace(/\\/g, '/') : null;
+  } catch (err) {
+    console.warn('native file picker failed:', err);
+    return null;
+  }
+}

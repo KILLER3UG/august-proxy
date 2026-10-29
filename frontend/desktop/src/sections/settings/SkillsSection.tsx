@@ -26,8 +26,6 @@ import {
   Power,
   Save,
   Search,
-  ShieldAlert,
-  ShieldCheck,
   Trash2,
   X,
 } from 'lucide-react';
@@ -144,46 +142,6 @@ export function SkillsSection({ host = 'settings' }: { host?: LearningHost } = {
   const [seeMore, setSeeMore] = useState(false);
   // C-1: '' = global scope, a path = that project's merged view.
   const [wsScope, setWsScope] = useState('');
-  const [trustBusy, setTrustBusy] = useState(false);
-
-  const trustQuery = useQuery<{
-    trusted: boolean;
-    hasProjectRoot: boolean;
-    pending: Array<{ name: string; description: string }>;
-  }>({
-    queryKey: ['skills-trust', wsScope],
-    queryFn: () =>
-      api.get<{
-        trusted: boolean;
-        hasProjectRoot: boolean;
-        pending: Array<{ name: string; description: string }>;
-      }>(`/api/skills/trust?workspace=${encodeURIComponent(wsScope)}`),
-    enabled: !!wsScope,
-    staleTime: 10_000,
-  });
-
-  const setProjectTrust = async (trusted: boolean) => {
-    if (!wsScope || trustBusy) return;
-    setTrustBusy(true);
-    try {
-      await api.post(
-        trusted ? '/api/skills/trust' : '/api/skills/revoke-trust',
-        { workspace: wsScope },
-      );
-      await queryClient.invalidateQueries({ queryKey: ['skills-trust'] });
-      await queryClient.invalidateQueries({ queryKey: ['skills-list'] });
-      await queryClient.invalidateQueries({ queryKey: ['skill-detail'] });
-      toast.success(
-        trusted
-          ? 'Project skills trusted for this workspace'
-          : 'Project skills are inactive again',
-      );
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not update project-skill trust');
-    } finally {
-      setTrustBusy(false);
-    }
-  };
 
   const workspacesQ = useQuery<{ workspaces: WorkspaceInfo[] }>({
     queryKey: ['memory-workspaces'],
@@ -696,63 +654,6 @@ export function SkillsSection({ host = 'settings' }: { host?: LearningHost } = {
                   Project skills shadow same-named global ones
                 </p>
               )}
-              {wsScope &&
-              trustQuery.data &&
-              (trustQuery.data.pending.length > 0 ||
-                (!trustQuery.data.trusted && trustQuery.data.hasProjectRoot)) ? (
-                <div
-                  className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 bg-card/40 px-3 py-2 text-xs"
-                  data-testid="skills-trust-banner"
-                >
-                  {trustQuery.data.trusted ? (
-                    <>
-                      <ShieldCheck className="size-3.5 shrink-0 text-success-fg" aria-hidden />
-                      <span className="min-w-0 flex-1 text-muted-foreground">
-                        Project skills are trusted for this workspace.{' '}
-                        {trustQuery.data.pending.length > 0
-                          ? `${trustQuery.data.pending.length} skill${
-                              trustQuery.data.pending.length === 1 ? '' : 's'
-                            } loaded from it.`
-                          : ''}
-                      </span>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={trustBusy}
-                        onClick={() => void setProjectTrust(false)}
-                      >
-                        {trustBusy ? <Loader2 className="size-3 animate-spin" /> : null}
-                        Revoke
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <ShieldAlert className="size-3.5 shrink-0 text-warning-fg" aria-hidden />
-                      <span className="min-w-0 flex-1 text-muted-foreground">
-                        This workspace defines {trustQuery.data.pending.length} project skill
-                        {trustQuery.data.pending.length === 1 ? '' : 's'} (
-                        {trustQuery.data.pending
-                          .slice(0, 4)
-                          .map((p) => p.name)
-                          .join(', ')}
-                        {trustQuery.data.pending.length > 4
-                          ? ` +${trustQuery.data.pending.length - 4}`
-                          : ''}
-                        ). They are inactive until you trust this workspace.
-                      </span>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={trustBusy}
-                        onClick={() => void setProjectTrust(true)}
-                      >
-                        {trustBusy ? <Loader2 className="size-3 animate-spin" /> : null}
-                        Trust project skills
-                      </Button>
-                    </>
-                  )}
-                </div>
-              ) : null}
               {/* Bulk actions — select-all plus the two state switches. */}
               <div className="flex items-center gap-2 px-1" data-testid="skills-bulk">
                 <label className="flex items-center gap-1.5 text-2xs text-muted-foreground/70">

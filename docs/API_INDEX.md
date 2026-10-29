@@ -5,7 +5,7 @@
 
 # API Index — every route
 
-429 routes across 355 paths,
+427 routes across 354 paths,
 grouped by family. **This file is generated.** For the prose that explains what
 these are for and when to reach for them, read
 [`API_REFERENCE.md`](./API_REFERENCE.md) — it covers the families that matter in
@@ -144,7 +144,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `GET` | `/api/brain/stores/facts/{row_id}/history` | Edit history for one fact, projected from the rollback store. |
 | `GET` | `/api/brain/turn-outcomes` | M5 telemetry: per-model/provider error rates plus the per-turn verdict distribution (046) for the Observabili… |
 
-## Skills (15)
+## Skills (12)
 
 | Method | Path | Summary |
 | --- | --- | --- |
@@ -160,9 +160,6 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `POST` | `/api/skills/packs` | Packs Install |
 | `DELETE` | `/api/skills/packs/{name}` | Packs Uninstall |
 | `POST` | `/api/skills/restore/{trashId}` | Undo a delete or an approved archive: restore a trashed skill directory (24h window). |
-| `POST` | `/api/skills/revoke-trust` | Withdraw approval; the next catalogue build drops the project root. |
-| `GET` | `/api/skills/trust` | Whether this workspace's project skills are trusted, plus what is waiting. |
-| `POST` | `/api/skills/trust` | Approve loading an opened workspace's repo-supplied skills. |
 
 ## Curator & learning (11)
 
@@ -425,7 +422,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `GET` | `/api/gateway/status` | Return running adapters and optional-SDK availability. |
 | `POST` | `/api/gateway/telegram/webhook` | Receive a Telegram update via webhook and dispatch to the adapter. |
 
-## August manage & security (36)
+## August manage & security (37)
 
 | Method | Path | Summary |
 | --- | --- | --- |
@@ -436,6 +433,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `GET` | `/api/august/audit` | Return config-change audit entries shaped for the frontend AuditEntry view. |
 | `POST` | `/api/august/computer/app-policy` | Computer App Policy |
 | `POST` | `/api/august/memory/import` | Bulk-import facts (from a parsed export of another AI's memory). |
+| `POST` | `/api/august/memory/import-claude` | Import a WHOLE Claude memory export, merged into the facts store. |
 | `POST` | `/api/august/memory/import/ai` | Ask the model the user picked (composer dropdown) to ARRANGE a memory export into concrete operations. The mo… |
 | `POST` | `/api/august/memory/manage` | Manage Memory |
 | `GET` | `/api/august/memory/proposals` | Pending memory proposals (OQ5 preference-retire, and any future propose-only consolidation pass). Returns the… |
@@ -548,4 +546,4 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 
 ---
 
-Generated from `docs/api/openapi.json` (429 operations).
+Generated from `docs/api/openapi.json` (427 operations).

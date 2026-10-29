@@ -824,6 +824,34 @@ async def import_memory(body: MemoryImportBody):
     return {'ok': True, 'count': written, 'total': len(raw_items), 'results': results, 'failed': failed}
 
 
+class MemoryImportClaudeBody(CamelModel):
+    """A Claude memory export on this machine — the folder or its ``.zip``."""
+
+    path: str
+    dryRun: bool = False
+
+
+@router.post('/memory/import-claude')
+async def import_claude_memory(
+    body: MemoryImportClaudeBody,
+    _auth: bool = Depends(require_local_token),
+):
+    """Import a WHOLE Claude memory export, merged into the facts store.
+
+    ``/memory/import`` parses one file in the webview; an export is a folder of
+    them, so this door takes the archive as shipped and does the move in one
+    action. Each bullet merges rather than restates: an existing row under the
+    same key is updated, a near-duplicate under a different key is reported as
+    folded into that key and not written, and ``save_fact`` still owns the
+    credential refusal. ``dryRun`` answers what would change, writing nothing.
+    """
+    import asyncio
+
+    from app.services import memory_import
+
+    return await asyncio.to_thread(memory_import.import_claude_export, body.path, body.dryRun)
+
+
 class MemoryImportAiBody(CamelModel):
     """AI-arranged import: the user-selected model reads the raw export and
     returns a normalized plan of add/update/delete operations.

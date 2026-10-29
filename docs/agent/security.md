@@ -212,16 +212,15 @@ the proposal route the only one a model can take. The BUNDLED layer
 that is a developer's checkout, reviewed in a diff, not app state a model owns.
 Code mode has its own `write_file`, so the port carries the rule by injection.
 
-**Project skills are trust-gated at the read door.** A workspace's
-`.aug/skills` root is repo-supplied instruction content, so
-`skill_service._skillRoots` includes it only when
-`is_skill_workspace_trusted(workspace)` says the user approved that workspace
-for skills. The approval lives in its own data-dir store, separate from the
-hook-workspace store: trusting shell hooks is not consent to load instruction
-packages. The raw root is still parsed for the pending-skill notice and the
-Settings → Skills trust banner, so an untrusted repository is visible rather
-than silently ignored; the model sees a count of inactive project skills and
-`load_skill` cannot load them. Revoking busts the catalogue and prompt caches.
+**Project skills are an instruction layer, not a consent gate.** A workspace's
+`.aug/skills` root joins `skill_service._skillRoots` whenever the `projectSkills`
+toggle is on (default), exactly as the repo's own `AGENTS.md` layers into the
+prompt. There is deliberately no per-workspace approval store for it: a door that
+gates one repo-supplied instruction file and not the other stops nothing, and it
+makes the user click before their own project works. The boundary that matters is
+the runtime's — sandbox tiers, the hardline credential stores, the write doors in
+this file. `.aug/hooks.json` keeps its own trust store because a hook is
+**unsandboxed shell execution**, not instructions.
 
 ## Gate participation and file ceilings
 

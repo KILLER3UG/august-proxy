@@ -101,7 +101,6 @@ alias pre-read adds a hint-only line when the user's message names a skill.
 
 | Item | Type | Detail |
 |---|---|---|
-| `list_skills` truncates every description to 60 chars | **Defect** | `tool_registrations/skill_tools.py:231` renders `description[:60]` while the index renders the full trigger. The listing defeats the trigger it exists to advertise. |
 | Model-judgment checks are unrun | Limit | The "will the model choose to load the skill / draft a good one" checks need a funded provider; they were reported as blocked, with substitute evidence. |
 | Derived-fact producer is forward-looking | Limit | The store and cascade are proven; only `harness_promote` writes `derived_from` today. |
 | Bundled checkout is writable by raw file tools | Deliberate deviation | The skill doors refuse bundled skills; a human editing the repo can still change them. Reviewed in a diff, not app state. |
@@ -125,9 +124,9 @@ These are product improvements, not code defects, except where noted.
    trigger, usage count, last used, version history, and — when a skill is
    hidden — the exact gate that hid it (platform, missing tool, disabled,
    retired). A silent absence reads as a bug.
-3. **Fix `list_skills`.** Render the full trigger, or a meaningful prefix with
-   the remainder available on demand. A 60-char cut makes "when NOT to fire"
-   invisible.
+3. **`list_skills` renders the full trigger — DONE (2026-10-29).** The 60-char
+   cut deleted the "when NOT to fire" half of the description, so the listing
+   advertised the skill while hiding the rule for using it.
 4. **Diff an install against an existing skill.** The preview/confirm door
    exists; show what changes when a pack would replace a skill of the same
    name.

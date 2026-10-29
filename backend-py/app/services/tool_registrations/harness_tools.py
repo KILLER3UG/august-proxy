@@ -4,13 +4,27 @@ Registered into the tool registry so the MODEL can call them:
   * harness_introspect — read-only aggregation of harness state
   * harness_propose    — files a structured improvement proposal (never applied)
 
-The applier runs only behind the human decide endpoint (routers/harness.py).
+A skill create/patch is applied by the independent reviewer through the rails in
+`harness_rails` (autonomy is on by default); every other kind — settings, deletes,
+retirements, promotions — waits behind the human decide endpoint.
 """
 
 from __future__ import annotations
 
+import logging
+from typing import Any
+
 from app.json_narrowing import as_dict, as_str
 from app.services import tool_registry
+
+logger = logging.getLogger(__name__)
+
+
+def _review_after_filing(future: Any) -> None:
+    """Name a detached reviewer failure; never let it vanish silently."""
+    exc = future.exception()
+    if exc is not None:
+        logger.debug('auto-review after harness_propose failed: %s', exc)
 
 
 async def _introspect() -> str:
@@ -39,6 +53,21 @@ async def _propose(**kwargs: object) -> str:
         return f'Error: {exc}'
     except Exception as exc:  # noqa: BLE001
         return f'Error: filing proposal failed: {exc}'
+    # A skill write the user just asked for must not wait for the reviewer tick.
+    # Detached on purpose: the turn answers now, and the same rails — not this
+    # tool — decide whether it lands.
+    if as_str(row.get('kind'), '') in ('skill_create', 'skill_patch'):
+        try:
+            import asyncio
+
+            from app.services.harness_rails import autonomy_enabled
+            from app.services.harness_self_improve import run_reviewer_pass
+
+            if autonomy_enabled():
+                future = asyncio.get_running_loop().run_in_executor(None, run_reviewer_pass)
+                future.add_done_callback(_review_after_filing)
+        except Exception as exc:  # noqa: BLE001 — the proposal is already filed
+            logger.debug('auto-review scheduling failed: %s', exc)
     return (
         f"Proposal {row['id']} filed (kind={row['kind']}, status=open). "
         'Low-risk skill creates/patches are applied automatically after an '

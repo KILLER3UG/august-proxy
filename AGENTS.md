@@ -53,9 +53,11 @@ The index is [docs/agent/README.md](docs/agent/README.md).
   definitions must return the same ordered name list.
 - **A capability the model cannot use is not advertised.** A knob that always
   refuses is a lie ([security.md](docs/agent/security.md)).
-- **Project skills are untrusted until the workspace is approved.** A
-  repo-supplied `<workspace>/.aug/skills` root does not load before the user's
-  trust grant; hook trust is a separate decision
+- **Repo-supplied instructions load; repo-supplied execution does not.** A
+  workspace's `.aug/skills` joins discovery under the `projectSkills` toggle —
+  the same trust class as the repo's own `AGENTS.md`, with no per-folder
+  approval step. `.aug/hooks.json` runs unsandboxed shell, so it stays behind a
+  per-workspace trust the user grants
   ([skills.md](docs/agent/skills.md), [security.md](docs/agent/security.md)).
 - **Delete your scratch files before you commit**, and **never mint a new
   "Part N+"** — the numbered series is closed

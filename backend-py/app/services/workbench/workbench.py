@@ -1067,15 +1067,6 @@ def buildSystemPrompt(
         intake.append('\n'.join(memParts))
     if skillsLine:
         intake.append(f'- Skills: {skillsLine}. Bodies load on demand via load_skill.')
-    if workspacePath:
-        try:
-            from app.services import skill_service as _skill_svc
-
-            projectNotice = _skill_svc.pending_project_skill_notice(workspacePath)
-            if projectNotice:
-                intake.append(f'- {projectNotice}')
-        except Exception:
-            logger.debug('prompt: project-skill trust notice failed', exc_info=True)
     intake.append('</intake>')
     parts.append('\n'.join(intake))
     if hookTrustNotice:

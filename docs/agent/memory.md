@@ -51,6 +51,30 @@ automatic tail keeps the 8-character floor (a 4-character message must not spend
 context), while a deliberate `brain_query(store='facts')` search answers even for
 `"gpu"`.
 
+## Bringing a memory export in
+
+Settings → Memory → Import has two doors. The file door parses one `.md`/`.json`
+in the webview and previews it. The **whole-export door** hands the folder (or
+`.zip`) another agent shipped to `POST /api/august/memory/import-claude`
+(`memory_import.py`), which reads every file and writes into `facts` — never a
+second store:
+
+* `profile.md` lands as `kind='profile'`, `preferences.md` as `kind='preference'`
+  — the two kinds the always-in-context lane reads, so an imported identity is
+  recalled without winning a BM25 slot. `areas/*` → `category='project'`,
+  `topics/*` → `category='reference'`.
+* one bullet = one fact, keyed by the same slug `remember` derives, so re-importing
+  the same export reports `unchanged` instead of restating rows;
+* a near-duplicate under a **different** key is reported as folded into that key
+  and not written (the store's own `DEDUPE_SIMILARITY` bar, not a new one);
+* every write goes through `save_fact`, so the credential refusal still applies,
+  and each landed row gets a rollback entry — the import is undoable per row.
+
+`dry_run` reads the store exactly like the real run and writes nothing, so the
+plan's numbers are the outcome's numbers. Fuzzy merges (paraphrases that miss the
+similarity bar) stay with the AI-arrange door, which spends one model call to
+decide add/update/delete.
+
 The boot memory index is **frozen per session** to protect the provider prefix
 cache, so `<memory_policy>` tells the model to re-read `list_facts` after
 writing rather than trusting that index — keep the prompt text and that
