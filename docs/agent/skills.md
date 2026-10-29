@@ -43,7 +43,7 @@ in). Below the bar the verdict becomes a memory lesson instead of a padded
 skill — the padding is what used to let a one-sentence rule ship with every
 heading present. `amend_trigger` carries no body, so it must ship the target's
 current body through: normalizing the empty one wrote placeholders over a real
-skill on approval.
+skill when it was applied.
 
 `npm run check:skills` runs this same loader over the bundled tree. A file it
 would skip at discovery, a frontmatter `name` that disagrees with its
@@ -55,8 +55,11 @@ catalogue.
 
 Every mutation on the skills surface protects content first:
 
-- `skill_create`, `skill_patch` and `deleteSkill` refuse bundled skills; edits
-  go through a proposal and an approval.
+- `skill_create`, `skill_patch` and `deleteSkill` refuse bundled skills. Learned
+  creates and patches are filed as proposals and, with autonomy on (the default),
+  applied by the independent reviewer through `harness_rails` in the same pass —
+  no human step. Destructive kinds (delete, retire, archive, config) still wait
+  for a human.
 - delete and patch snapshot through the rollback store; `restoreSkill` brings a
   deleted skill back.
 - `install_pack`'s pack-owned reinstall and revision cleanup, and

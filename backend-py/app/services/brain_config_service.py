@@ -307,8 +307,9 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # ARMED BY DEFAULT (was OFF). This is the only positive trigger in the
     # learning loop — every other pass starts from something going wrong — so
     # with it off, a session that went well was never read by anything. It costs
-    # one model call per pass over one session, and it writes proposals, not
-    # facts: the skill doors still file to the inbox and a human still decides.
+    # one model call per pass over one session. Memory verdicts write straight
+    # to the store; skill verdicts go through the reviewer + rails, which apply
+    # low-risk creates/patches without a human and hold only the rest.
     ('memoryReview', 'memory_review', True, 'bool'),
     # Second context-relief route (rotate onto a fresh handoff note instead of
     # stacking another summary). Off: it re-anchors what the provider cache sees
@@ -386,14 +387,12 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # M7 item 3: optional cheap model for session titling. Empty string =
     # fall back to the turn's own model (existing behavior).
     ('titleModel', 'title_model', '', 'str'),
-    # Part 16/17 skillLearning: off = no promotion judge; extract-only
-    # (ship default) = mining + promote proposals; full = also draft skill
-    # bodies. Governs harness_promote.run_promotion_pass.
-    # 'propose' is the shipped default: the distiller's create/amend verdicts
-    # already end at save_proposal (they return 'proposal-filed' and never write
-    # a SKILL.md), so admitting this mode lets lessons reach the inbox without
-    # introducing any new apply path. 'full' remains the mode where a skill
-    # draft is treated as trustworthy enough to act on; 'off' still stops the
+    # Part 16/17 skillLearning: off = no promotion judge; extract-only = no
+    # skill drafting; full = drafts skill bodies. Governs
+    # harness_promote.run_promotion_pass.
+    # 'propose' is the shipped default: the distiller drafts and files a
+    # proposal, and with skillAutonomy on the independent reviewer applies it
+    # through the rails in the same background pass. 'off' still stops the
     # pass before a verdict is applied.
     ('externalSkillRoots', 'external_skill_roots', '', 'str'),
     ('skillLearning', 'skill_learning', 'propose', 'str'),
@@ -401,25 +400,29 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # (empty = fall back to the background-review memory model, then the
     # titler resolver order — keyless gateways keep working).
     ('skillLearningJudgeModel', 'skill_learning_judge_model', '', 'str'),
-    # Item 14 — the autonomy switch and its two rails. OFF is the shipped
-    # default, and `harness_rails.autonomy_enabled()` is the only reader, so
-    # "off" cannot mean two things in two files. The rate keys are read by the
-    # same module; a key that the API could not PUT would be a rail nobody could
-    # move, which is the budgetSoftUsd mistake (fieldTable entry, missing from
-    # numKeys, every PUT naming it rejected).
-    ('skillAutonomy', 'skill_autonomy', False, 'bool'),
+    # Item 14 — the autonomy switch. ON is the shipped default: a learned
+    # skill write is the same trust class as a memory write (which has always
+    # been direct), and the reference harnesses put no human between the agent
+    # and its own skill store. The rails are the automatic gate; destructive
+    # kinds (delete, retire, archive, config) stay human-only in harness_rails.
+    # `harness_rails.autonomy_enabled()` is the only reader, so "off" cannot
+    # mean two things in two files.
+    ('skillAutonomy', 'skill_autonomy', True, 'bool'),
     # Shadow mode: the reviewer decides and the run records what it WOULD have
     # written, with no write at all. It is a rehearsal of the decision, never a
     # way to perform one — `skillAutonomy` remains the master, and the rails are
     # consulted before the shadow answer is given.
     ('skillAutonomyShadow', 'skill_autonomy_shadow', False, 'bool'),
     # Which kinds the switch actually automates, selected WITHIN the code's
-# allow-list. Defaults to skill_patch alone: editing a skill the user already
-# accepted is a smaller step than inventing a new instruction that never
-# existed, so a create stays on review until it is asked for.
-    ('autonomyKinds', 'autonomy_kinds', 'skill_patch', 'str'),
+    # allow-list. Both low-risk skill writes: creating a skill is the whole
+    # point of the learning loop, and patching one is the smaller step.
+    ('autonomyKinds', 'autonomy_kinds', 'skill_create,skill_patch', 'str'),
     ('autoApplyPerDay', 'auto_apply_per_day', 2, 'num'),
-    ('autonomyBurnInCount', 'autonomy_burn_in_count', 5, 'num'),
+    # Burn-in counts PRIOR auto-applies from the ledger. A fresh install has
+    # none, so a positive value would hold every proposal forever (human
+    # approvals are deliberately not recorded as auto-applies). 0 = off; set it
+    # only on an install that already has an auto-apply history to watch.
+    ('autonomyBurnInCount', 'autonomy_burn_in_count', 0, 'num'),
     # Part 16 cost gates: tier-2 escalations per day and the max fraction of
     # scored episodes flagged to tier 2 (episode_miner.flag_top_slice).
     ('escalationBudgetPerDay', 'escalation_budget_per_day', 2, 'num'),

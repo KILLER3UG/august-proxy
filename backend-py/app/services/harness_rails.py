@@ -6,9 +6,11 @@ the reviewer's own verdict is not part of it — a KEEP is necessary, never
 sufficient, which is why a proposal built from fetched content is held even when
 the reviewer approved it.
 
-Autonomy ships OFF (``skillAutonomy``), so with the shipped config every answer
-here is ``autonomy-off``. The rails exist before the switch is worth turning on
-so that arming it is a decision about a rate, not about safety.
+Autonomy ships ON (``skillAutonomy``): a learned create/patch is applied by the
+reviewer after these rails, with no human in the loop. Destructive kinds stay
+human-only, and every rail here can still hold a write for review when it names
+a real risk (unsafe content, untrusted evidence, a retirement attached to the
+patch).
 
 Three properties this module keeps:
 
@@ -124,9 +126,9 @@ def armed_kinds() -> frozenset[str]:
 
     Intersected with :data:`AUTO_APPLIABLE_KINDS` rather than trusted, so no
     config value can widen what may be automated — the allow-list is code, not
-    a preference. The shipped default is `skill_patch` alone: editing a skill
-    the user already accepted is a smaller step than inventing an instruction
-    that never existed.
+    a preference. The shipped default arms both ``skill_create`` and
+    ``skill_patch``: creating a skill is the learning loop's whole purpose, and
+    patching one is the smaller step.
     """
     raw = str(_read_config().get('autonomyKinds') or '')
     wanted = {k.strip().lower() for k in raw.split(',') if k.strip()}
@@ -260,8 +262,10 @@ def rail_trace(row: dict[str, Any] | None) -> list[dict[str, Any]]:
             f'this exact finding was already applied and reverted within '
             f'{PROBATION_COOLDOWN_DAYS} days — it stays a human decision',
         )),
-        # Burn-in before the rate rails: it watches the machinery on their
-        # behalf, so it must not be able to hide behind a limit.
+        # Burn-in counts prior auto-applies, so it can only start once an
+        # install already has a history; the shipped default is 0 (off). A
+        # positive value is for an install choosing to watch a known history,
+        # never a bootstrap requirement — a fresh ledger can never satisfy it.
         ('burn-in', lambda: None if burnIn <= 0 or len(applied) >= burnIn else _refuse(
             'burn-in',
             f'burn-in is watching the first {burnIn} clean changes '

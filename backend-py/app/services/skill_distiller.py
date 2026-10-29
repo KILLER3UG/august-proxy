@@ -14,9 +14,11 @@ Wiring:
     server-side path `remember` uses; consolidation-deduped; human-deletable
     in the Memory UI.
   * ``create_skill`` /
-    ``amend_trigger``   → harness_self_improve.save_proposal — the existing
-    human-gated queue. Bodies normalize through _ensure_canonical_body at
-    PROPOSE time so reviewers see the final shape.
+    ``amend_trigger``   → harness_self_improve.save_proposal — the proposal
+    queue. With skillAutonomy on, the independent reviewer applies it through
+    the rails in the same pass; destructive kinds still wait for a human.
+    Bodies normalize through _ensure_canonical_body at PROPOSE time so
+    reviewers see the final shape.
   * ``amend_body``      → gated on the precision ship bar (≥0.8 on ≥30
     hand-labeled episodes, test_distiller_precision.py); until met the
     verdict downgrades to a proposal-with-note (OQ 2 recommended default:
@@ -1178,9 +1180,9 @@ def _apply_verdict_body(
     episodeId = verdict.get('episode')
 
     # extract-only is the mode that never lets a skill verdict become a draft.
-    # 'propose' files the verdict into the inbox and stops — those branches end
-    # at save_proposal and return 'proposal-filed', so nothing here applies a
-    # change; the human still decides through decide_proposal.
+    # 'propose' files the verdict as a proposal — those branches end at
+    # save_proposal and return 'proposal-filed'; with autonomy on the reviewer
+    # applies it through the rails, and with autonomy off it waits for a human.
     if action in ('create_skill', 'amend_trigger', 'amend_body') and mode == 'extract-only':
         return 'skipped-extract-only'
 
@@ -1348,7 +1350,7 @@ def _apply_verdict_body(
                 proposal=(f'{action}: {name}' + (f' — {description}' if description else ''))[:4000],
                 rollback=(
                     f'skill_delete proposal for {name!r} or hand-delete the skill dir; '
-                    'the draft never took effect until a human approved it.'
+                    'the draft never took effect until it was applied.'
                 ),
                 kind='skill_create' if action == 'create_skill' else 'skill_patch',
                 expected_metric='recurrence stops within 30 days of approval',
@@ -1778,6 +1780,26 @@ def _archiveWindow(session_id: str, reviewed: int) -> tuple[str, int]:
     return '\n'.join(lines), consumed
 
 
+def _auto_review_filed() -> None:
+    """Let the reviewer act on this pass's proposals now, when autonomy is on.
+
+    The 6-hour reviewer job would otherwise be the first thing to see them, so
+    a skill learned at 09:00 could sit in the inbox until 12:00. Running the
+    same pass here applies it while the background job is still open. Never
+    raises: a reviewer outage must not fail the learning pass.
+    """
+    try:
+        from app.services.harness_rails import autonomy_enabled
+
+        if not autonomy_enabled():
+            return
+        from app.services.harness_self_improve import run_reviewer_pass
+
+        run_reviewer_pass(limit=5)
+    except Exception:
+        logger.debug('immediate reviewer pass failed', exc_info=True)
+
+
 def run_review_pass() -> dict[str, Any]:
     """One conversation review. Never raises; a failed judge call costs a
     cooldown, exactly as the episode pass does."""
@@ -1841,6 +1863,7 @@ def run_review_pass() -> dict[str, Any]:
         label = apply_verdict(v, f'review:{sessionId}', mode, scope=scope)
         results.append({'episode': v.get('episode'), 'label': label})
     _setReviewCursor(sessionId, newest, _ARCHIVE_CURSOR_KEY if fromArchive else _REVIEW_CURSOR_KEY)
+    _auto_review_filed()
     return {
         'session': sessionId,
         'reviewed': len(applicable) + len(dropped),
@@ -1943,6 +1966,8 @@ def run_distiller_pass(dryRun: bool = False) -> dict[str, Any]:
                 len(dropped),
                 len(applicable) + len(dropped),
             )
+    if not dryRun:
+        _auto_review_filed()
     return {
         'verdicts': len(results),
         'dropped': sum(1 for r in results if r.get('label') == 'dropped-invalid'),

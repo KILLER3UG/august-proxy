@@ -1,12 +1,14 @@
-/* ── Review inbox — every pending human decision, one queue ─────────── */
+/* ── Review inbox — the decisions that still need a human ─────────────── */
 /* Merges the two review queues the learning loop writes into:           */
 /* harness proposals (self-improve / distiller / promotion) and memory  */
-/* proposals (OQ5 preference-retire). NOTHING is applied automatically: */
-/* a human approves (runs the deterministic applier), rejects, or       */
-/* dismisses each row. Batch decisions carry a reopen undo (side-effect */
-/* -free decisions only — applied rows would need a real revert).       */
-/* Every decision lands in the harness ledger; both stores' pending     */
-/* counts feed the settings-rail badge via /inbox/count.                */
+/* proposals (OQ5 preference-retire). With autonomy on (the default),   */
+/* low-risk skill creates/patches are applied by the independent         */
+/* reviewer before they reach this page; what remains is destructive or */
+/* rails-held work: a human approves (runs the deterministic applier),  */
+/* rejects, or dismisses each row. Batch decisions carry a reopen undo   */
+/* (side-effect-free decisions only — applied rows need a real revert).  */
+/* Every decision lands in the harness ledger; both stores' pending      */
+/* counts feed the settings-rail badge via /inbox/count.                 */
 
 import { useCallback, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -232,7 +234,8 @@ function AutoChangeHistory() {
 }
 
 /**
- * The review queue: proposals the learning loop filed and a human must decide.
+ * The review queue: proposals the learning loop filed that still need a
+ * human — destructive kinds, or skill writes the rails held back.
  *
  * `scope` is why this one component serves three doors. The inbox used to be a
  * Settings section of its own; it is now a sub-section of the two surfaces whose
@@ -485,7 +488,9 @@ export function HarnessImprovementsSection({
             {scope === 'memory'
               ? 'Facts the learning loop wants to retire — nothing leaves memory until you approve it.'
               : scope === 'skills'
-                ? 'Skills and settings the learning loop wants to write — nothing applies until you approve it.'
+                ? autonomyOn
+                  ? 'Low-risk skill creates and patches auto-apply and appear in the autonomy history; destructive changes wait here.'
+                  : 'Skills and settings the learning loop wants to write — nothing applies until you approve it.'
                 : autonomyOn
                   ? 'Proposals and memory retirements for a human to decide — autonomous apply is on, and every change below is undoable.'
                   : 'Proposals and memory retirements for a human to decide — nothing applies until you approve it.'}

@@ -1,9 +1,10 @@
 /* ── LearningPanel ─────────────────────────────────────────────────────── */
 /* The Learning section inside the Skills hub. Metric
  * header from the curator report, flagged episodes with fingerprint +
- * rubric score, distiller drafts inline with approve/reject (routed through
- * the existing human-gated proposals queue), and resolution counters.
- * Everything is read-only until a deliberate approve. */
+ * rubric score, distiller drafts inline with approve/reject (low-risk skill
+ * creates/patches auto-apply through the rails; what stays here is destructive
+ * or rails-held work), and resolution counters. Everything is read-only until
+ * a deliberate approve. */
 
 import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -683,7 +684,7 @@ export function LearningPanel({
             </p>
             {!draftsQ.data?.proposals?.length ? (
               <p className="text-xs text-muted-foreground">
-                No open drafts. The judge only drafts after human review gates pass.
+                No open drafts. The judge only drafts after its review gates pass.
               </p>
             ) : (
               /* The SAME treatment the Review Inbox gives a proposal:

@@ -1329,13 +1329,12 @@ async def _ask_reviewer(
 def run_reviewer_pass(limit: int = 5, dry_run: bool = False) -> dict[str, Any]:
     """Run the independent reviewer over open skill proposals.
 
-    With autonomy off — the shipped state — this records a one-line verdict on
-    each proposal and never calls :func:`decide_proposal`; every proposal stays
-    open for the human. With `skillAutonomy` on, a usable verdict is handed to
+    With autonomy on — the shipped state — a usable verdict is handed to
     :func:`review_proposal`, which is where item 14's rails stand, so a KEEP
-    becomes a write only for a proposal a human would also have been allowed to
-    auto-apply. `applied` counts those writes; `held` counts verdicts the rails
-    kept in the inbox.
+    becomes a write for every proposal the rails allow. With autonomy off the
+    pass records the same verdict as advice and decides nothing; every proposal
+    stays open for the human. `applied` counts auto-applies; `held` counts
+    verdicts the rails kept in the inbox.
 
     Every unusable reviewer is recorded as 'unavailable' with its cause, because
     a silent skip is how thirteen judge failures hid for a month. An

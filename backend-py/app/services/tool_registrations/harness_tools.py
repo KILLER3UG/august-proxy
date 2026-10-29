@@ -41,7 +41,9 @@ async def _propose(**kwargs: object) -> str:
         return f'Error: filing proposal failed: {exc}'
     return (
         f"Proposal {row['id']} filed (kind={row['kind']}, status=open). "
-        'A human approves or rejects it — nothing is applied automatically.'
+        'Low-risk skill creates/patches are applied automatically after an '
+        'independent review and the safety rails; destructive or config changes '
+        'wait for the user.'
     )
 
 
@@ -58,11 +60,13 @@ def register() -> None:
     )
     tool_registry.register(
         'harness_propose',
-        'File a harness-improvement proposal for human review. Args: problem, evidence, proposal, '
+        'File a harness-improvement proposal. Args: problem, evidence, proposal, '
         'rollback, kind (brain_config|skill_create|skill_patch|skill_delete|tool_bucket|tool_description|'
-        'flow_map|observation|promote), expectedMetric?, payload?. You apply nothing — approval runs a '
-        'deterministic applier. (promote proposals are judge-filed by the scheduled cross-project pass; '
-        'a model-filed promote payload is still human-gated before anything applies.)',
+        'flow_map|observation|promote), expectedMetric?, payload?. Low-risk skill creates/patches are '
+        'applied automatically after an independent review and the safety rails; destructive or config '
+        'changes wait for the user. You apply nothing — a deterministic applier runs after review. '
+        '(promote proposals are judge-filed by the scheduled cross-project pass; a model-filed promote '
+        'payload is still held for the user before anything applies.)',
         _propose,
         {
             'type': 'object',
