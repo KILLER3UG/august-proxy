@@ -6,7 +6,27 @@ This is the committed handoff. Read it before starting work; update it at the
 end of a round. Keep it to one page: what shipped, what is next, what is
 waiting on the owner, and how to resume.
 
-## This round — repository orientation
+## This round — the harness stops asking
+
+- **Learned skills apply on their own.** `skillAutonomy` ships on for
+  `skill_create`/`skill_patch`, the burn-in rail no longer deadlocks a fresh
+  install, and the reviewer runs in the same pass instead of on the six-hour
+  tick. Destructive kinds (delete, retire, archive, config) still wait for a
+  human.
+- **A Claude export moves in whole.** `POST /api/august/memory/import-claude`
+  reads the folder or `.zip`, maps `profile.md`/`preferences.md` onto the
+  always-in-context lanes and merges each bullet against `facts`
+  ([memory.md](agent/memory.md)).
+- **Repo instructions load without a consent click.** `.aug/skills` follows the
+  `projectSkills` toggle like the repo's own `AGENTS.md`; the per-workspace
+  skill-trust store, its routes and its banner are gone. Hook trust stays — a
+  hook is unsandboxed shell. `list_skills` no longer cuts the trigger at 60
+  chars.
+- Not yet done: memory **retirement** proposals still need a human, repo hooks
+  still have no Settings door, and `august-bench --memory-state on|off` exists
+  but has no recorded two-arm result for what the loop now writes by itself.
+
+## Previous round — repository orientation
 
 - `AGENTS.md` is a short contract (~120 lines) with a read-before-touching
   table; the detail moved to [`docs/agent/`](agent/README.md).
