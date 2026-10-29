@@ -21,13 +21,9 @@ _BRAINStores: dict[str, dict[str, object]] = {
         'search_cols': ['key', 'value'],
         'label': 'key-value memory store',
     },
-    'heuristics': {
-        'table': 'learned_heuristics',
-        'fts': None,
-        'columns': 'id, rule, source, category, created_at, updated_at',
-        'search_cols': ['rule', 'source'],
-        'label': 'legacy learned rules (no live writer — deletable)',
-    },
+    # 'heuristics' (learned_heuristics) RETIRED 2026-10-30: no live writer ever
+    # existed; the table is dropped once empty by memory_schema on old DBs.
+    # Queries for it now fall through to the unknown-store error below.
     'facts': {
         'table': 'facts',
         'fts': None,
@@ -106,7 +102,6 @@ _BRAINStores: dict[str, dict[str, object]] = {
 _STORE_ALIASES: dict[str, str] = {
     'exam_attempts': 'examAttempts',
     'exam-attempts': 'examAttempts',
-    'learned_heuristics': 'heuristics',
     'semantic_facts': 'facts',
     'kv': 'memory',
     'memory_store': 'memory',
@@ -903,9 +898,7 @@ def brain_index_snippet(scope: str = 'global') -> str:
 
 
 # Per-store writable field whitelists for brain_update_row (B5). Stores absent
-# here are not inline-editable from the settings UI; heuristics is a legacy
-# store with no live writer — rows are deletable (see _ROW_DELETABLE) but not
-# editable.
+# here are not inline-editable from the settings UI.
 _ROW_EDIT_FIELDS: dict[str, frozenset[str]] = {
     # `status` is whitelisted for exactly one writer: the Memory UI's
     # "Restore" on a retired row (status='active'; brain_update_row refuses
@@ -915,7 +908,7 @@ _ROW_EDIT_FIELDS: dict[str, frozenset[str]] = {
     'memory': frozenset({'value'}),
     'timeline': frozenset({'event_summary', 'category'}),
 }
-_ROW_DELETABLE: frozenset[str] = frozenset({'facts', 'memory', 'timeline', 'heuristics'})
+_ROW_DELETABLE: frozenset[str] = frozenset({'facts', 'memory', 'timeline'})
 
 
 def _store_id_column(store: str) -> str:
@@ -993,7 +986,7 @@ def brain_delete_row(store: str, row_id: object) -> dict[str, object]:
     """Delete one row from a brain store for the settings UI (B5).
 
     FTS-safe: memory_store carries AFTER DELETE sync triggers;
-    facts/timeline/heuristics have no FTS table.
+    facts/timeline have no FTS table.
     """
     conn = _conn()
     resolved = _resolve_store(store)
@@ -1052,12 +1045,10 @@ def brain_update_row(store: str, row_id: object, patch: dict[str, object]) -> di
     """Update whitelisted fields of one brain-store row for the settings UI (B5).
 
     Only fields in the per-store whitelist are applied; unknown or read-only
-    fields are ignored. heuristics is read-only legacy (403).
+    fields are ignored.
     """
     conn = _conn()
     resolved = _resolve_store(store)
-    if resolved == 'heuristics':
-        return {'ok': False, 'status': 403, 'error': "store 'heuristics' is read-only legacy"}
     # `status` is whitelisted for exactly one direction: LIFTING retirement.
     # Consolidation's proposal flow stays the only writer of 'retired' /
     # 'superseded' — the settings door must never park a row the model is

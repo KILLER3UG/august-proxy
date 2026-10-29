@@ -26,8 +26,6 @@ DEFAULT_BOOT: dict[str, bool] = {
 }
 
 DEFAULT_FEATURES: dict[str, bool] = {
-    'execution_state': True,
-    'scratchpad': True,
     'tool_guardrails': True,
     'progressive_disclosure': True,
     'prompt_caching': True,

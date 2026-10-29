@@ -49,7 +49,6 @@ class ConsolidationSummaryDict(TypedDict, total=False):
     promoted: int
     deleted_stale: int
     archived: int
-    heuristics: int
     duration_ms: int
     errors: list[str]
     pruned_expired: int

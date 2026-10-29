@@ -12538,7 +12538,7 @@
     },
     "/api/privacy/purge-memories": {
       "post": {
-        "description": "Erase the agent's memory of you: facts, heuristics, proposals, the\nepisodic timeline, the learning corpus (episodes, failure fingerprints,\nturn outcomes), and memory-adjacent KV residue.\nThe KV purge keeps only the live agent registry/jobs keys.",
+        "description": "Erase the agent's memory of you: facts, proposals, the\nepisodic timeline, the learning corpus (episodes, failure fingerprints,\nturn outcomes), and memory-adjacent KV residue.\nThe KV purge keeps only the live agent registry/jobs keys.",
         "operationId": "purgeMemories_api_privacy_purge_memories_post",
         "responses": {
           "200": {

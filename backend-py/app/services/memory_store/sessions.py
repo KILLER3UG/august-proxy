@@ -528,8 +528,6 @@ _SESSION_CHILD_TABLES: tuple[str, ...] = (
     'proposals',
     'lifecycle',
     'usage_events',
-    'execution_state',
-    'scratchpad',
     'tool_guardrail_log',
     'blackboard',
     # Learning rows carry raw user-message excerpts keyed by

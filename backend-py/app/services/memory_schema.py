@@ -167,15 +167,9 @@ _CORE_SCHEMA_SQL = """
             created_at TEXT DEFAULT (datetime('now'))
         );
 
-        CREATE TABLE IF NOT EXISTS learned_heuristics (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            rule TEXT NOT NULL,
-            source TEXT DEFAULT '',
-            category TEXT DEFAULT 'general',
-            confidence REAL DEFAULT 0.5,
-            created_at TEXT DEFAULT (datetime('now')),
-            updated_at TEXT DEFAULT (datetime('now'))
-        );
+        -- learned_heuristics RETIRED (2026-10-30): the CREATE is gone; old DBs
+        -- converge via _drop_empty_legacy_heuristics (kept one release). No
+        -- live writer ever existed.
 
         -- auto_memories RETIRED (Part 21 OQ1 ruling, 2026-09-04): the table
         -- + its FTS + triggers are no longer created. Migration 033 drops
@@ -534,13 +528,6 @@ def _create_core_schema_locked(conn: sqlite3.Connection) -> None:
             """
             )
     conn.commit()
-    try:
-        # auto_memories column migration removed.
-        hcols = [r['name'] for r in conn.execute('PRAGMA table_info(learned_heuristics)').fetchall()]
-        if 'confidence' not in hcols:
-            conn.execute('ALTER TABLE learned_heuristics ADD COLUMN confidence REAL DEFAULT 0.5')
-    except Exception as exc:
-        logging.warning('heuristics column migration failed: %s', exc)
 
 
 _GOAL_SCHEMA_SQL = """
@@ -605,28 +592,9 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
         )
     """
     )
-    # Tables probed by cognitive health selfcheck — must exist when features are on.
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS execution_state (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT,
-            state_key TEXT NOT NULL,
-            state_value TEXT,
-            updated_at TEXT DEFAULT (datetime('now'))
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS scratchpad (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT,
-            content TEXT,
-            updated_at TEXT DEFAULT (datetime('now'))
-        )
-        """
-    )
+    # execution_state / scratchpad RETIRED (2026-10-30): both moved to session
+    # working memory long ago and never had an INSERT/SELECT against the
+    # tables; migration 060 drops them.
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS tool_guardrail_log (
@@ -1284,7 +1252,6 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             # .sql file is never a "duplicate column name" abort.
             ensure_column(conn, 'blackboard', 'workspace_path', "TEXT DEFAULT ''")
             ensure_column(conn, 'blackboard', 'folder_id', "TEXT DEFAULT ''")
-            ensure_column(conn, 'learned_heuristics', 'confidence', 'REAL DEFAULT 0.5')
             # Per-turn TTFT + prompt-cache telemetry.
             ensure_column(conn, 'turn_outcomes', 'ttft_ms', 'INTEGER DEFAULT 0')
             ensure_column(conn, 'turn_outcomes', 'cache_hit_tokens', 'INTEGER DEFAULT 0')

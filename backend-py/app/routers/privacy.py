@@ -7,12 +7,13 @@ to summarize, export, and delete that data. Every destructive action is
 opt-in and returns the number of rows it removed.
 
 Tables (from app/services/memory_schema.py + migrations):
-  facts, learned_heuristics, proposals, episodic_timeline,
+  facts, proposals, episodic_timeline,
   memory_store (system KV — memory purge keeps only live agent keys),
   sessions, messages,
   session_topics, usage_events, lifecycle (audit), config_audit,
-  brain_events, tool_guardrail_log, consolidation_audit,
-  friction_events, routing_evidence, subagent_runs
+  tool_guardrail_log, routing_evidence, subagent_runs
+  (learned_heuristics, brain_events, friction_events, consolidation_audit
+  were subtracted 2026-10-30 — dead tables, see migration 060.)
 """
 
 from __future__ import annotations
@@ -35,7 +36,6 @@ router = APIRouter(prefix='/api/privacy')
 # longer exists; the export shape drops the key along with the store.
 _COUNT_TABLES = [
     ('facts', 'facts'),
-    ('learned_heuristics', 'heuristics'),
     ('proposals', 'proposals'),
     ('episodic_timeline', 'timeline'),
     ('sessions', 'sessions'),
@@ -55,6 +55,9 @@ _COUNT_TABLES = [
 # facts about the user after the purge.
 _MEMORY_TABLES = [
     'facts',
+    # learned_heuristics: retired 2026-10-30 (no live writer); kept in the
+    # purge list one release so an old DB with residual rows can still empty
+    # out and let memory_schema._drop_empty_legacy_heuristics fire.
     'learned_heuristics',
     'proposals',
     'episodic_timeline',
@@ -77,13 +80,12 @@ _MEMORY_TABLES = [
 _KV_KEEP_KEYS = ('agent_registry',)
 
 # Tables cleared by the "clear activity logs" action (telemetry/audit).
+# brain_events / consolidation_audit / friction_events were subtracted
+# 2026-10-30 (dead tables, migration 060) — the wipe lists no longer name them.
 _LOG_TABLES = [
     'lifecycle',
     'config_audit',
-    'brain_events',
     'tool_guardrail_log',
-    'consolidation_audit',
-    'friction_events',
     'refine_ledger',
 ]
 
@@ -124,7 +126,6 @@ async def privacyExport():
         'exportedAt': time.time(),
         'app': 'august-proxy',
         'facts': _select_all(conn, 'facts'),
-        'heuristics': _select_all(conn, 'learned_heuristics'),
         'timeline': _select_all(conn, 'episodic_timeline'),
         'usageByModel': _usage_by_model(conn),
         'sessions': _select_all(conn, 'sessions'),
@@ -186,7 +187,7 @@ def _delete_rows(conn, tables: list[str]) -> dict[str, int]:
 
 @router.post('/purge-memories')
 async def purgeMemories():
-    """Erase the agent's memory of you: facts, heuristics, proposals, the
+    """Erase the agent's memory of you: facts, proposals, the
     episodic timeline, the learning corpus (episodes, failure fingerprints,
     turn outcomes), and memory-adjacent KV residue.
     The KV purge keeps only the live agent registry/jobs keys."""

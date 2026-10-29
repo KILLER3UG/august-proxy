@@ -74,6 +74,12 @@ waiting on the owner, and how to resume.
 4. **Active plans** — the Signal Desk UI port, goal environments, and
    self-modification autonomy (see [`DOCUMENTATION.md`](DOCUMENTATION.md)
    §Active plans).
+5. **DB retention doors (backlog, owner-noted 2026-10-30).** Four live tables
+   have no cleanup path: `subagent_runs` (worst — no TTL and missed by both
+   privacy wipes), `harness_jobs` (no TTL), `routing_evidence` (no cleanup,
+   not in the privacy lists), `decision_ledger` (expired rows are only
+   status-flipped, never deleted). Give each a retention/privacy door; none
+   is scheduled.
 
 ## Open owner decisions
 

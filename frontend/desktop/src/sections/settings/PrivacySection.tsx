@@ -24,7 +24,6 @@ import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 
 interface PrivacyCounts {
   facts: number;
-  heuristics: number;
   proposals: number;
   timeline: number;
   sessions: number;
@@ -190,7 +189,7 @@ export function PrivacySection() {
         <>
           {/* What's stored */}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard icon={Brain} label="Memories" value={String((c.facts ?? 0) + (c.heuristics ?? 0))} />
+            <StatCard icon={Brain} label="Memories" value={String(c.facts ?? 0)} />
             <StatCard icon={MessagesSquare} label="Messages" value={String(c.messages ?? 0)} />
             <StatCard icon={FileClock} label="Audit events" value={String(c.auditEvents ?? 0)} />
             <StatCard icon={Camera} label="Screenshots" value={String(c.observations ?? 0)} />
@@ -213,7 +212,7 @@ export function PrivacySection() {
             <ActionRow
               icon={Eraser}
               title="Purge memory"
-              description={`Erase ${(c.facts ?? 0) + (c.heuristics ?? 0) + (c.timeline ?? 0) + (c.proposals ?? 0)} memory entries — facts, heuristics, proposals, timeline — plus every KV "Memories" note (only the live agent registry/jobs keys survive). System config is kept.`}
+              description={`Erase ${(c.facts ?? 0) + (c.timeline ?? 0) + (c.proposals ?? 0)} memory entries — facts, proposals, timeline — plus every KV "Memories" note (only the live agent registry/jobs keys survive). System config is kept.`}
               buttonLabel="Purge"
               destructive
               pending={purgeMemories.isPending}
