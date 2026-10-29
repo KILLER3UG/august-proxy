@@ -850,6 +850,13 @@ async def executeSubAgent(
     # key an id-less child charges its fleet budget against.
     parentBudgetKey = str(currentSessionId.get() or '')
     token = currentSessionId.set(getattr(session, 'id', 'default'))
+    # Workers inherit the parent's clone-gate stance: a subagent spawned by an
+    # unattended run is itself unattended, whatever its own session object
+    # claims (the child session is a stub and carries no headless flag).
+    from app.services.clone_guard import currentUnattended as _cloneUnattended
+    from app.services.clone_guard import is_unattended_session as _clone_is_unattended
+
+    _cloneUnattended.set(_clone_is_unattended(session))
     # Task-scoped id for per-agent state routing (todo lists). ContextVars are
     # copied per asyncio task, so concurrent workers each see their OWN value
     # — unlike the session-attribute hack below, which races (the last

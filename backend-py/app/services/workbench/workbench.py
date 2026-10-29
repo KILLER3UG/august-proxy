@@ -6847,6 +6847,24 @@ def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, ob
                 'deleting other sessions is allowed.'
             )
 
+    # Stage-2 clone gate: unattended runs do not touch the self-edit clone.
+    # Mode-independent (Full access included) — there is no human to click
+    # "Restart to apply" in any mode. File tools are closed inside bind_path;
+    # this is the shell half. run_command executes in the session workspace,
+    # so a clone-rooted session is denied outright and a command naming a
+    # clone path is denied by token match — best-effort by nature, which the
+    # receipt says plainly. run_command's own ``cwd`` kwarg is ignored by its
+    # executor, so the workspace IS the effective cwd.
+    if toolName in _COMMAND_TOOLS:
+        from app.services.clone_guard import shell_command_denial
+
+        _cloneDenial = shell_command_denial(
+            as_str(args.get('command'), ''),
+            as_str(getattr(session, 'workspacePath', '') or '', '') or None,
+        )
+        if _cloneDenial:
+            return _cloneDenial
+
     # Full Access: never queue Ask/Edit permission banners (including run_command).
     if mode == 'full':
         return None

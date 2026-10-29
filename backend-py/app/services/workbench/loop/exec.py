@@ -80,6 +80,13 @@ async def _executeTool(
 
     token = currentSessionId.set(session.id)
     toolToken = currentToolUseId.set(toolUseId or '')
+    from app.services.clone_guard import currentUnattended as _cloneUnattended
+    from app.services.clone_guard import is_unattended_session as _clone_is_unattended
+
+    # No reset token: the ContextVar must stay set for the whole tool dispatch,
+    # and the turn task ends before any sibling turn could observe the stale
+    # value (ContextVars are copied per asyncio task).
+    _cloneUnattended.set(_clone_is_unattended(session))
     try:
         from app.services.harness_mode import is_mutating_tool
         from app.services.tools.mcp_client import executeMcpToolCall, isMcpToolName

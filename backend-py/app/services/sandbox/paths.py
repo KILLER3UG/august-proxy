@@ -322,6 +322,12 @@ def bind_path(path: str, workspace: str | None, *, for_write: bool = False) -> t
             'This path is protected in every sandbox mode, including Full access.'
         )
 
+    from app.services.clone_guard import clone_write_denial
+
+    clone_denial = clone_write_denial(str(resolved), for_write=for_write)
+    if clone_denial:
+        return None, clone_denial
+
     if root is None:
         # No workspace configured: reads resolve freely (shell parity), but
         # WRITES are gated to the system temp area — otherwise a session

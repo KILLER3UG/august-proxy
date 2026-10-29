@@ -331,6 +331,19 @@ async def lifespan(app: FastAPI):
     # consolidation chain incl. distiller + refine). Auto-files proposals,
     # never applies anything. Replaces the two independent loops that used
     # to start here and in cognitive_boot.
+    # Stage-2 obligation journal: undo every uncommitted clone edit from its
+    # recorded pre-edit bytes. INTERIM placement — Stage 3 moves this to the
+    # out-of-tree launcher, because an edit that broke the Python import path
+    # cannot run in-tree recovery. The sweep is stdlib-only so that move is a
+    # cut-and-paste.
+    try:
+        from app.services.clone_journal import restore_pending
+
+        _sweep = restore_pending()
+        if _sweep.get('restored') or _sweep.get('failed'):
+            logger.info('Clone journal boot sweep: %s', _sweep)
+    except Exception:
+        logger.exception('Clone journal boot sweep failed (continuing)')
     try:
         from app.services.learning_scheduler import scheduler_loop
 

@@ -612,6 +612,20 @@ async def _writeFile(path: str, content: str, **_extra: object) -> str:
         return err or f'Error: Invalid path: {path}'
     try:
         filePath.parent.mkdir(parents=True, exist_ok=True)
+        # Stage-2 obligation journal: clone-source writes go through the
+        # journal (arm pre-edit bytes → temp+fsync+rename); everything else
+        # keeps the direct writer below.
+        from app.services import clone_guard as _clone_guard
+
+        if _clone_guard.is_clone_path(filePath):
+            from app.services import clone_journal
+
+            _journal_err = clone_journal.journal_write_bytes(
+                str(filePath), content.encode('utf-8')
+            )
+            if _journal_err:
+                return _journal_err
+            return f'Successfully wrote {len(content.encode("utf-8"))} bytes to {path}'
         import aiofiles
 
         # newline='' on purpose, matching edit_lines (which writes bytes for the
@@ -911,7 +925,20 @@ async def _editLines(
         joined = newline.join(lines)
         if hadTrailingNewline:
             joined += newline
-        filePath.write_bytes(joined.encode('utf-8'))
+        _payload = joined.encode('utf-8')
+        # Stage-2 obligation journal: clone-source edits route through the
+        # journal (arm pre-edit bytes → temp+fsync+rename); the direct writer
+        # below is untouched for every other path.
+        from app.services import clone_guard as _clone_guard_e
+
+        if _clone_guard_e.is_clone_path(filePath):
+            from app.services import clone_journal
+
+            _journal_err = clone_journal.journal_write_bytes(str(filePath), _payload)
+            if _journal_err:
+                return _journal_err
+        else:
+            filePath.write_bytes(_payload)
     except OSError as exc:
         return f'Error writing file: {exc}'
     # The read_file cache is keyed on the path, so a successful edit makes

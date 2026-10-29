@@ -233,7 +233,7 @@ _POLICY_FILE_NAMES = ('mcp-servers.json', 'automations.json', 'scheduled-jobs.js
 # human-readable view could install instruction-shaped content beside
 # the facts a person reads to audit it. The sanctioned writer is
 # `memory_store.mirror`, which is not behind this door.
-_AGENT_STATE_DIRS = ('harness_proposals', 'refine_store', 'memory')
+_AGENT_STATE_DIRS = ('harness_proposals', 'refine_store', 'memory', 'clone_journal')
 _AGENT_STATE_FILES = ('kanban.json',)
 
 # The durable memory itself. Writing it bypasses the proposal door, the retire
