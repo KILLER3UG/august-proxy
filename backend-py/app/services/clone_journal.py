@@ -208,10 +208,29 @@ def _set_state(marker_dir: Path, state: str, **extra: object) -> None:
 
 
 def commit(marker_id: str) -> None:
-    """Mark an applied marker as wanted — the boot sweep stops undoing it."""
+    """Mark an applied marker as wanted — the boot sweep stops undoing it.
+
+    A committed edit that sits ON TOP of an uncommitted edit of the same file
+    would be silently destroyed by the sweep restoring the earlier marker, so
+    commit promotes every earlier uncommitted marker that shares a path. IDs
+    are time-ordered, so ``name < marker_id`` is exactly "earlier".
+    """
     marker_dir = journal_root() / marker_id
-    if (marker_dir / _MANIFEST_NAME).exists():
-        _set_state(marker_dir, 'committed')
+    manifest = _read_manifest(marker_dir)
+    if manifest is None:
+        return
+    paths = {str(e.get('path') or '') for e in manifest.get('entries', [])}
+    _set_state(marker_dir, 'committed')
+    root = journal_root()
+    for other_dir in sorted(root.iterdir()):
+        if not other_dir.is_dir() or other_dir.name >= marker_id:
+            continue
+        other = _read_manifest(other_dir)
+        if not other or str(other.get('state') or 'armed') not in _UNDONE_STATES:
+            continue
+        other_paths = {str(e.get('path') or '') for e in other.get('entries', [])}
+        if other_paths & paths:
+            _set_state(other_dir, 'committed')
 
 
 def _restore_marker(marker_dir: Path, reason: str = '') -> bool:

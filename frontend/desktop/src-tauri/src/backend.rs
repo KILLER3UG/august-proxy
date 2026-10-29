@@ -927,6 +927,74 @@ fn resolvePython(app: &AppHandle) -> Option<PathBuf> {
     None
 }
 
+/// Stage-3 boot-time clone recovery (contract: src/clone_recovery.py, which
+/// is embedded here via include_str!). Runs the sweep from OUTSIDE the
+/// editable tree: the script is stdlib-only, never imports the app package,
+/// and is compiled into this binary, so a model edit that broke backend-py
+/// cannot suppress the undo of its own uncommitted changes. Best-effort by
+/// design — a sweep that fails or times out logs and lets boot continue,
+/// where the in-tree lifespan sweep in main.py is the second layer.
+const CLONE_RECOVERY_TIMEOUT_MS: u64 = 15_000;
+
+fn runCloneRecovery(python: &Path, data_dir: &Path) {
+    const RECOVERY_SCRIPT: &str = include_str!("clone_recovery.py");
+    let journal = data_dir.join("clone_journal");
+    if !journal.is_dir() {
+        return; // nothing was ever journaled — the common case, zero cost
+    }
+    let script = std::env::temp_dir().join("august-clone-recovery.py");
+    if let Err(e) = std::fs::write(&script, RECOVERY_SCRIPT) {
+        log::warn!("[backend] clone recovery skipped — cannot write script: {e}");
+        return;
+    }
+    // -I -S: isolated mode ignores PYTHONPATH, user site-packages and env —
+    // the sweep must not be able to load a single line of the tree it edits.
+    let script_arg = script.to_string_lossy().into_owned();
+    let data_arg = data_dir.to_string_lossy().into_owned();
+    let mut cmd = Command::new(python);
+    cmd.args(["-I", "-S", script_arg.as_str(), data_arg.as_str()])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    applyNoWindow(&mut cmd);
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(e) => {
+            log::warn!("[backend] clone recovery could not start: {e}");
+            return;
+        }
+    };
+    let deadline = std::time::Instant::now() + Duration::from_millis(CLONE_RECOVERY_TIMEOUT_MS);
+    let summary = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let mut out = String::new();
+                if let Some(mut stdout) = child.stdout.take() {
+                    use std::io::Read;
+                    let _ = stdout.read_to_string(&mut out);
+                }
+                break if status.success() {
+                    out.trim().to_string()
+                } else {
+                    format!("recovery exited with {status}")
+                };
+            }
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            _ => {
+                let _ = child.kill();
+                log::warn!("[backend] clone recovery timed out — boot continues");
+                return;
+            }
+        }
+    };
+    if summary.is_empty() {
+        log::info!("[backend] clone recovery ran (no summary printed)");
+    } else {
+        log::info!("[backend] clone recovery: {summary}");
+    }
+}
+
 fn resolvePythonBackend(app: &AppHandle) -> Option<PathBuf> {
     // Prefer writable AppData copy (after bootstrap).
     let runtime_main = runtimeBackendMain(app);
@@ -1625,6 +1693,17 @@ fn ensureRunningLocked(app: &AppHandle) -> bool {
                 let logDir = dataDir.join("logs");
                 let _ = std::fs::create_dir_all(&logDir);
                 let logPath = logDir.join("backend.log");
+
+                // Stage-3 boot-time recovery: undo every uncommitted clone
+                // edit from the journal's recorded bytes BEFORE the backend
+                // spawns — an edit that broke the Python import path cannot
+                // run in-tree recovery, so the decision lives HERE, in code
+                // compiled into the shell binary (include_str!: the model's
+                // hot edits cannot change recovery behavior until the shell
+                // is rebuilt, which is a human act). Best-effort: a failed
+                // sweep never blocks boot, and the in-tree lifespan sweep in
+                // main.py stays as the second layer.
+                runCloneRecovery(&python, &dataDir);
 
                 // LAN access: read the switch ONCE, here, and use it for
                 // both the bind address and the flag the backend is told
