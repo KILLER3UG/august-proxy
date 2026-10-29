@@ -244,6 +244,68 @@ def _stored_text(value: object) -> str:
     return str(value or '')
 
 
+#: The pre-write judge. Deliberately not the consolidation reviewer's prompt:
+#: that one reads the whole store and proposes retirements, this one has to
+#: decide, line by line, whether a line belongs in the store at all.
+_REVIEW_SYSTEM = (
+    'You decide what a personal AI assistant keeps as long-term memory. A line is worth keeping '
+    'when it will still be true and useful in a future chat: who the user is, a standing '
+    'preference, a constraint or decision about a project, and the reason for it. A line is not '
+    'memory when it is an activity log or task state ("requested a review", "next planned work", '
+    '"fix plan drafted", "sent a reply"), the result of one session, a fragment that needs the '
+    'conversation to make sense, or a restatement of another line in the same batch. '
+    'Answer with one line per numbered entry, exactly "N KEEP" or "N DROP <a few words why>", '
+    'and nothing else.'
+)
+_REVIEW_CHUNK = 40
+_REVIEW_CHUNKS = 12
+
+
+def _model_review(lines: list[str]) -> tuple[dict[int, str], int, str]:
+    """Ask the review model about each line once, in batches.
+
+    Returns ``(drops, answered, model)``. A line the model did not answer is
+    KEPT — a migration must not be blocked by a provider outage — but the count
+    is reported, because "the reviewer had no opinion" is not the same state as
+    "the reviewer approved".
+    """
+    from app.services.memory_store.consolidation import _model_complete
+
+    drops: dict[int, str] = {}
+    answered = 0
+    for start in range(0, min(len(lines), _REVIEW_CHUNK * _REVIEW_CHUNKS), _REVIEW_CHUNK):
+        chunk = list(enumerate(lines[start : start + _REVIEW_CHUNK], start))
+        listing = '\n'.join(f'{i}. {text[:400]}' for i, text in chunk)
+        raw = _model_complete(_REVIEW_SYSTEM, f'Lines to judge:\n{listing}')
+        if not raw:
+            break
+        wanted = {i for i, _ in chunk}
+        for line in raw.splitlines():
+            head, _, rest = line.strip().partition(' ')
+            if not head.isdigit() or int(head) not in wanted:
+                continue
+            index = int(head)
+            verdict = rest.strip().upper()
+            answered += 1
+            if verdict.startswith('DROP'):
+                drops[index] = rest.strip()[4:].strip(': -') or 'the reviewer called it not-memorable'
+    return drops, answered, ''
+
+
+def _junk_bar(value: str, kind: str) -> str:
+    """The store's own durability bar, applied where it was calibrated.
+
+    The length branch of `memoryIsJunk` refuses "a label, not a rule" — right for
+    a mined lesson, wrong for the identity lane, where "Goes by Sheesh" IS the
+    memory. So profile/preference rows clear the bar through the model instead.
+    """
+    if kind in ('profile', 'preference'):
+        return ''
+    from app.services.memory_quality import memoryIsJunk
+
+    return memoryIsJunk(value)
+
+
 def import_claude_export(path: str | Path, dry_run: bool = False) -> dict[str, Any]:
     """Import a Claude export into the global facts store, merged with what is there.
 
@@ -258,96 +320,132 @@ def import_claude_export(path: str | Path, dry_run: bool = False) -> dict[str, A
     if not sources:
         return {'ok': False, 'error': 'No Markdown memory files found in that export'}
 
-    counts = {'created': 0, 'updated': 0, 'unchanged': 0, 'merged': 0, 'refused': 0, 'capped': 0}
+    counts = {
+        'created': 0, 'updated': 0, 'unchanged': 0, 'merged': 0, 'refused': 0, 'capped': 0,
+        'droppedJunk': 0, 'droppedByModel': 0, 'reviewed': 0, 'reviewMissing': 0,
+    }
     rows: list[dict[str, object]] = []
+    dropped: list[dict[str, object]] = []
+
+    # Phase 1 — parse, and collapse bullets that slug onto one key.
+    candidates: list[dict[str, str]] = []
     seen: set[str] = set()
     parsed = 0
-
     for rel_path, text in sources:
         for entry in parse_export_file(rel_path, text):
-            if parsed >= MAX_IMPORT_ENTRIES:
+            parsed += 1
+            if len(candidates) >= MAX_IMPORT_ENTRIES:
                 counts['capped'] += 1
                 continue
-            parsed += 1
-            key = entry['key']
-            # The row label is the sentence's own first clause, the same
-            # derivation the `remember` door uses — never the file's name.
-            title = memory_store.derive_fact_title(entry['value'])
-            if key in seen:
-                # Two bullets that slug together describe one memory.
+            if entry['key'] in seen:
                 counts['unchanged'] += 1
                 continue
-            seen.add(key)
-            # The reads happen whether or not this is a dry run: a plan that
-            # cannot see the store would report every line as new.
-            existing = memory_store.get_fact(key)
-            if existing is not None and _normalized(_stored_text(existing.get('factValue'))) == _normalized(
-                entry['value']
-            ):
-                counts['unchanged'] += 1
-                continue
-            folded_into = ''
-            if existing is None:
-                ratio, dupKey = duplicateOf(entry['value'], scope='global')
-                if ratio >= DEDUPE_SIMILARITY and dupKey != key:
-                    folded_into = dupKey
-            if folded_into:
-                counts['merged'] += 1
-                rows.append({
-                    'key': key, 'action': 'merged', 'into': folded_into,
-                    'title': title, 'kind': entry['kind'], 'file': entry['file'],
-                })
-                continue
-            if dry_run:
-                counts['created' if existing is None else 'updated'] += 1
-                rows.append({
-                    'key': key, 'action': 'planned',
-                    'would': 'update' if existing is not None else 'create',
-                    'title': title, 'kind': entry['kind'], 'category': entry['category'],
-                    'file': entry['file'],
-                })
-                continue
-            before = dict(existing) if existing else None
-            try:
-                memory_store.save_fact(
-                    key,
-                    entry['value'],
-                    category=entry['category'],
-                    source=SOURCE_PREFIX,
-                    title=title,
-                    kind=entry['kind'],
-                    description=entry['description'],
-                    verified=True,
-                )
-            except ValueError as exc:
-                counts['refused'] += 1
-                rows.append({
-                    'key': key, 'action': 'refused', 'reason': str(exc)[:200],
-                    'title': title, 'file': entry['file'],
-                })
-                continue
-            except Exception as exc:  # noqa: BLE001 — one bad row costs one row
-                counts['refused'] += 1
-                rows.append({
-                    'key': key, 'action': 'refused',
-                    'reason': f'{type(exc).__name__}: {exc}'[:200], 'title': title,
-                    'file': entry['file'],
-                })
-                continue
-            try:
-                record_rollback(
-                    type='restore_memory_item',
-                    target=key,
-                    before=before,
-                    after={'key': key, 'value': entry['value'], 'source': SOURCE_PREFIX},
-                )
-            except Exception:  # noqa: BLE001 — a missing rollback row must not fail the import
-                logger.debug('memory import: rollback record failed for %s', key, exc_info=True)
+            seen.add(entry['key'])
+            candidates.append(entry)
+
+    # Phase 2 — the store's own durability bar, then one model review over what
+    # survives it. Nothing is written before both have answered, so the report
+    # counts the same lines the reviewer saw.
+    kept: list[dict[str, str]] = []
+    for entry in candidates:
+        reason = _junk_bar(entry['value'], entry['kind'])
+        if reason:
+            counts['droppedJunk'] += 1
+            dropped.append({
+                'key': entry['key'], 'action': 'dropped', 'by': 'quality bar',
+                'reason': reason, 'file': entry['file'],
+            })
+            continue
+        kept.append(entry)
+    drops, answered, _model = _model_review([entry['value'] for entry in kept])
+    counts['reviewed'] = answered
+    counts['droppedByModel'] = len(drops)
+    counts['reviewMissing'] = max(0, len(kept) - answered)
+    judged: list[dict[str, str]] = []
+    for index, entry in enumerate(kept):
+        if index in drops:
+            dropped.append({
+                'key': entry['key'], 'action': 'dropped', 'by': 'reviewer',
+                'reason': drops[index], 'file': entry['file'],
+            })
+            continue
+        judged.append(entry)
+
+    # Phase 3 — merge and write. The reads happen whether or not this is a dry
+    # run: a plan that cannot see the store would report every line as new.
+    for entry in judged:
+        key = entry['key']
+        # The row label is the sentence's own first clause, the same
+        # derivation the `remember` door uses — never the file's name.
+        title = memory_store.derive_fact_title(entry['value'])
+        existing = memory_store.get_fact(key)
+        if existing is not None and _normalized(_stored_text(existing.get('factValue'))) == _normalized(
+            entry['value']
+        ):
+            counts['unchanged'] += 1
+            continue
+        folded_into = ''
+        if existing is None:
+            ratio, dupKey = duplicateOf(entry['value'], scope='global')
+            if ratio >= DEDUPE_SIMILARITY and dupKey != key:
+                folded_into = dupKey
+        if folded_into:
+            counts['merged'] += 1
+            rows.append({
+                'key': key, 'action': 'merged', 'into': folded_into,
+                'title': title, 'kind': entry['kind'], 'file': entry['file'],
+            })
+            continue
+        if dry_run:
             counts['created' if existing is None else 'updated'] += 1
             rows.append({
-                'key': key, 'action': 'created' if existing is None else 'updated',
+                'key': key, 'action': 'planned',
+                'would': 'update' if existing is not None else 'create',
                 'title': title, 'kind': entry['kind'], 'category': entry['category'],
+                'file': entry['file'],
             })
+            continue
+        before = dict(existing) if existing else None
+        try:
+            memory_store.save_fact(
+                key,
+                entry['value'],
+                category=entry['category'],
+                source=SOURCE_PREFIX,
+                title=title,
+                kind=entry['kind'],
+                description=entry['description'],
+                verified=True,
+            )
+        except ValueError as exc:
+            counts['refused'] += 1
+            rows.append({
+                'key': key, 'action': 'refused', 'reason': str(exc)[:200],
+                'title': title, 'file': entry['file'],
+            })
+            continue
+        except Exception as exc:  # noqa: BLE001 — one bad row costs one row
+            counts['refused'] += 1
+            rows.append({
+                'key': key, 'action': 'refused',
+                'reason': f'{type(exc).__name__}: {exc}'[:200], 'title': title,
+                'file': entry['file'],
+            })
+            continue
+        try:
+            record_rollback(
+                type='restore_memory_item',
+                target=key,
+                before=before,
+                after={'key': key, 'value': entry['value'], 'source': SOURCE_PREFIX},
+            )
+        except Exception:  # noqa: BLE001 — a missing rollback row must not fail the import
+            logger.debug('memory import: rollback record failed for %s', key, exc_info=True)
+        counts['created' if existing is None else 'updated'] += 1
+        rows.append({
+            'key': key, 'action': 'created' if existing is None else 'updated',
+            'title': title, 'kind': entry['kind'], 'category': entry['category'],
+        })
 
     return {
         'ok': True,
@@ -355,5 +453,5 @@ def import_claude_export(path: str | Path, dry_run: bool = False) -> dict[str, A
         'files': len(sources),
         'entries': parsed,
         **counts,
-        'rows': rows[:80],
+        'rows': [*rows[:80], *dropped[:20]],
     }

@@ -43,17 +43,26 @@ interface ExportReport {
   merged?: number;
   refused?: number;
   capped?: number;
+  droppedJunk?: number;
+  droppedByModel?: number;
+  reviewed?: number;
+  reviewMissing?: number;
 }
 
 function exportReportLine(r: ExportReport): string {
   if (!r.ok) return r.error || 'The export could not be read.';
   const parts = [
     `${r.files ?? 0} file${(r.files ?? 0) === 1 ? '' : 's'}`,
-    `${r.entries ?? 0} memories`,
+    `${r.entries ?? 0} lines`,
     r.created ? `${r.created} added` : '',
     r.updated ? `${r.updated} refreshed` : '',
     r.unchanged ? `${r.unchanged} already exact` : '',
     r.merged ? `${r.merged} folded into existing` : '',
+    r.droppedJunk ? `${r.droppedJunk} not durable` : '',
+    r.droppedByModel ? `${r.droppedByModel} dropped by the reviewer` : '',
+    // A silent reviewer is not an approving one: say so instead of letting a
+    // full import read as a clean one.
+    r.reviewMissing ? `reviewer silent on ${r.reviewMissing}` : '',
     r.refused ? `${r.refused} refused` : '',
     r.capped ? `${r.capped} past the cap` : '',
   ].filter(Boolean);

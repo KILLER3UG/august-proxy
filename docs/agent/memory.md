@@ -67,6 +67,14 @@ second store:
   the same export reports `unchanged` instead of restating rows;
 * a near-duplicate under a **different** key is reported as folded into that key
   and not written (the store's own `DEDUPE_SIMILARITY` bar, not a new one);
+* **two bars run before anything is written.** `memoryIsJunk` refuses task state,
+  completed-work logs and fragments — except in the `profile`/`preference` lane,
+  where "Goes by Sheesh" IS the memory and the under-24-char rule measured as a
+  false positive. Then one batched review-model call (`_model_review`, 40 lines
+  per call) answers `KEEP` or `DROP <why>` for every survivor, and the report
+  names how many each bar removed. A line the reviewer never answered is kept and
+  counted as `reviewMissing`: an outage must not block a migration, and it must
+  not be reported as approval either.
 * every write goes through `save_fact`, so the credential refusal still applies,
   and each landed row gets a rollback entry — the import is undoable per row.
 
@@ -74,6 +82,13 @@ second store:
 plan's numbers are the outcome's numbers. Fuzzy merges (paraphrases that miss the
 similarity bar) stay with the AI-arrange door, which spends one model call to
 decide add/update/delete.
+
+The import is the only bulk door, so it is the only one with a pre-write judge.
+What is already stored gets its model read from the standing review pass
+(`memoryReview`, daily): one call across the durable corpus flags duplicates,
+stale entries and retirements — those land as proposals, and a retirement is the
+one memory action that still waits for a human, because it removes rather than
+adds.
 
 The boot memory index is **frozen per session** to protect the provider prefix
 cache, so `<memory_policy>` tells the model to re-read `list_facts` after
