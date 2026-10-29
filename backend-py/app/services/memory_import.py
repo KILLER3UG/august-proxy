@@ -69,16 +69,22 @@ def _slug(text: str) -> str:
 
 
 def _lane_for(rel_path: str) -> tuple[str, str]:
-    """(kind, category) for one export file, from its position in the export."""
-    name = rel_path.rsplit('/', 1)[-1].lower()
+    """(kind, category) for one export file, from its position in the export.
+
+    Reads the file's OWN name and its immediate parent, never the first path
+    part: a .zip wraps everything in a `claude-memory-<date>/` folder, and
+    keying off the root made every area and topic land as `general`.
+    """
+    parts = [p.lower() for p in rel_path.replace('\\', '/').split('/') if p]
+    name = parts[-1] if parts else ''
+    parent = parts[-2] if len(parts) > 1 else ''
     if name in ('profile.md', 'me.md', 'identity.md'):
         return 'profile', 'user'
     if name in ('preferences.md', 'feedback.md', 'style.md'):
         return 'preference', 'feedback'
-    folder = rel_path.split('/')[0].lower() if '/' in rel_path else ''
-    if folder == 'areas':
+    if parent == 'areas':
         return 'fact', 'project'
-    if folder == 'topics':
+    if parent == 'topics':
         return 'fact', 'reference'
     return 'fact', 'general'
 
@@ -119,9 +125,14 @@ def parse_export_file(rel_path: str, text: str) -> list[dict[str, str]]:
                         'value': value,
                         'kind': kind,
                         'category': category,
-                        'title': (hint or label or value)[:80],
-                        'description': hook[:240],
-                        'details': f'source: {rel_path}' + (f' · {hint}' if hint else ''),
+                        # The row label is the bullet's own clause (derived at
+                        # write time). What sits here is the HOOK: the section
+                        # the bullet was under plus the file's one-line
+                        # description, which is what a reader scans to place
+                        # the row. Never the file name alone — 12 profile
+                        # bullets titled `profile` are 12 identical rows.
+                        'description': (' — '.join(x for x in (hint, hook) if x) or label)[:240],
+                        'file': rel_path,
                     })
             if len(entries) >= MAX_FILE_ENTRIES:
                 break
@@ -259,6 +270,9 @@ def import_claude_export(path: str | Path, dry_run: bool = False) -> dict[str, A
                 continue
             parsed += 1
             key = entry['key']
+            # The row label is the sentence's own first clause, the same
+            # derivation the `remember` door uses — never the file's name.
+            title = memory_store.derive_fact_title(entry['value'])
             if key in seen:
                 # Two bullets that slug together describe one memory.
                 counts['unchanged'] += 1
@@ -281,7 +295,7 @@ def import_claude_export(path: str | Path, dry_run: bool = False) -> dict[str, A
                 counts['merged'] += 1
                 rows.append({
                     'key': key, 'action': 'merged', 'into': folded_into,
-                    'title': entry['title'], 'kind': entry['kind'],
+                    'title': title, 'kind': entry['kind'], 'file': entry['file'],
                 })
                 continue
             if dry_run:
@@ -289,7 +303,8 @@ def import_claude_export(path: str | Path, dry_run: bool = False) -> dict[str, A
                 rows.append({
                     'key': key, 'action': 'planned',
                     'would': 'update' if existing is not None else 'create',
-                    'title': entry['title'], 'kind': entry['kind'], 'category': entry['category'],
+                    'title': title, 'kind': entry['kind'], 'category': entry['category'],
+                    'file': entry['file'],
                 })
                 continue
             before = dict(existing) if existing else None
@@ -299,20 +314,24 @@ def import_claude_export(path: str | Path, dry_run: bool = False) -> dict[str, A
                     entry['value'],
                     category=entry['category'],
                     source=SOURCE_PREFIX,
-                    title=entry['title'],
+                    title=title,
                     kind=entry['kind'],
                     description=entry['description'],
                     verified=True,
                 )
             except ValueError as exc:
                 counts['refused'] += 1
-                rows.append({'key': key, 'action': 'refused', 'reason': str(exc)[:200], 'title': entry['title']})
+                rows.append({
+                    'key': key, 'action': 'refused', 'reason': str(exc)[:200],
+                    'title': title, 'file': entry['file'],
+                })
                 continue
             except Exception as exc:  # noqa: BLE001 — one bad row costs one row
                 counts['refused'] += 1
                 rows.append({
                     'key': key, 'action': 'refused',
-                    'reason': f'{type(exc).__name__}: {exc}'[:200], 'title': entry['title'],
+                    'reason': f'{type(exc).__name__}: {exc}'[:200], 'title': title,
+                    'file': entry['file'],
                 })
                 continue
             try:
@@ -327,7 +346,7 @@ def import_claude_export(path: str | Path, dry_run: bool = False) -> dict[str, A
             counts['created' if existing is None else 'updated'] += 1
             rows.append({
                 'key': key, 'action': 'created' if existing is None else 'updated',
-                'title': entry['title'], 'kind': entry['kind'], 'category': entry['category'],
+                'title': title, 'kind': entry['kind'], 'category': entry['category'],
             })
 
     return {
