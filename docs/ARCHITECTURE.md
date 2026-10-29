@@ -350,9 +350,15 @@ remembers. Sub-agents read and recall but never write; the parent turn is the
 only model-facing memory write door (internal/UI routes also call
 `save_fact`).
 
-Desktop **Settings → Memory** (`memory-knowledge`, with `memory-facts` as a hidden
-child) renders one flat chronological list across kinds with filter chips — not
-tabs, not cards or meters. The **Backups & restore** card (`BrainBackupsCard`,
+Desktop **Settings → Memory** (`memory-knowledge`, with the Library table behind
+the hidden `memory-facts` child) renders the store as named groups — **You** (the
+always-in-context lane), **Topics**, **Areas** (the project layer), **Notes**,
+**Rules** — each row a title with its date and hover actions, and a group whose
+rows share one hook line prints that line once above them instead of on every
+row. The two switches that decide whether the page fills up at all
+(`memoryReview`, `memorySensitiveTopics`) sit at the top; the rest of the
+behavior gates stay in one group lower down, so no setting is edited from two
+surfaces. The **Backups & restore** card (`BrainBackupsCard`,
 mounted at the foot of the Memory pane) is the human door to the same surface:
 backups, integrity, staged restore and raw-state lookup. A restore is still
 staged through `POST /api/brain/backups/restore` and applied at the next launch.

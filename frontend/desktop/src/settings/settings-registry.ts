@@ -377,16 +377,19 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   {
     id: 'memory-knowledge',
     label: 'Memory',
-    description: 'The memory library: every fact, note and rule August holds, with the project layer beside them.',
+    description: 'What August remembers about you: the profile lane, topics and project areas, beside the switches that steer it.',
     icon: BrainCircuit,
     category: 'capabilities',
     tier: 'basic',
+    // Every hint names a control that is ON this page. They used to describe
+    // the Library table's buttons, because that was the door; a settings
+    // search that lands where the named control does not exist is a dead link.
     settingHints: [
-      'Add memory',
-      'Import memories',
-      'Restore a retired memory',
-      'Search facts, keys, or scope',
-      'Project memory entries',
+      'Search memory',
+      'Import memory from other AI providers',
+      'Memory enabled — reads, writes and injection',
+      'Auto-inject relevant memories each turn',
+      'Tell August what to remember',
     ],
     settingAliases: [
       'memory library',
@@ -640,6 +643,9 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     icon: FolderOpen,
     category: 'capabilities',
     tier: 'hidden',
+    // The Library table's own controls — this is the door that carries them
+    // now the Memory page is the grouped list.
+    settingHints: ['Add memory', 'Search facts, keys, or scope', 'Project memory entries'],
     keywords: ['facts', 'heuristics', 'rules', 'learned', 'semantic', 'knowledge'],
     legacyAliases: ['semantic-facts'],
   },

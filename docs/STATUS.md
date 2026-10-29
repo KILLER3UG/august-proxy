@@ -22,6 +22,12 @@ waiting on the owner, and how to resume.
   skill-trust store, its routes and its banner are gone. Hook trust stays — a
   hook is unsandboxed shell. `list_skills` no longer cuts the trigger at 60
   chars.
+- **Settings → Memory is the Claude-shaped list now.** The rail's Memory door
+  mounts the grouped page (You / Topics / Areas / Notes / Rules) instead of the
+  Library table, a shared hook line prints once per group rather than on every
+  row, and `memoryReview` + `memorySensitiveTopics` moved to the top of the page
+  (out of the behavior group, so neither is edited from two surfaces). The table
+  stays behind the hidden `memory-facts` door, and the Skills door is unchanged.
 - Not yet done: memory **retirement** proposals still need a human, repo hooks
   still have no Settings door, and `august-bench --memory-state on|off` exists
   but has no recorded two-arm result for what the loop now writes by itself.

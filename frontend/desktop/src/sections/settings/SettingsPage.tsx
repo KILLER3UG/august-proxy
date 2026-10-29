@@ -428,7 +428,11 @@ export const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps
   'phone-pairing': PhonePairingWrapper,
   'prompt-templates': PromptTemplatesWrapper,
   privacy: PrivacyWrapper,
-  'memory-knowledge': LibraryWrapper,
+  // The Memory door is the grouped list — You / Topics / Areas, the shape the
+  // reference shows and the one a person can actually read. The Library table
+  // is still the power view behind `memory-facts`, and the Skills door keeps
+  // opening it in its own tab.
+  'memory-knowledge': MemoryWrapper,
   goals: GoalsWrapper,
   'memory-facts': LibraryWrapper,
   // The switches, the store budget, the consolidation pass and the backups

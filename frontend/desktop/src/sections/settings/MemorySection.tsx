@@ -490,6 +490,17 @@ function MemoryGroup({
 
 
 
+/** The hook line a whole group shares, or '' when its rows differ.
+ *  An imported topic writes the same one-line description on every one of its
+ *  12 facts; printing it on all 12 rows is what made the list read as a wall of
+ *  duplicates. The reference shows that line once, beside the topic — so it
+ *  moves to the group and the rows go quiet. */
+function sharedDetail(entries: FlatEntry[]): string {
+  if (entries.length < 2) return '';
+  const first = entries[0]?.description ?? '';
+  return first && entries.every((e) => e.description === first) ? first : '';
+}
+
 export function MemorySection({ active }: { active: { id: string } }) {
   const qc = useQueryClient();
   const { state: confirmState, confirm, handleConfirm, handleCancel } = useConfirmDialog();
@@ -728,12 +739,13 @@ export function MemorySection({ active }: { active: { id: string } }) {
   const unifiedCanPrev = unifiedOffset > 0;
   const unifiedCanNext = unifiedOffset + UNIFIED_FETCH < unifiedTotal;
 
-  // The reference's grouping: the profile lane IS the "You" section, every
-  // other fact is a Topic grouped by its own category, the KV store is
-  // Notes, the legacy lessons are Rules. One row renderer shared by every
-  // section — the first version of this had two and they drifted.
+  // The reference's grouping: the profile lane IS the "You" section, project
+  // facts are "Areas", everything else is a "Topic" grouped by its own category,
+  // the KV store is Notes, the legacy lessons are Rules. One row renderer shared
+  // by every section — the first version of this had two and they drifted.
   const sections = useMemo(() => {
     const you: FlatEntry[] = [];
+    const areas: FlatEntry[] = [];
     const topics: FlatEntry[] = [];
     const notes: FlatEntry[] = [];
     const rules: FlatEntry[] = [];
@@ -741,23 +753,49 @@ export function MemorySection({ active }: { active: { id: string } }) {
       if (e.kind === 'profile') you.push(e);
       else if (e.store === 'heuristics') rules.push(e);
       else if (e.store === 'memory') notes.push(e);
+      else if (e.category === 'project') areas.push(e);
       else topics.push(e);
     }
-    const byCat = new Map<string, FlatEntry[]>();
-    for (const e of topics) {
-      const list = byCat.get(e.category) ?? [];
-      list.push(e);
-      byCat.set(e.category, list);
-    }
-    return { you, topics, notes, rules, topicGroups: [...byCat.entries()] };
+    /** One group per TOPIC, not per category. An imported topic file writes the
+     *  same one-line description on all of its facts, and grouping by category
+     *  left 51 of them under one header repeating that line 51 times. The
+     *  reference's unit is the topic — so that is the unit here, and the hook
+     *  is printed once for the group instead of on every row. */
+    const groupByTopic = (list: FlatEntry[]) => {
+      const map = new Map<string, FlatEntry[]>();
+      for (const e of list) {
+        const key = e.description || e.category || 'uncategorized';
+        const bucket = map.get(key) ?? [];
+        bucket.push(e);
+        map.set(key, bucket);
+      }
+      return [...map.entries()].map(([key, entries]) => ({
+        label: key,
+        isCategory: !entries[0]?.description,
+        entries,
+        hook: sharedDetail(entries),
+      }));
+    };
+    return {
+      you,
+      areas,
+      topics,
+      notes,
+      rules,
+      youHook: sharedDetail(you),
+      topicGroups: groupByTopic(topics),
+      areaGroups: groupByTopic(areas),
+    };
   }, [filteredEntries]);
 
   /** One row renderer for every section (the old code had two and they
-   *  drifted: the grouped one silently lost the lane toggle and export). */
-  const rowFor = (e: FlatEntry) => (
+   *  drifted: the grouped one silently lost the lane toggle and export).
+   *  `hideDetail` is set when the group already prints that line. */
+  const rowFor = (e: FlatEntry, hideDetail = false) => (
     <FlatEntryRow
       key={`${e.store}:${e.id}`}
       entry={e}
+      hideDetail={hideDetail}
       checked={checked.has(`${e.store}:${e.id}`)}
       selectMode={selectMode}
       onCheck={(v) =>
@@ -1062,6 +1100,32 @@ export function MemorySection({ active }: { active: { id: string } }) {
         className="mb-4"
       />
 
+      {/* The two switches that decide whether this page fills up at all, at the
+          top where the reference puts them. The rest of the behavior gates stay
+          in the group below, so a setting is still edited from exactly one
+          surface — these two MOVED here, they are not duplicated. */}
+      <div
+        className="divide-y divide-border/60 border-b border-border/60 pb-2"
+        data-testid="memory-top-controls"
+      >
+        <SettingsToggle
+          checked={Boolean(cfg?.memoryReview ?? true)}
+          onCheckedChange={(next) => configMut.mutate({ memoryReview: next })}
+          label="Generate memory from chats"
+          description="Let August read finished conversations and keep what is worth remembering."
+          disabled={configQ.isLoading || configMut.isPending || cfg?.memoryEnabled === false}
+          data-testid="memory-review-toggle"
+        />
+        <SettingsToggle
+          checked={Boolean(cfg?.memorySensitiveTopics)}
+          onCheckedChange={(next) => configMut.mutate({ memorySensitiveTopics: next })}
+          label="Include sensitive topics in memory"
+          description="Allow details about health, beliefs or similar to be stored. Off by default."
+          disabled={configQ.isLoading || configMut.isPending || cfg?.memoryEnabled === false}
+          data-testid="memory-sensitive-toggle"
+        />
+      </div>
+
       {/* Import from another AI — the reference's banner position: one
           prominent row at the very top, before the list it feeds. It is a
           ROW, not a card: a filled box above the list was the loudest
@@ -1320,8 +1384,13 @@ export function MemorySection({ active }: { active: { id: string } }) {
                   to the one muted line under the section, where the
                   reference keeps its occasional asides. */}
               <MemorySectionHeader title="You" hint={`${sections.you.length}`} />
+              {sections.youHook && (
+                <p className="pb-1 text-2xs text-muted-foreground/60" data-testid="memory-you-hook">
+                  {sections.youHook}
+                </p>
+              )}
               <div className="divide-y divide-border/60">
-                {sections.you.map((e) => rowFor(e))}
+                {sections.you.map((e) => rowFor(e, !!sections.youHook))}
               </div>
               {/* ONE muted line, not two. The reference's list is a list:
                   the rows, and nothing between them that is not a row. A
@@ -1336,19 +1405,45 @@ export function MemorySection({ active }: { active: { id: string } }) {
             </section>
           )}
 
-          {/* Topics — every other fact, grouped by its category. */}
+          {/* Topics — every other fact, one group per topic. */}
           {sections.topics.length > 0 && (
             <section data-testid="memory-section-topics">
               <MemorySectionHeader title="Topics" hint={`${sections.topics.length}`} />
-              {sections.topicGroups.map(([category, entries]) => (
-                <div key={category || 'uncategorized'} className="pt-2 first:pt-0">
-                  {sections.topicGroups.length > 1 && (
+              {sections.topicGroups.map((group) => (
+                <div key={group.label} className="pt-2 first:pt-0">
+                  {group.isCategory && sections.topicGroups.length > 1 && (
                     <h4 className="pb-0.5 text-2xs font-medium uppercase tracking-widest text-muted-foreground/45">
-                      {category || 'uncategorized'}
+                      {group.label}
                     </h4>
                   )}
+                  {group.hook && (
+                    <p className="pb-1 text-2xs text-muted-foreground/60" data-testid="memory-group-hook">
+                      {group.hook}
+                    </p>
+                  )}
                   <div className="divide-y divide-border/60">
-                    {entries.map((e) => rowFor(e))}
+                    {group.entries.map((e) => rowFor(e, !!group.hook))}
+                  </div>
+                </div>
+              ))}
+            </section>
+          )}
+
+          {/* Areas — the project layer. The reference keeps a project beside a
+              topic, not under it: a constraint about one codebase is not the
+              same kind of thing as a fact about the user. */}
+          {sections.areas.length > 0 && (
+            <section data-testid="memory-section-areas">
+              <MemorySectionHeader title="Areas" hint={`${sections.areas.length}`} />
+              {sections.areaGroups.map((group) => (
+                <div key={group.label} className="pt-2 first:pt-0">
+                  {group.hook && (
+                    <p className="pb-1 text-2xs text-muted-foreground/60" data-testid="memory-group-hook">
+                      {group.hook}
+                    </p>
+                  )}
+                  <div className="divide-y divide-border/60">
+                    {group.entries.map((e) => rowFor(e, !!group.hook))}
                   </div>
                 </div>
               ))}
@@ -1512,20 +1607,8 @@ export function MemorySection({ active }: { active: { id: string } }) {
           disabled={configQ.isLoading || configMut.isPending || cfg?.memoryEnabled === false}
           data-testid="memory-model-writes-toggle"
         />
-        <SettingsToggle
-          checked={Boolean(cfg?.memoryReview)}
-          onCheckedChange={(next) => configMut.mutate({ memoryReview: next })}
-          label="Learn from finished conversations (off by default)"
-          disabled={configQ.isLoading || configMut.isPending || cfg?.memoryEnabled === false}
-          data-testid="memory-review-toggle"
-        />
-        <SettingsToggle
-          checked={Boolean(cfg?.memorySensitiveTopics)}
-          onCheckedChange={(next) => configMut.mutate({ memorySensitiveTopics: next })}
-          label="Include sensitive topics in memory (off by default)"
-          disabled={configQ.isLoading || configMut.isPending || cfg?.memoryEnabled === false}
-          data-testid="memory-sensitive-toggle"
-        />
+        {/* `memoryReview` and `memorySensitiveTopics` live in the strip at the
+            top of the page now — one setting, one surface. */}
       </div>
       {/* M-9: the store budget. 0 = no budget, which is the shipped state —
           the pass that enforces it is the only automatic curation in the
@@ -2449,6 +2532,7 @@ function MemoryComposeBar({
  * in the detail view one click away. */
 function FlatEntryRow({
   entry,
+  hideDetail = false,
   checked,
   selectMode,
   onCheck,
@@ -2457,6 +2541,8 @@ function FlatEntryRow({
   onDelete,
 }: {
   entry: FlatEntry;
+  /** The group already prints this line; repeating it on every row is noise. */
+  hideDetail?: boolean;
   checked: boolean;
   selectMode: boolean;
   onCheck: (v: boolean) => void;
@@ -2471,8 +2557,9 @@ function FlatEntryRow({
   // (facts does), else the memory's body — and only when it says something
   // the title does not. A short fact has title == summary, and printing the
   // same words twice is how a list stops being scannable.
-  const detail =
-    entry.description && entry.description !== entry.title
+  const detail = hideDetail
+    ? ''
+    : entry.description && entry.description !== entry.title
       ? entry.description
       : entry.summary && entry.summary !== entry.title
         ? entry.summary
