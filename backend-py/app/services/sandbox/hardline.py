@@ -57,7 +57,15 @@ from pathlib import Path
 # definition is not a secret, and the settings panel shows it.
 _PROTECTED_WRITE_PATTERN = re.compile(
     r'(\.env|providers\.json|(?:^|/)credentials(?:/|$)|\.ssh(?:/|$)|'
-    r'id_rsa|id_ed25519|\.aws(?:/|$)|\.npmrc|\.pypirc|hooks\.json$)',
+    r'id_rsa|id_ed25519|\.aws(?:/|$)|\.npmrc|\.pypirc|hooks\.json$|'
+    # Stage-1 push lock (2026-10-30): the repo's own control plane. A write
+    # into `.git/` re-points remotes (pushurl), installs hook code that runs
+    # on the user's next commit, or defines an `alias.p = push` shortcut that
+    # walks past the command matcher — and `.gitconfig`/`.git-credentials`
+    # are the same doors at user scope. Reads stay allowed: HEAD, refs and
+    # logs are how the model inspects history. The component anchors keep
+    # `.gitignore`, `.gitattributes` and `my.git/` out of the rule.
+    r'(?:^|/)\.git(?:/|$)|(?:^|/)\.gitconfig(?:/|$)|(?:^|/)\.git-credentials(?:/|$))',
     re.IGNORECASE,
 )
 
@@ -815,6 +823,201 @@ def _enumerates_a_directory(command: str) -> bool:
     return False
 
 
+# --- Stage-1 push lock ------------------------------------------------------
+#
+# August never pushes to a remote. Publishing is the user's click (or their
+# own terminal), never a model action: a pushed commit leaves the machine and
+# cannot be un-sent, and the self-edit loop (docs/plans Stage 1) treats the
+# upstream as read-only from the model's side. The lock is STRUCTURAL — it
+# runs inside `check_hardline_command`, so it holds in every sandbox mode
+# including Full Access, it fires before the approval axis so no allow rule,
+# grant or policy toggle can lift it, and the env layer (`noninteractive_env`)
+# strips the credentials a push would need even if this matcher were bypassed.
+#
+# Denied here, by token walk:
+#   * `git push` in any spelling — flags between the words (`git -c x=y push`),
+#     wrapper shells (`sh -c "git push"`), explicit URLs, chained segments.
+#   * `git remote` WRITES (`add`, `remove`, `rename`, `set-url`, …) — the
+#     bypass that would re-point origin at a real URL. Reads (`remote -v`,
+#     `remote get-url`) stay allowed.
+#   * `git config` WRITES — the other re-pointing route
+#     (`config remote.origin.pushurl …`, `config credential.helper …`). Reads
+#     (`--get`, `--list`, a bare key lookup) stay allowed.
+#
+# The matcher is deliberately narrow (adjacent `git` + subcommand, flag
+# skipping for the value-taking global options) so ordinary git reads never
+# trip it; the cost is that a path through a tool August does not model
+# (GitPython inside a code cell) is not SEEN here — those attempts die at the
+# env layer instead: no credential helper, no terminal prompt, and a push URL
+# pointed at an unroutable host. Deny here for the clean receipt; fail at
+# git for the exotic path.
+
+_GIT_LOCK_REMOTE_WRITES = frozenset(
+    {'add', 'remove', 'rm', 'rename', 'set-url', 'set-branches', 'set-head'}
+)
+_GIT_LOCK_CONFIG_WRITE_FLAGS = frozenset(
+    {
+        '--add', '--unset', '--unset-all', '--replace-all', '--edit', '-e',
+        '--remove-section', '--rename-section',
+    }
+)
+_GIT_LOCK_CONFIG_READ_FLAGS = frozenset(
+    {'--get', '--get-all', '--get-regexp', '--list', '-l', '--name-only', '--get-urlmatch'}
+)
+# Global options that CONSUME the next token, so the subcommand walk must
+# step over the value. Everything else starting with `-` is self-contained.
+_GIT_LOCK_VALUE_OPTIONS = frozenset({'-c', '-C', '--git-dir', '--work-tree', '--namespace', '--super-prefix'})
+
+# Quoted spans are DATA by default — `grep "git push" notes.md` must keep
+# working — except in two positions where a quoted string is CODE or a
+# command: a PowerShell call operator (`& "C:\...\git.exe" push` — the `&`
+# survives segment splitting only in PowerShell), and the payload of a
+# code-taking shell (`sh -c "git push"`, `powershell -Command "git push"`).
+_GIT_LOCK_QUOTE_RE = re.compile(r'"[^"]*"|\'[^\']*\'')
+_GIT_LOCK_CODE_WRAPPERS = frozenset(
+    {'sh', 'bash', 'zsh', 'dash', 'ksh', 'cmd', 'powershell', 'pwsh'}
+)
+_GIT_LOCK_ALIAS_C_RE = re.compile(
+    r'''-c\s+(?:"[^"]*alias\.[^"]*"|'[^']*alias\.[^']*')''', re.IGNORECASE
+)
+
+
+def _git_lock_basename(token: str) -> str:
+    """Program name a token runs, with the Windows `.exe` suffix removed."""
+    name = _basename(token)
+    return name[: -len('.exe')] if name.endswith('.exe') else name
+
+
+def _git_lock_scan_tokens(tokens: list[str]) -> str | None:
+    """The lock rules over one token list (shared by all three scan passes)."""
+    git_indices = [i for i, t in enumerate(tokens) if _git_lock_basename(t) == 'git']
+    for index in git_indices:
+        # A `-c` whose key is an alias defines a subcommand this matcher
+        # cannot see through; refuse the override itself.
+        for i in range(index + 1, len(tokens) - 1):
+            if tokens[i].lower() == '-c' and tokens[i + 1].lower().startswith('alias.'):
+                return 'August push lock: `-c alias.*` redefines the subcommand surface'
+        sub, sub_index = _git_lock_subcommand(tokens, index)
+        if sub == 'push':
+            return 'August push lock: `git push` is structurally disabled'
+        if sub == 'credential':
+            return 'August push lock: `git credential` plumbing is structurally disabled'
+        if sub == 'remote':
+            args = _git_lock_positionals(tokens, sub_index + 1)
+            if args and args[0] in _GIT_LOCK_REMOTE_WRITES:
+                return 'August push lock: `git remote` writes are structurally disabled'
+        if sub == 'config':
+            args = _git_lock_positionals(tokens, sub_index + 1)
+            flags = [t.lower() for t in tokens[sub_index + 1 :] if t.startswith('-')]
+            if any(f in _GIT_LOCK_CONFIG_WRITE_FLAGS for f in flags):
+                return 'August push lock: `git config` writes are structurally disabled'
+            reads = any(f in _GIT_LOCK_CONFIG_READ_FLAGS for f in flags)
+            # `git config <key>` alone is a read; `<key> <value>` writes.
+            if not reads and len(args) > 1:
+                return 'August push lock: `git config` writes are structurally disabled'
+    return None
+
+_GIT_PUSH_LOCK_HINT = (
+    'August never pushes to remotes — commits stay local and publishing is the '
+    "user's action. Do not retry; tell the user what needs to be pushed."
+)
+
+
+def _git_lock_subcommand(tokens: list[str], git_index: int) -> tuple[str, int]:
+    """The git subcommand a segment runs, stepping over global options.
+
+    ``git -C sub -c core.pager=cat push`` reads as ``push``. An option
+    carrying its value inline (``--git-dir=.git``) is self-contained. Returns
+    the subcommand and its index; ``('', len(tokens))`` means the segment was
+    all options.
+    """
+    i = git_index + 1
+    skip_next = False
+    while i < len(tokens):
+        tok = tokens[i]
+        if skip_next:
+            skip_next = False
+            i += 1
+            continue
+        if tok.startswith('-'):
+            if tok.lower() in _GIT_LOCK_VALUE_OPTIONS:
+                skip_next = True
+            i += 1
+            continue
+        return tok.lower(), i
+    return '', len(tokens)
+
+
+def _git_lock_positionals(tokens: list[str], start: int) -> list[str]:
+    """Positional tokens from ``start``, stepping over option/value pairs."""
+    out: list[str] = []
+    i = start
+    skip_next = False
+    while i < len(tokens):
+        tok = tokens[i]
+        if skip_next:
+            skip_next = False
+            i += 1
+            continue
+        if tok.startswith('-'):
+            if tok.lower() in _GIT_LOCK_VALUE_OPTIONS:
+                skip_next = True
+            i += 1
+            continue
+        out.append(tok)
+        i += 1
+    return out
+
+
+def git_push_lock_reason(command: str) -> str | None:
+    """Why the push lock refuses ``command``, else None.
+
+    One rule per segment, on the same tokens the shell would follow (see
+    `_tokenize`): a `git` executable whose subcommand is `push`, a `git
+    remote` write, a `git config` write, the `credential` plumbing (it is
+    the door that turns a re-enabled helper into a readable token), and a
+    `-c alias.*` override (``git -c alias.p=push p`` runs push under a name
+    no matcher can enumerate). Reads are untouched — `git status`, `git
+    remote -v`, `git config --get user.name` all pass. Three passes per
+    segment: the unquoted tokens (a quoted `grep "git push"` phrase is data
+    and stays allowed), the quoted spans when a PowerShell call operator or
+    a code-taking shell wrapper makes them code, and the raw text for a
+    `-c "<quoted alias.*>"` override.
+    """
+    if not command:
+        return None
+
+    def _blank(m: re.Match[str]) -> str:
+        return ' ' * (m.end() - m.start())
+
+    for segment in _SEGMENT_SPLIT_RE.split(command):
+        if not segment.strip():
+            continue
+        unquoted = _GIT_LOCK_QUOTE_RE.sub(_blank, segment)
+        reason = _git_lock_scan_tokens(_tokenize(unquoted))
+        if reason:
+            return reason
+        blind_tokens = _tokenize(segment)
+        stripped = segment.lstrip()
+        if '&' in unquoted or stripped[:1] in ('"', "'"):
+            # PowerShell call operator: a quoted span IS the command or its
+            # path (`& "C:\Program Files\Git\cmd\git.exe" push`). The `&`
+            # itself is eaten by segment splitting, so the residue is a
+            # segment that BEGINS with a quoted span — no POSIX shell runs a
+            # bare quoted string as a command, so scanning it blind is safe.
+            reason = _git_lock_scan_tokens(blind_tokens)
+            if reason:
+                return reason
+        elif blind_tokens and _git_lock_basename(blind_tokens[0]) in _GIT_LOCK_CODE_WRAPPERS:
+            for m in _GIT_LOCK_QUOTE_RE.finditer(segment):
+                reason = _git_lock_scan_tokens(_tokenize(m.group(0)[1:-1]))
+                if reason:
+                    return reason
+        if _GIT_LOCK_ALIAS_C_RE.search(segment):
+            return 'August push lock: `-c alias.*` redefines the subcommand surface'
+    return None
+
+
 def check_hardline_command(command: str) -> str | None:
     """Return a denial reason if ``command`` touches a hardline path, else None.
 
@@ -835,6 +1038,9 @@ def check_hardline_command(command: str) -> str | None:
     """
     if not command or not command.strip():
         return None
+    lock = git_push_lock_reason(command)
+    if lock:
+        return lock
     write_intent = _is_write_intent(command)
     enumerates = _enumerates_a_directory(command)
     for raw_tok in _tokenize(command):

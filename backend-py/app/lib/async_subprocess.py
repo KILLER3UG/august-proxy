@@ -86,6 +86,21 @@ def noninteractive_env(base: dict[str, str] | None = None) -> dict[str, str]:
             'NPM_CONFIG_FUND': 'false',
             'NPM_CONFIG_AUDIT': 'false',
             'DEBIAN_FRONTEND': 'noninteractive',
+            # Stage-1 push lock: every agent-side git child runs without
+            # credentials and without attribute-driven code paths. An empty
+            # `credential.helper` resets the helper list, so the GCM-stored
+            # GitHub credential is unreachable from a model-spawned child even
+            # if the hardline matcher were bypassed (GitPython, a script).
+            # GIT_ATTR_NOSYSTEM/GIT_CONFIG_NOSYSTEM close the system-file
+            # halves of the same door. The user's own /api/git router does NOT
+            # get these — publishing stays the user's action.
+            'GCM_INTERACTIVE': 'Never',
+            'GIT_NO_LAZY_FETCH': '1',
+            'GIT_CONFIG_NOSYSTEM': '1',
+            'GIT_ATTR_NOSYSTEM': '1',
+            'GIT_CONFIG_COUNT': '1',
+            'GIT_CONFIG_KEY_0': 'credential.helper',
+            'GIT_CONFIG_VALUE_0': '',
         }
     )
     return env

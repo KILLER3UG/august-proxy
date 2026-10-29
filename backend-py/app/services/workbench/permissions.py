@@ -411,11 +411,22 @@ def decide(
 ) -> Decision:
     """Decide allow / ask / deny for one command under an approval policy.
 
-    Precedence: deny rules → destructive (always ask) → external paths
-    (always ask) → allow rules → model flag (ask) → auto-approve categories
-    → network / uncategorized (ask).
+    Precedence: STRUCTURAL push lock (non-grantable, fires even when the
+    axis is disabled) → deny rules → destructive (always ask) → external
+    paths (always ask) → allow rules → model flag (ask) → auto-approve
+    categories → network / uncategorized (ask).
     """
     cats = classify_command(command, workspace_root)
+    from app.services.sandbox.hardline import git_push_lock_reason
+
+    lock = git_push_lock_reason(command)
+    if lock:
+        return Decision(
+            'deny',
+            lock,
+            cats,
+            _deny_feedback(command, lock, 'August never pushes to remotes — publishing is the user\'s action.'),
+        )
     if not policy.enabled:
         return Decision('allow', 'approval axis disabled', cats)
 

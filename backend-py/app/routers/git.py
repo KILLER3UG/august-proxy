@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.lib.local_api_auth import require_local_token
 from app.models.camel_base import CamelModel
 
 router = APIRouter(prefix='/api/git')
@@ -104,6 +106,24 @@ def _resolve_workspace(session_id: str = '', repo_path: str = '') -> tuple[str |
     return str(cwd.resolve()), None
 
 
+# This router is the USER's git door (the chat pane's git popover and push
+# button), so unlike the agent children in `noninteractive_env` it keeps the
+# credential helpers — publishing stays the user's action. It still refuses
+# to hang (no terminal prompts, no pager) and refuses attribute-driven code
+# paths: a repo's .gitattributes can name a diff/textconv driver whose
+# command executes when this process diffs it, and workspaces are not all
+# trusted. `--no-textconv --no-ext-diff` on the diff calls is the same door
+# at flag level.
+_GIT_ROUTER_ENV = {
+    **os.environ,
+    'GIT_TERMINAL_PROMPT': '0',
+    'GIT_NO_LAZY_FETCH': '1',
+    'GIT_PAGER': 'cat',
+    'GIT_CONFIG_NOSYSTEM': '1',
+    'GIT_ATTR_NOSYSTEM': '1',
+}
+
+
 async def _run_git(repo_path: str, *args: str, check: bool = True) -> tuple[int, str, str]:
     """Run git; return (code, stdout, stderr). Raises only on missing git / timeout."""
     from app.lib.async_subprocess import SubprocessAborted, communicate_or_kill
@@ -114,6 +134,7 @@ async def _run_git(repo_path: str, *args: str, check: bool = True) -> tuple[int,
             'git',
             *args,
             cwd=str(cwd),
+            env=_GIT_ROUTER_ENV,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             stdin=asyncio.subprocess.DEVNULL,
@@ -206,7 +227,9 @@ async def _attach_untracked_diff(repo_path: str, file: dict[str, object]) -> Non
         file['diff'] = 'Binary file \u2014 diff omitted'
         file['added'] = 0
         return
-    code, out, _ = await _run_git(repo_path, 'diff', '--no-index', '--', '/dev/null', rel, check=False)
+    code, out, _ = await _run_git(
+        repo_path, 'diff', '--no-textconv', '--no-ext-diff', '--no-index', '--', '/dev/null', rel, check=False
+    )
     if code >= 2:
         file['diff'] = ''
         return
@@ -249,8 +272,8 @@ async def git_status(sessionId: str = '', repoPath: str = ''):
 
     _, porcelain, _ = await _run_git(path, 'status', '--porcelain', check=False)
     files = _parse_porcelain(porcelain)
-    _, unstaged, _ = await _run_git(path, 'diff', '--numstat', check=False)
-    _, staged, _ = await _run_git(path, 'diff', '--cached', '--numstat', check=False)
+    _, unstaged, _ = await _run_git(path, 'diff', '--no-textconv', '--no-ext-diff', '--numstat', check=False)
+    _, staged, _ = await _run_git(path, 'diff', '--no-textconv', '--no-ext-diff', '--cached', '--numstat', check=False)
     added, removed = _apply_numstat(files, unstaged + staged)
     return {
         'workspace': path,
@@ -380,13 +403,13 @@ async def git_diff(sessionId: str = '', repoPath: str = '', target: str = 'HEAD'
     _, porcelain, _ = await _run_git(path, 'status', '--porcelain', check=False)
     files = _parse_porcelain(porcelain)
     # numstat: unstaged and staged are disjoint sets, so summing is correct.
-    _, unstaged_ns, _ = await _run_git(path, 'diff', '--numstat', check=False)
-    _, staged_ns, _ = await _run_git(path, 'diff', '--cached', '--numstat', check=False)
+    _, unstaged_ns, _ = await _run_git(path, 'diff', '--no-textconv', '--no-ext-diff', '--numstat', check=False)
+    _, staged_ns, _ = await _run_git(path, 'diff', '--no-textconv', '--no-ext-diff', '--cached', '--numstat', check=False)
     added, removed = _apply_numstat(files, unstaged_ns + staged_ns)
 
     # `git diff HEAD` already merges staged + unstaged tracked changes; the old
     # concatenation with `git diff --cached` overwrote combined-state entries.
-    _, full_diff, _ = await _run_git(path, 'diff', target, check=False)
+    _, full_diff, _ = await _run_git(path, 'diff', '--no-textconv', '--no-ext-diff', target, check=False)
     for f in files:
         f['diff'] = ''
     if full_diff.strip():
@@ -414,7 +437,7 @@ _DIRTY_CHECKOUT_RE = re.compile(
 
 
 @router.post('/checkout')
-async def git_checkout(body: CheckoutBody):
+async def git_checkout(body: CheckoutBody, _auth: bool = Depends(require_local_token)):
     """Switch branches. When uncommitted changes would block the switch, the
     default call returns ``dirty: true`` (HTTP 200) so the UI can offer the
     GitHub-style choice: leave the changes behind (stash) or bring them along
@@ -488,7 +511,7 @@ async def git_checkout(body: CheckoutBody):
 
 
 @router.post('/push')
-async def git_push(body: PushBody):
+async def git_push(body: PushBody, _auth: bool = Depends(require_local_token)):
     """Push the current branch to its upstream. Fails honestly (400 + stderr)
     when no upstream is configured — the UI surfaces that as a toast."""
     path, err = _resolve_workspace(body.session_id, body.repo_path)
@@ -504,7 +527,7 @@ async def git_push(body: PushBody):
 
 
 @router.post('/commit')
-async def git_commit(body: CommitBody):
+async def git_commit(body: CommitBody, _auth: bool = Depends(require_local_token)):
     if not body.message.strip():
         raise HTTPException(status_code=400, detail='message is required')
     path, err = _resolve_workspace(body.session_id, body.repo_path)
@@ -542,7 +565,7 @@ async def git_command_removed(body: GitCommand):
 
 
 @router.post('/restore')
-async def git_restore(body: RestoreBody):
+async def git_restore(body: RestoreBody, _auth: bool = Depends(require_local_token)):
     """Discard working-tree changes, back to the last commit.
 
     This REPLACED a general ``POST /command`` that forwarded a caller-supplied
