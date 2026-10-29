@@ -178,6 +178,7 @@ _PROMPT_AGENT = frozenset({
     'create_agent', 'list_agents', 'list_daemons', 'spawn_daemon',
     'list_background_tasks', 'read_background_task', 'kill_background_task',
             'spawn_subagents', 'update_agent', 'set_agent_mode',
+    'review_change',
             'list_workstreams', 'send_subagent_message', 'interrupt_subagent',
             # Bot Mode routines: Bot-owned scheduled jobs.
             'create_routine', 'list_routines',

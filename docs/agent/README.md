@@ -14,6 +14,7 @@ the edge cases and the defects each rule exists to prevent.
 | How to work | [workflow.md](workflow.md) | gates, no-test policy, scratch rule, directory routing |
 | Product surface | [product.md](product.md) | desktop shell, update flow, chat UI, Settings IA |
 | Providers | [providers.md](providers.md) | base URLs, wire formats, upstream serialization, pricing |
+| Upstream compatibility | [compatibility.md](compatibility.md) | provider/model/SDK workarounds and their removal gates |
 | Harness | [harness.md](harness.md) | turn loop, budgets, self-correction, subagents, bots, context relief |
 | Memory | [memory.md](memory.md) | facts store, recall lanes, write doors, backups |
 | Skills | [skills.md](skills.md) | SKILL.md format, discovery, learning pipeline, review pass |

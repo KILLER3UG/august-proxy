@@ -459,9 +459,10 @@ export function SessionList({
   /** Status for a session row: live maps are keyed by WORKBENCH id
    *  (realtime bridge writes wb_*); look up both id forms so the pulse
    *  dot shows for background work (audit finding). */
-  const statusFor = (s: { id: string; workbenchSessionId?: string }): SessionStatus | undefined =>
+  const statusFor = (s: { id: string; workbenchSessionId?: string; backgroundWork?: boolean }): SessionStatus | undefined =>
     mergedSessionStates[s.id] ??
-    (s.workbenchSessionId ? mergedSessionStates[s.workbenchSessionId] : undefined);
+    (s.workbenchSessionId ? mergedSessionStates[s.workbenchSessionId] : undefined) ??
+    (s.backgroundWork ? 'working' : undefined);
 
   // Hidden file input for native folder picker (browser fallback)
   const dirInputRef = useRef<HTMLInputElement>(null);

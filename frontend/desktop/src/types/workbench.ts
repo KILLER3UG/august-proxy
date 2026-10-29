@@ -60,6 +60,8 @@ export interface WorkbenchSession {
    *  payload, and only consumed by the sidebar reconcile — it is the one
    *  server-side truth that has to survive a wiped localStorage. */
   isArchived?: boolean;
+  /** True while the session owns a running background shell command. */
+  backgroundWork?: boolean;
   mutationCount: number;
   lastMutationAt: string | null;
   updatedAt: string;

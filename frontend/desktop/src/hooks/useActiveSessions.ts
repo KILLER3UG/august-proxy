@@ -32,6 +32,7 @@ export function useActiveSessions() {
     }
     return sessions.filter(
       (s) =>
+        s.backgroundWork ||
         isActiveStatus(merged[s.id]) ||
         (s.workbenchSessionId ? isActiveStatus(merged[s.workbenchSessionId]) : false),
     );

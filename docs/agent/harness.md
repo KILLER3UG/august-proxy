@@ -186,6 +186,14 @@ The foreground wait is `DEFAULT_FOREGROUND_WAIT_S` in
 The cap is 8 live commands per session. `background: true` only skips the wait;
 the sandbox and approval checks are the same as a foreground command.
 
+**Reading a finished result claims it.** `read_background_task` on a terminal
+task withdraws that task's still-queued completion notice by its queue id, so
+the same result is not pushed into the transcript after the model already
+pulled it. If the notice was already drained, the withdrawal is a no-op. The
+session summary also exposes `backgroundWork` while a task is running; the
+sidebar and quit guard treat that as active work without making the chat look
+like a live stream.
+
 ## Bot-to-Bot work
 
 **Bot-to-Bot work needs its own ceiling, because every loop guard is per-turn.**
@@ -287,6 +295,18 @@ This tells the compactor what to preserve; it does not make the extractor claim
 it analyzed the decisions. Settings' "Free up chat memory" action opens a
 prompt for it; an empty submit is the old immediate compaction.
 
+**Loaded skill bodies survive compaction.** A `load_skill` body is a tool
+result, so the summary can erase it while the system-prompt index still
+advertises the skill. `_compactionCall` scans the pre-cut messages for
+`load_skill` / `load_skills`, skips a skill whose load is still present after
+the cut, fetches the current body through the normal loader, and inserts one
+`user` message (source `harness_nudge`, marker `<<compacted_skills`) directly
+after the summary. The budget is 5k tokens per skill and 10k total (10% of the
+window when known); a truncated body names the skill file to read. A later
+compaction reads the carried names out of that block, so a skill lost twice is
+still restored. It is context repair, not a second prompt: the body is the
+current skill file, bounded.
+
 The pre-turn path archived the transcript AFTER `pruneToolOutputs`, so the
 snapshot held `[Old tool result content cleared]` where old tool outputs had been
 while compaction then persisted the reduced list — the content was in neither
@@ -343,6 +363,14 @@ low-frequency tool: a catalog small enough to stay under the 10% threshold is
 offered whole, and a large one is preloaded by BM25 then served through
 `tool_search` / `tool_call` by name. An MCP call still takes the same hooks,
 approval axis and timeout as a resident tool.
+
+**`review_change` is an opt-in clean-context review door.** It takes the
+requirement, the actual diff and the real test/build evidence, spawns a
+read-only subagent preloaded with the `independent-review` skill, and returns a
+structured verdict with findings; findings are never applied automatically.
+It is step-scoped, not a final-answer verifier gate: the parent still owns the
+answer, and a review is a deliberate call after a plan step or before a
+merge.
 
 **Agent modes (0.12.55+)** — `set_agent_mode(chat|agent|code|orchestrator)`
 (`planner` is an alias for `orchestrator`) switches the session: `chat` blocks

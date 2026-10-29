@@ -57,6 +57,19 @@ LOCK_TTL_S = 300.0
 # 8–16 KB range) lets the next agent act without re-asking.
 REPLAY_USER_BUDGET_BYTES = 12 * 1024
 
+# ── Skill carryover across compaction ──
+# A loaded skill body is a tool result, so compaction summarizes it away while
+# the skill index in the system prompt survives. The next turn then remembers
+# that the skill exists but not what it said. This restores the bodies of the
+# skills loaded before the compaction cut, bounded, newest last, after the
+# summary. It is context repair, not a second prompt: the text is current
+# skill content fetched through the normal loader.
+SKILL_CARRYOVER_MARKER = '<<compacted_skills'
+SKILL_CARRYOVER_END = '<<end_compacted_skills>>'
+SKILL_CARRYOVER_TOTAL_TOKENS = 10_000
+SKILL_CARRYOVER_SKILL_TOKENS = 5_000
+SKILL_CARRYOVER_WINDOW_SHARE = 0.10
+
 # ── Two-route context relief ──
 # Compact-in-place preserves the FIRST `head_count` messages verbatim forever and
 # summarizes what comes after it. From the second relief onward that is loss
@@ -486,6 +499,138 @@ def _iterToolCalls(messages: list[dict[str, object]]):
                         callInput = {}
             if name:
                 yield name, callInput
+
+
+def _loadedSkillNames(messages: list[dict[str, object]]) -> list[str]:
+    """Skills whose bodies this span loaded, in load order.
+
+    `load_skill` and the bulk `load_skills` are the two doors; a file argument
+    is a reference read, not a body load. A previous carryover block also
+    counts: after a second compaction its original load call may itself be
+    summarized away, and the carried names are the only durable evidence.
+    """
+    import re
+
+    names: list[str] = []
+    for toolName, inp in _iterToolCalls(messages):
+        n = toolName.strip().lower()
+        if n == 'load_skill':
+            if as_str(inp.get('file')):
+                continue
+            name = as_str(inp.get('name'))
+            if name:
+                names.append(name)
+        elif n == 'load_skills':
+            for item in as_list(inp.get('names') or inp.get('name')):
+                name = as_str(item.get('name')) if isinstance(item, dict) else as_str(item)
+                if name:
+                    names.append(name)
+    for message in messages:
+        content = message.get('content')
+        if isinstance(content, str) and SKILL_CARRYOVER_MARKER in content:
+            names.extend(re.findall(r'<skill name="([^"]+)"', content))
+    return names
+
+
+def _skillCarryoverBudget(context_window: int) -> tuple[int, int]:
+    """(per-skill chars, total chars) for restored skill bodies."""
+    if context_window > 0:
+        total_tokens = min(
+            SKILL_CARRYOVER_TOTAL_TOKENS,
+            int(context_window * SKILL_CARRYOVER_WINDOW_SHARE),
+        )
+    else:
+        total_tokens = SKILL_CARRYOVER_TOTAL_TOKENS
+    total_tokens = max(1_000, total_tokens)
+    return min(SKILL_CARRYOVER_SKILL_TOKENS, total_tokens) * 4, total_tokens * 4
+
+
+def buildSkillCarryover(
+    messages: list[dict[str, object]],
+    compacted: list[dict[str, object]],
+    *,
+    workspace: str = '',
+    context_window: int = 0,
+) -> dict[str, object] | None:
+    """A user-role context-repair message for skills lost in compaction.
+
+    Only skills loaded before the cut whose load call is no longer present in
+    the compacted surface are restored. The body is fetched through the normal
+    loader (current content), capped per skill and in total, and marked with
+    the file path when truncated. Automatic compaction passes this through the
+    same policy as every other path; the message is tagged `harness_nudge` so
+    the Bot runaway ceiling does not read it as the human speaking.
+    """
+    if not compacted or not any(_isSummaryMessage(m) for m in compacted):
+        return None
+    before = _loadedSkillNames(messages)
+    after = set(_loadedSkillNames(compacted))
+    order: dict[str, int] = {}
+    for index, name in enumerate(before):
+        order[name] = index
+    missing = [name for name in sorted(order, key=lambda n: order[n]) if name not in after]
+    if not missing:
+        return None
+
+    try:
+        from app.services import skill_service
+    except Exception:
+        return None
+
+    perSkillChars, totalChars = _skillCarryoverBudget(context_window)
+    blocks: list[str] = []
+    used = 0
+    for name in missing:
+        try:
+            skill = skill_service.get(name, workspace or None)
+        except Exception:
+            continue
+        if not skill or not skill.get('enabled'):
+            continue
+        body = as_str(skill.get('instructions')).strip()
+        if not body:
+            continue
+        path = as_str(skill.get('path'))
+        openTag = f'<skill name="{name}"' + (f' path="{path}"' if path else '') + '>\n'
+        closeTag = '\n</skill>'
+        room = totalChars - used - len(openTag) - len(closeTag) - 2
+        if room < 500:
+            break
+        cap = min(perSkillChars, room)
+        if len(body) > cap:
+            notice = (
+                f'\n\n[Truncated after compaction. Read {path or "the skill file"} '
+                'for the full text.]'
+            )
+            body = body[: max(0, cap - len(notice))] + notice
+        block = f'{openTag}{body}{closeTag}'
+        blocks.append(block)
+        used += len(block) + 2
+    if not blocks:
+        return None
+    content = (
+        '[COMPACTED SKILLS — harness-restored context, not a user request. '
+        'These skills were loaded earlier and their bodies were summarized away; '
+        'the current bodies are restored below, newest last. If a body is marked '
+        'truncated, read its file before relying on the missing part.]\n'
+        f'{SKILL_CARRYOVER_MARKER}\n\n'
+        + '\n\n'.join(blocks)
+        + f'\n{SKILL_CARRYOVER_END}'
+    )
+    return {'role': 'user', 'content': content, 'source': 'harness_nudge'}
+
+
+def insertSkillCarryover(
+    compacted: list[dict[str, object]], carryover: dict[str, object]
+) -> list[dict[str, object]]:
+    """Place the restored skills immediately after the newest summary note."""
+    index = -1
+    for i, message in enumerate(compacted):
+        if _isSummaryMessage(message):
+            index = i
+    if index < 0:
+        return compacted
+    return compacted[: index + 1] + [carryover] + compacted[index + 1 :]
 
 
 def extractFileLedger(messages: list[dict[str, object]]) -> tuple[list[str], list[str]]:

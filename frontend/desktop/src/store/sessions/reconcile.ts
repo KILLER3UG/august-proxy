@@ -101,6 +101,7 @@ export async function reconcileSessionsFromBackend(
           provider: backend.provider || local.provider,
           model: (backend.model) || local.model,
           workbenchProvider: backend.provider || local.workbenchProvider,
+          backgroundWork: backend.backgroundWork ?? local.backgroundWork,
           // A chat the user never filed runs wherever the BACKEND says it
           // runs, so the backend owns its path. Local rows still carry the OS
           // home directory the old folderless default wrote into every one of
@@ -197,6 +198,7 @@ export async function reconcileSessionsFromBackend(
         model: (bs.model) || '',
         workbenchSessionId: bs.id,
         workbenchProvider: bs.provider || '',
+        backgroundWork: !!bs.backgroundWork,
         // Carry the backend workspace across so a restored project session
         // keeps its path (and the task-home backfill does not claim it).
         workspacePath: bs.workspacePath || null,

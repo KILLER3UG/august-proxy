@@ -154,6 +154,99 @@ async def _clearBlackboard(agent: str = '') -> str:
 
 
 
+async def _reviewChange(
+    requirement: str = '',
+    diff: str = '',
+    testEvidence: str = '',
+    focus: str = '',
+) -> str:
+    """Run a clean-context, read-only review of a completed change.
+
+    This is a host door, not a verifier gate: it returns the reviewer's
+    structured findings to the parent, and the parent decides what to fix.
+    The reviewer gets only the requirement, the diff and the real test
+    evidence, plus the independent-review skill; it never inherits the
+    author's chat.
+    """
+    import json
+
+    from app.services.runtime_services import get_orchestrator
+    from app.services.tools.spawn_subagents_tool import executeSpawnSubagents
+    from app.services.workbench import workbench as wb
+    from app.services.workbench.context import currentSessionId
+
+    if not requirement.strip() or not diff.strip():
+        return 'Error: requirement and diff are required for a review.'
+
+    def _cap(text: str, limit: int = 60_000) -> str:
+        value = text.strip()
+        if len(value) <= limit:
+            return value
+        return value[:limit] + '\n[truncated — open the files for the rest]'
+
+    context = (
+        f'Requirement:\n{_cap(requirement)}\n\n'
+        f'Diff:\n```diff\n{_cap(diff)}\n```\n\n'
+        f'Test/build evidence (the real commands and output, not a claim):\n'
+        f'{_cap(testEvidence or "No test evidence was provided.")}'
+    )
+    if focus.strip():
+        context += f'\n\nFocus the review on:\n{_cap(focus, 4_000)}'
+
+    session = wb.getWorkbenchSession(currentSessionId.get())
+    if session is None:
+        return 'Error: no active workbench session for a review.'
+    result = await executeSpawnSubagents(
+        get_orchestrator(),
+        session,
+        [
+            {
+                'goal': (
+                    'Independently review this change from a clean context. Follow the '
+                    'independent-review procedure. Verify every finding against the real '
+                    'code before filing it; do not edit files or run mutating commands. '
+                    'Return the structured verdict.'
+                ),
+                'context': context,
+                'skills': ['independent-review'],
+                'capability': 'read_only',
+                'effort': 'high',
+                'yieldSchema': _REVIEW_SCHEMA,
+            }
+        ],
+        mode='auto',
+        background=False,
+    )
+    return json.dumps(result, default=str)
+
+
+_REVIEW_SCHEMA: dict[str, object] = {
+    'type': 'object',
+    'properties': {
+        'verdict': {'type': 'string', 'enum': ['approve', 'request_changes']},
+        'summary': {'type': 'string'},
+        'findings': {
+            'type': 'array',
+            'items': {
+                'type': 'object',
+                'properties': {
+                    'path': {'type': 'string'},
+                    'line': {'type': 'integer'},
+                    'severity': {
+                        'type': 'string',
+                        'enum': ['blocker', 'important', 'nit'],
+                    },
+                    'problem': {'type': 'string'},
+                    'reason': {'type': 'string'},
+                },
+                'required': ['severity', 'problem', 'reason'],
+            },
+        },
+    },
+    'required': ['verdict', 'summary', 'findings'],
+}
+
+
 async def _spawnSubagents(
     workItems: list | None = None,
     mode: str = 'auto',
@@ -447,6 +540,36 @@ def register() -> None:
                 },
             },
             'required': ['workItems'],
+        },
+    )
+    tool_registry.register(
+        'review_change',
+        'Run a clean-context, read-only review of a completed change: supply the requirement, '
+        'the diff, and the real test/build evidence. The reviewer gets only those three inputs '
+        'plus the independent-review skill; findings come back structured and are not applied '
+        'automatically. Use after a plan step or before merging — this is not a final-answer gate.',
+        _reviewChange,
+        {
+            'type': 'object',
+            'properties': {
+                'requirement': {
+                    'type': 'string',
+                    'description': 'The issue, spec or acceptance criteria the change must satisfy.',
+                },
+                'diff': {
+                    'type': 'string',
+                    'description': 'The actual diff (git diff <base>...HEAD or the staged diff), not a summary.',
+                },
+                'testEvidence': {
+                    'type': 'string',
+                    'description': 'The commands that were run and their real output, including failures/skips.',
+                },
+                'focus': {
+                    'type': 'string',
+                    'description': 'Optional area to scrutinize (for example a permission boundary or migration).',
+                },
+            },
+            'required': ['requirement', 'diff', 'testEvidence'],
         },
     )
     tool_registry.register(

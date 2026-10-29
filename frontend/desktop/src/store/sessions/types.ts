@@ -23,6 +23,8 @@ export interface Session {
   workbenchSessionId?: string;
   workbenchAgentId?: string;
   workbenchProvider?: string;
+  /** True while the session owns a running background shell command. */
+  backgroundWork?: boolean;
 }
 
 export type SessionStatus = 'idle' | 'working' | 'awaiting' | 'error' | 'done' | 'streaming';

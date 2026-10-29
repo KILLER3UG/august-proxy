@@ -17,6 +17,7 @@ that area.
 | Branches, commits, staging, release flow | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Desktop shell, update flow, chat UI | [docs/agent/product.md](docs/agent/product.md) |
 | Providers, wire formats, pricing | [docs/agent/providers.md](docs/agent/providers.md) |
+| Upstream quirks, workarounds and removal gates | [docs/agent/compatibility.md](docs/agent/compatibility.md) |
 | Turn loop, budgets, subagents, bots | [docs/agent/harness.md](docs/agent/harness.md) |
 | Memory, recall, backups, mirror | [docs/agent/memory.md](docs/agent/memory.md) |
 | Skills, learning, review pass | [docs/agent/skills.md](docs/agent/skills.md) |

@@ -115,6 +115,7 @@ export function preferSessionRow(a: Session, b: Session): Session {
     workspacePath: primary.workspacePath ?? secondary.workspacePath,
     workbenchAgentId: primary.workbenchAgentId || secondary.workbenchAgentId,
     workbenchProvider: primary.workbenchProvider || secondary.workbenchProvider,
+    backgroundWork: primary.backgroundWork ?? secondary.backgroundWork,
     startedAt: primary.startedAt || secondary.startedAt,
     // Last activity is a high-water mark, not a "primary wins" field: the
     // sidebar's live ordering reads it, and a merge that kept the older stamp

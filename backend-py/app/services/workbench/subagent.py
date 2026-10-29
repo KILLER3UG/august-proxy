@@ -982,6 +982,7 @@ async def executeSubAgent(
                         context_window=_contextWindow,
                         goalHint=as_str(getattr(session, 'goal', '') or ''),
                         summarizer=None,
+                        workspace=as_str(getattr(session, 'workspacePath', '') or ''),
                     )
             except Exception:
                 pass

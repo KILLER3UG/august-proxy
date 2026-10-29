@@ -118,6 +118,7 @@ class BackgroundCommand:
     elapsedMs: int = 0
     resultText: str = ''
     sandboxResult: SandboxResult | None = None
+    notificationId: str = ''
     detached: bool = False
     notified: bool = False
     silent: bool = False
@@ -168,7 +169,9 @@ class BackgroundCommandManager:
         try:
             from app.services.workbench.workbench import enqueueUserMessage
 
-            enqueueUserMessage(bg.sessionId, text, kind='shell')
+            entry = enqueueUserMessage(bg.sessionId, text, kind='shell')
+            if isinstance(entry, dict):
+                bg.notificationId = str(entry.get('id') or '')
         except Exception:  # noqa: BLE001 -- a failed notification must not kill the task
             logger.debug('background notify enqueue failed', exc_info=True)
             return
@@ -380,6 +383,14 @@ class BackgroundCommandManager:
             )
         return '\n'.join(lines)
 
+    def has_active(self, session_id: str) -> bool:
+        """True while this session owns a running background command."""
+        sid = (session_id or 'default').strip() or 'default'
+        return any(
+            task.sessionId == sid and task.status == 'running'
+            for task in self._tasks.values()
+        )
+
     def read(self, task_id: str, session_id: str = '', tail_chars: int = _TAIL_DEFAULT) -> str:
         bg = self._find(task_id, session_id)
         if bg is None:
@@ -389,6 +400,17 @@ class BackgroundCommandManager:
             # cannot reattach to it or know its exit code.
             bg.status = 'orphaned'
             self._write_meta(bg)
+        # Claim-on-pull: reading a finished result is the parent taking it.
+        # Withdraw the still-queued completion notice so the same result is
+        # not pushed into the transcript after it has been read.
+        if bg.status != 'running' and bg.notificationId:
+            try:
+                from app.services.workbench.workbench import dequeueUserMessage
+
+                dequeueUserMessage(bg.sessionId, bg.notificationId)
+            except Exception:  # noqa: BLE001 -- a failed withdrawal leaves the push in place
+                logger.debug('background notification withdrawal failed', exc_info=True)
+            bg.notificationId = ''
         try:
             tail_chars = int(tail_chars or _TAIL_DEFAULT)
         except (TypeError, ValueError):

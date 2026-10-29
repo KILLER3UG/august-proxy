@@ -3216,6 +3216,7 @@ async def _sendWorkbenchMessageStreamImpl(
                         context_window=contextWindow,
                         goalHint=as_str(getattr(session, 'goal', '') or ''),
                         summarizer=summarizer,
+                        workspace=as_str(getattr(session, 'workspacePath', '') or ''),
                     )
                     compressedTokens = estimateTokens(compressed)
                     # Throttle whether or not the relief is taken. `_shouldAutoCompact`
@@ -7544,7 +7545,7 @@ def listProxyCapabilities() -> dict[str, object]:
             group = 'skill'
         elif name in ('web_fetch', 'web_search'):
             group = 'web'
-        elif name in ('spawn_subagents', 'create_agent', 'list_agents', 'list_workstreams', 'send_subagent_message', 'interrupt_subagent'):
+        elif name in ('spawn_subagents', 'review_change', 'create_agent', 'list_agents', 'list_workstreams', 'send_subagent_message', 'interrupt_subagent'):
             group = 'agent'
         elif name in ('spawn_daemon', 'list_daemons', 'kill_daemon'):
             group = 'daemon'

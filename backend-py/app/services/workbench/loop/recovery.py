@@ -155,6 +155,7 @@ async def _compactionCall(
     summarizer: object | None,
     thresholdOverride: int | None = None,
     keep_hint: str = '',
+    workspace: str = '',
 ) -> tuple[list[dict[str, object]], str, dict[str, int]]:
     """THE compaction policy — one site, shared by every path that compacts.
 
@@ -194,7 +195,9 @@ async def _compactionCall(
     from app.services.workbench.context_compressor import (
         RELIEF_ROTATE,
         REPLAY_USER_BUDGET_BYTES,
+        buildSkillCarryover,
         compressMessages,
+        insertSkillCarryover,
         pruneToolOutputs,
         reliefHeadCount,
         reliefStrategy,
@@ -222,6 +225,23 @@ async def _compactionCall(
         reliefStats=stats,
         keep_hint=keep_hint,
     )
+    # Loaded skill bodies are tool results, so the summary above can erase
+    # them while the system-prompt index still advertises the skill. Restore
+    # only the ones whose load call is no longer present, after the note.
+    try:
+        carryover = buildSkillCarryover(
+            pruned,
+            compressed,
+            workspace=workspace,
+            context_window=context_window,
+        )
+        if carryover is not None:
+            compressed = insertSkillCarryover(compressed, carryover)
+            stats['skills_carried'] = int(
+                str(carryover.get('content', '')).count('<skill name=')
+            )
+    except Exception:
+        logger.debug('skill carryover failed', exc_info=True)
     return compressed, relief, stats
 
 
@@ -254,6 +274,7 @@ async def _reactiveContextReduction(
             context_window=contextWindow,
             goalHint=as_str(getattr(session, 'goal', '') or ''),
             summarizer=None,
+            workspace=as_str(getattr(session, 'workspacePath', '') or ''),
         )
         if statsOut is not None:
             statsOut['relief'] = _relief
@@ -632,6 +653,7 @@ async def _budgetTriggeredCompaction(
             context_window=contextWindow,
             goalHint=as_str(getattr(session, 'goal', '') or ''),
             summarizer=summarizer,
+            workspace=as_str(getattr(session, 'workspacePath', '') or ''),
         )
         compressedTokens = _tokens(compressed)
         if not _reductionIsWorthwhile(originalTokens, compressedTokens):

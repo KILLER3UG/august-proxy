@@ -188,6 +188,7 @@ class WorkbenchSession:
             'pendingMutations': self.pendingMutations,
             'mutationLog': self.mutationLog,
             'status': self.status,
+            'backgroundWork': _has_background_work(self.id),
             'turnOpen': self.turnOpen,
             'metadata': self.metadata,
             # Bot Mode: canonical Bot Chats reroute /new → compact
@@ -1667,6 +1668,7 @@ async def compact_workbench_session_now(
         summarizer=None,
         thresholdOverride=0,
         keep_hint=as_str(instructions or '')[:2000],
+        workspace=as_str(getattr(session, 'workspacePath', '') or ''),
     )
     compressed_tokens = estimateTokens(compressed)
     compressed_count = max(0, len(original) - len(compressed))
@@ -1927,6 +1929,16 @@ def _session_last_preview(session: WorkbenchSession, cap: int = 100) -> str:
     return ''
 
 
+def _has_background_work(session_id: str) -> bool:
+    """True while a session owns a running background shell command."""
+    try:
+        from app.services.background_commands import getManager
+
+        return getManager().has_active(session_id)
+    except Exception:
+        return False
+
+
 def summarize_session(session: WorkbenchSession) -> dict[str, object]:
     """Return a lightweight summary of a session."""
     return {
@@ -1944,6 +1956,7 @@ def summarize_session(session: WorkbenchSession) -> dict[str, object]:
         'mutationCount': session.mutationCount,
         'turnCount': session.turnCount,
         'status': session.status,
+        'backgroundWork': _has_background_work(session.id),
         'createdAt': session.createdAt,
         'updatedAt': session.updatedAt,
         'startedAt': session.startedAt,
@@ -1998,6 +2011,7 @@ def get_workbench_session_status(session_id: str) -> dict[str, object] | None:
     return {
         'sessionId': session_id,
         'status': session.status,
+        'backgroundWork': _has_background_work(session_id),
         'guardMode': session.guardMode,
         'sandboxMode': getattr(session, 'sandboxMode', 'workspace-write') or 'workspace-write',
         'sandboxNetwork': bool(getattr(session, 'sandboxNetwork', False)),
