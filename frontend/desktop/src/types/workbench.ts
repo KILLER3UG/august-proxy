@@ -1,9 +1,33 @@
 /* Workbench types — mirror backend/services/workbench/workbench.js */
 
+export interface WorkbenchTodoCommit {
+  sha: string;
+  subject?: string;
+  base?: string;
+  paths?: string[];
+  adopted?: boolean;
+  at?: string;
+}
+
+export interface WorkbenchTodoReview {
+  status: 'unreviewed' | 'approved' | 'changes_requested' | 'failed' | (string & {});
+  reviewedSha?: string;
+  summary?: string;
+  findings?: unknown[];
+  at?: string;
+}
+
 export interface WorkbenchTodo {
   id: string;
   content: string;
   status: 'pending' | 'in_progress' | 'completed';
+  summary?: string;
+  verification?: string;
+  commitSubject?: string;
+  /** Host-owned step commits, oldest first. */
+  commit?: WorkbenchTodoCommit[];
+  /** Host-owned review record for the latest commit. */
+  review?: WorkbenchTodoReview;
 }
 
 export interface WorkbenchPlan {

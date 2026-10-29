@@ -160,91 +160,50 @@ async def _reviewChange(
     testEvidence: str = '',
     focus: str = '',
 ) -> str:
-    """Run a clean-context, read-only review of a completed change.
-
-    This is a host door, not a verifier gate: it returns the reviewer's
-    structured findings to the parent, and the parent decides what to fix.
-    The reviewer gets only the requirement, the diff and the real test
-    evidence, plus the independent-review skill; it never inherits the
-    author's chat.
-    """
+    """Run a clean-context, read-only review of a completed change."""
     import json
 
-    from app.services.runtime_services import get_orchestrator
-    from app.services.tools.spawn_subagents_tool import executeSpawnSubagents
     from app.services.workbench import workbench as wb
+    from app.services.workbench.clean_review import run_clean_review
     from app.services.workbench.context import currentSessionId
 
     if not requirement.strip() or not diff.strip():
         return 'Error: requirement and diff are required for a review.'
-
-    def _cap(text: str, limit: int = 60_000) -> str:
-        value = text.strip()
-        if len(value) <= limit:
-            return value
-        return value[:limit] + '\n[truncated — open the files for the rest]'
-
-    context = (
-        f'Requirement:\n{_cap(requirement)}\n\n'
-        f'Diff:\n```diff\n{_cap(diff)}\n```\n\n'
-        f'Test/build evidence (the real commands and output, not a claim):\n'
-        f'{_cap(testEvidence or "No test evidence was provided.")}'
-    )
-    if focus.strip():
-        context += f'\n\nFocus the review on:\n{_cap(focus, 4_000)}'
-
     session = wb.getWorkbenchSession(currentSessionId.get())
     if session is None:
         return 'Error: no active workbench session for a review.'
-    result = await executeSpawnSubagents(
-        get_orchestrator(),
+    result = await run_clean_review(
         session,
-        [
-            {
-                'goal': (
-                    'Independently review this change from a clean context. Follow the '
-                    'independent-review procedure. Verify every finding against the real '
-                    'code before filing it; do not edit files or run mutating commands. '
-                    'Return the structured verdict.'
-                ),
-                'context': context,
-                'skills': ['independent-review'],
-                'capability': 'read_only',
-                'effort': 'high',
-                'yieldSchema': _REVIEW_SCHEMA,
-            }
-        ],
-        mode='auto',
-        background=False,
+        requirement=requirement,
+        diff=diff,
+        test_evidence=testEvidence or 'No test evidence was provided.',
+        focus=focus,
     )
     return json.dumps(result, default=str)
 
 
-_REVIEW_SCHEMA: dict[str, object] = {
-    'type': 'object',
-    'properties': {
-        'verdict': {'type': 'string', 'enum': ['approve', 'request_changes']},
-        'summary': {'type': 'string'},
-        'findings': {
-            'type': 'array',
-            'items': {
-                'type': 'object',
-                'properties': {
-                    'path': {'type': 'string'},
-                    'line': {'type': 'integer'},
-                    'severity': {
-                        'type': 'string',
-                        'enum': ['blocker', 'important', 'nit'],
-                    },
-                    'problem': {'type': 'string'},
-                    'reason': {'type': 'string'},
-                },
-                'required': ['severity', 'problem', 'reason'],
-            },
-        },
-    },
-    'required': ['verdict', 'summary', 'findings'],
-}
+async def _commitStep(step: str = '', subject: str = '', paths: list | None = None) -> str:
+    import asyncio
+
+    from app.services.workbench import step_commits
+    from app.services.workbench import workbench as wb
+    from app.services.workbench.context import currentSessionId
+
+    session = wb.getWorkbenchSession(currentSessionId.get())
+    if session is None:
+        return 'Error: no active workbench session for a step commit.'
+    return await asyncio.to_thread(step_commits.commit_step, session, step, subject, paths)
+
+
+async def _stepReview(step: str = '', focus: str = '') -> str:
+    from app.services.workbench import step_commits
+    from app.services.workbench import workbench as wb
+    from app.services.workbench.context import currentSessionId
+
+    session = wb.getWorkbenchSession(currentSessionId.get())
+    if session is None:
+        return 'Error: no active workbench session for a step review.'
+    return await step_commits.review_step(session, step, focus)
 
 
 async def _spawnSubagents(
@@ -570,6 +529,55 @@ def register() -> None:
                 },
             },
             'required': ['requirement', 'diff', 'testEvidence'],
+        },
+    )
+    tool_registry.register(
+        'commit_step',
+        'Commit exactly one completed todo step and record it on the step. The host records a '
+        'baseline when the step goes in_progress; with no paths it commits only the step delta '
+        'and refuses when the workspace was already dirty at the baseline. Pass paths explicitly '
+        'only when there is no baseline. This is a real commit on the current branch; it is not '
+        'automatic.',
+        _commitStep,
+        {
+            'type': 'object',
+            'properties': {
+                'step': {
+                    'type': 'string',
+                    'description': 'Step id (step_…) or the exact step content.',
+                },
+                'subject': {
+                    'type': 'string',
+                    'description': 'One-line commit subject; defaults to the step content.',
+                },
+                'paths': {
+                    'type': 'array',
+                    'items': {'type': 'string'},
+                    'description': 'Optional explicit workspace-relative paths when no baseline exists.',
+                },
+            },
+            'required': ['step'],
+        },
+    )
+    tool_registry.register(
+        'step_review',
+        'Review one completed step from its recorded commit(s) using the clean-context, read-only '
+        'reviewer. Records the verdict on the step; findings are not applied automatically and the '
+        'turn is not withheld.',
+        _stepReview,
+        {
+            'type': 'object',
+            'properties': {
+                'step': {
+                    'type': 'string',
+                    'description': 'Step id (step_…) or the exact step content.',
+                },
+                'focus': {
+                    'type': 'string',
+                    'description': 'Optional area to scrutinize in the step review.',
+                },
+            },
+            'required': ['step'],
         },
     )
     tool_registry.register(

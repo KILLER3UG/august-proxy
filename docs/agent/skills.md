@@ -24,6 +24,16 @@ category level is supported (`<root>/<category>/<name>/SKILL.md`). A config
 `<workspace>/.aug/skills`, `<dataDir>/skills`, `<dataDir>/bots/<id>/skills` and
 the bundled `<repo>/skills`.
 
+**The project root is trust-gated.** `<workspace>/.aug/skills` is repo-supplied
+instruction content, so it joins discovery only after the user approves that
+workspace for project skills (`trusted-skill-workspaces.json` in the data dir).
+The raw root is still parsed for the pending-skill notice and the Settings →
+Skills banner, which names what a repository wants to add and offers Trust /
+Revoke. Trusting project skills does not trust `.aug/hooks.json`; the hook store
+is separate. A revoke busts the catalogue and prompt caches, so the next turn
+stops offering the skills. The prompt intake says how many project skills are
+inactive; the model cannot load a pending one through `load_skill`.
+
 **A learned skill is a procedure, not a rule**: the distiller drafts section
 fields (`steps`, `pitfalls`, `verification`, …) that
 `skill_service.renderSkillBody` renders, and `skill_service.bodySubstance`

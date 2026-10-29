@@ -209,6 +209,23 @@ export function RightDrawerTasksSection({
                     )}>
                       {todo.content}
                     </div>
+                    {todo.commit?.length ? (
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-2xs text-muted-foreground/70">
+                        <span className="font-mono">
+                          {todo.commit[todo.commit.length - 1]?.sha?.slice(0, 7)}
+                          {todo.commit.length > 1 ? ` +${todo.commit.length - 1}` : ''}
+                        </span>
+                        {todo.review?.status === 'approved' ? (
+                          <span className="text-success-fg">reviewed</span>
+                        ) : todo.review?.status === 'changes_requested' ? (
+                          <span className="text-warning-fg">changes requested</span>
+                        ) : todo.review?.status === 'failed' ? (
+                          <span className="text-destructive">review failed</span>
+                        ) : (
+                          <span>unreviewed</span>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               );

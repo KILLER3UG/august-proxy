@@ -2985,6 +2985,20 @@
         "title": "SkillPatch",
         "type": "object"
       },
+      "SkillTrustRequest": {
+        "properties": {
+          "workspace": {
+            "description": "Project workspace path to trust or revoke.",
+            "title": "Workspace",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace"
+        ],
+        "title": "SkillTrustRequest",
+        "type": "object"
+      },
       "SlackBody": {
         "properties": {
           "botToken": {
@@ -14642,6 +14656,119 @@
           }
         },
         "summary": "Restoreskill"
+      }
+    },
+    "/api/skills/revoke-trust": {
+      "post": {
+        "description": "Withdraw approval; the next catalogue build drops the project root.",
+        "operationId": "revokeSkillWorkspace_api_skills_revoke_trust_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillTrustRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revokeskillworkspace"
+      }
+    },
+    "/api/skills/trust": {
+      "get": {
+        "description": "Whether this workspace's project skills are trusted, plus what is waiting.",
+        "operationId": "skillTrustStatus_api_skills_trust_get",
+        "parameters": [
+          {
+            "description": "Project workspace path",
+            "in": "query",
+            "name": "workspace",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "Project workspace path",
+              "title": "Workspace",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Skilltruststatus"
+      },
+      "post": {
+        "description": "Approve loading an opened workspace's repo-supplied skills.",
+        "operationId": "trustSkillWorkspace_api_skills_trust_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillTrustRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Trustskillworkspace"
       }
     },
     "/api/skills/{name}": {

@@ -334,11 +334,27 @@ _TODOS_SCHEMA: dict[str, object] = {
             'items': {
                 'type': 'object',
                 'properties': {
+                    'id': {
+                        'type': 'string',
+                        'description': 'Optional stable step id from the current list; omit when adding a step.',
+                    },
                     'content': {'type': 'string', 'description': 'What the step involves.'},
                     'status': {
                         'type': 'string',
                         'enum': ['pending', 'in_progress', 'completed'],
                         'description': 'Step status. Exactly one step should be in_progress.',
+                    },
+                    'summary': {
+                        'type': 'string',
+                        'description': 'At completion: what changed, in one or two sentences.',
+                    },
+                    'verification': {
+                        'type': 'string',
+                        'description': 'At completion: the real command(s) and output that verify the step.',
+                    },
+                    'commitSubject': {
+                        'type': 'string',
+                        'description': 'Optional one-line commit subject for commit_step.',
                     },
                 },
                 'required': ['content', 'status'],

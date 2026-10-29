@@ -5207,6 +5207,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/skills/revoke-trust": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revokeskillworkspace
+         * @description Withdraw approval; the next catalogue build drops the project root.
+         */
+        post: operations["revokeSkillWorkspace_api_skills_revoke_trust_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/trust": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Skilltruststatus
+         * @description Whether this workspace's project skills are trusted, plus what is waiting.
+         */
+        get: operations["skillTrustStatus_api_skills_trust_get"];
+        put?: never;
+        /**
+         * Trustskillworkspace
+         * @description Approve loading an opened workspace's repo-supplied skills.
+         */
+        post: operations["trustSkillWorkspace_api_skills_trust_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/skills/{name}": {
         parameters: {
             query?: never;
@@ -9333,6 +9377,14 @@ export interface components {
             trigger?: string | null;
             /** Workspace */
             workspace?: string | null;
+        };
+        /** SkillTrustRequest */
+        SkillTrustRequest: {
+            /**
+             * Workspace
+             * @description Project workspace path to trust or revoke.
+             */
+            workspace: string;
         };
         /** SlackBody */
         SlackBody: {
@@ -18238,6 +18290,104 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revokeSkillWorkspace_api_skills_revoke_trust_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillTrustRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    skillTrustStatus_api_skills_trust_get: {
+        parameters: {
+            query?: {
+                /** @description Project workspace path */
+                workspace?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trustSkillWorkspace_api_skills_trust_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillTrustRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

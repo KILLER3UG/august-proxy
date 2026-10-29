@@ -178,7 +178,7 @@ _PROMPT_AGENT = frozenset({
     'create_agent', 'list_agents', 'list_daemons', 'spawn_daemon',
     'list_background_tasks', 'read_background_task', 'kill_background_task',
             'spawn_subagents', 'update_agent', 'set_agent_mode',
-    'review_change',
+    'review_change', 'commit_step', 'step_review',
             'list_workstreams', 'send_subagent_message', 'interrupt_subagent',
             # Bot Mode routines: Bot-owned scheduled jobs.
             'create_routine', 'list_routines',
@@ -280,7 +280,7 @@ _PLAN_BLOCKED_BULK_PLURALS = frozenset({
 _PLAN_BLOCKED_MARKERS = (
     'write', 'edit', 'delete', 'remove', 'install', 'uninstall',
     'exec', 'command', 'bash', 'shell', 'patch', 'rename', 'kill_daemon',
-    'kill_background',
+    'kill_background', 'commit_step',
 )
 
 _PLAN_BLOCKED_BULK_OPS = frozenset({

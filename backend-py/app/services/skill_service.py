@@ -28,6 +28,134 @@ logger = logging.getLogger('august.skills')
 
 SKILLS_DIR = Path(__file__).resolve().parent.parent.parent.parent / 'skills'
 
+# Project skills are repo-supplied instructions. A cloned repository can add
+# `.aug/skills` without the user asking, so the project root participates in
+# discovery only after a per-workspace approval. This is deliberately a
+# separate store from the hook trust: trusting shell hooks is not consent to
+# load instruction packages, and vice versa.
+_SKILL_TRUST_STORE = 'trusted-skill-workspaces.json'
+
+
+def _skill_trust_store_path() -> Path | None:
+    try:
+        from app.lib.paths import dataDir
+
+        return Path(dataDir()) / _SKILL_TRUST_STORE
+    except Exception:
+        return None
+
+
+def _normalize_skill_workspace(workspace: str | Path) -> str | None:
+    try:
+        return str(Path(workspace).resolve())
+    except Exception:
+        return None
+
+
+def trusted_skill_workspaces() -> list[str]:
+    """Workspaces the user has approved to load project skills from."""
+    p = _skill_trust_store_path()
+    if p is None or not p.is_file():
+        return []
+    try:
+        raw = json.loads(p.read_text('utf-8'))
+    except Exception:
+        return []
+    entries = raw.get('workspaces') if isinstance(raw, dict) else raw
+    return [str(e) for e in entries] if isinstance(entries, list) else []
+
+
+def is_skill_workspace_trusted(workspace: str | Path) -> bool:
+    key = _normalize_skill_workspace(workspace)
+    return key is not None and key in trusted_skill_workspaces()
+
+
+def _write_skill_trust_store(p: Path, workspaces: list[str]) -> bool:
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({'workspaces': workspaces}, indent=2), 'utf-8')
+    except Exception as exc:
+        logger.warning('skills: could not write trust store %s: %s', p, exc)
+        return False
+    return True
+
+
+def trust_skill_workspace(workspace: str | Path) -> bool:
+    """Record the user's approval for one workspace's project skills."""
+    key = _normalize_skill_workspace(workspace)
+    p = _skill_trust_store_path()
+    if key is None or p is None:
+        return False
+    current = trusted_skill_workspaces()
+    if key in current:
+        return True
+    if not _write_skill_trust_store(p, [*current, key]):
+        return False
+    _bust_catalogue_cache()
+    _bust_prompt_skills_cache()
+    logger.info('skills: user approved project skills for %s', key)
+    return True
+
+
+def revoke_skill_workspace(workspace: str | Path) -> bool:
+    """Withdraw approval; the next catalogue build drops the project root."""
+    key = _normalize_skill_workspace(workspace)
+    p = _skill_trust_store_path()
+    if key is None or p is None:
+        return False
+    remaining = [w for w in trusted_skill_workspaces() if w != key]
+    if not _write_skill_trust_store(p, remaining):
+        return False
+    _bust_catalogue_cache()
+    _bust_prompt_skills_cache()
+    logger.info('skills: user revoked project-skill trust for %s', key)
+    return True
+
+
+def project_skill_root(workspace: str | Path) -> Path | None:
+    ws = str(workspace or '').strip()
+    if not ws:
+        return None
+    try:
+        root = Path(ws).resolve() / '.aug' / 'skills'
+    except Exception:
+        return None
+    return root if root.is_dir() else None
+
+
+def pending_project_skills(workspace: str | Path) -> list[dict[str, object]]:
+    """Project skills on disk, parsed WITHOUT the trust gate (for the notice/UI)."""
+    root = project_skill_root(workspace)
+    if root is None:
+        return []
+    out: list[dict[str, object]] = []
+    for path in _iterSkillMd(root)[:50]:
+        parsed = _parseSkill(path)
+        if not parsed:
+            continue
+        out.append(
+            {
+                'name': as_str(parsed.get('name')),
+                'description': as_str(parsed.get('description')),
+                'path': str(path),
+            }
+        )
+    return out
+
+
+def pending_project_skill_notice(workspace: str | Path) -> str:
+    """A one-line model/user notice when project skills are waiting for trust."""
+    if not workspace or is_skill_workspace_trusted(workspace):
+        return ''
+    pending = pending_project_skills(workspace)
+    if not pending:
+        return ''
+    count = len(pending)
+    return (
+        f'Project skills: {count} inactive — this workspace is not trusted for skills. '
+        'The user can approve them in Settings → Skills.'
+    )
+
 
 def _agentSkillsDir() -> Path:
     """Agent-authored skills root. Lazily reads the configured data_dir."""
@@ -80,7 +208,12 @@ def _skillRoots(
                 from app.services.brain_config_service import getRuntimeConfig
 
                 if bool(getRuntimeConfig().get('projectSkills', True)):
-                    roots.append(('project', wsPath / '.aug' / 'skills'))
+                    # Repo-supplied instructions load only after the user has
+                    # approved this workspace for skills. The raw root is still
+                    # scanned by pending_project_skills() so the notice and the
+                    # Settings banner can name what is waiting.
+                    if is_skill_workspace_trusted(wsPath):
+                        roots.append(('project', wsPath / '.aug' / 'skills'))
         except Exception:
             pass
     roots.append(('agent', _agentSkillsDir()))

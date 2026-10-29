@@ -46,6 +46,10 @@ class SkillFileWrite(CamelModel):
     content: str
 
 
+class SkillTrustRequest(CamelModel):
+    workspace: str = Field(..., description='Project workspace path to trust or revoke.')
+
+
 def _usage_fields(skill_name: str) -> dict[str, object]:
     """``usageCount``/``lastUsed`` for a response row, read through the one
     sidecar resolver. A skill nobody has triggered reads as 0/'' rather than
@@ -117,6 +121,40 @@ async def listSkills(
         ],
         'total': len(results),
     }
+
+
+@router.get('/trust')
+async def skillTrustStatus(
+    workspace: str = Query('', description='Project workspace path'),
+):
+    """Whether this workspace's project skills are trusted, plus what is waiting."""
+    root = skill_service.project_skill_root(workspace)
+    return {
+        'workspace': str(Path(workspace).resolve()) if workspace else '',
+        'hasProjectRoot': root is not None,
+        'trusted': bool(workspace) and skill_service.is_skill_workspace_trusted(workspace),
+        'pending': skill_service.pending_project_skills(workspace),
+    }
+
+
+@router.post('/trust')
+async def trustSkillWorkspace(body: SkillTrustRequest):
+    """Approve loading an opened workspace's repo-supplied skills."""
+    if not body.workspace or not Path(body.workspace).is_dir():
+        return {'ok': False, 'error': 'Workspace directory not found'}
+    if not skill_service.trust_skill_workspace(body.workspace):
+        return {'ok': False, 'error': 'Could not persist skill-workspace trust'}
+    return await skillTrustStatus(body.workspace)
+
+
+@router.post('/revoke-trust')
+async def revokeSkillWorkspace(body: SkillTrustRequest):
+    """Withdraw approval; the next catalogue build drops the project root."""
+    if not body.workspace:
+        return {'ok': False, 'error': 'Workspace is required'}
+    if not skill_service.revoke_skill_workspace(body.workspace):
+        return {'ok': False, 'error': 'Could not update skill-workspace trust'}
+    return await skillTrustStatus(body.workspace)
 
 
 @router.get('/{name}')

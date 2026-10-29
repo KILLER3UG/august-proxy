@@ -42,6 +42,8 @@ AUGUST_CORE_TOOLS: frozenset[str] = frozenset(
         'list_skills',
         'spawn_subagents',
         'review_change',
+        'commit_step',
+        'step_review',
         'diagnose_proxy',
         'describe_environment',
         'tool_search',

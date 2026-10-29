@@ -194,6 +194,37 @@ session summary also exposes `backgroundWork` while a task is running; the
 sidebar and quit guard treat that as active work without making the chat look
 like a live stream.
 
+## Plan-step commits and reviews
+
+The todo list remains the model's plan, but the host enriches it: stable
+`step_<id>` ids (matched by content so a wholesale `update_todos` keeps them)
+and host-owned commit/review fields. Marking a step `in_progress` records a
+baseline — HEAD and the dirty paths at that moment — before the work starts.
+That baseline is the proof the later commit relies on.
+
+`commit_step` commits exactly the step's delta on the current branch:
+
+- with no `paths`, only paths that became dirty after the baseline;
+- it refuses when the workspace was already dirty at the baseline (the delta
+  cannot be proven to be the step's own), and refuses an explicit path that
+  overlaps the baseline dirty set;
+- with no baseline, explicit paths are required;
+- commits that landed during the step window (`baseline.head..HEAD`) are
+  adopted and recorded alongside the delta commit;
+- each commit records `sha`, `base` and the paths on the step, and resets the
+  step's review to `unreviewed`. Nothing commits automatically.
+
+`review_step` diffs the step from its first base to its latest sha, treats the
+step's `summary` and `verification` as claims to verify, and calls the same
+read-only clean reviewer as `review_change`. It records `approved`,
+`changes_requested` or `failed` with the findings. A new commit resets the
+review to `unreviewed`; there is **no** automatic fix loop. The Tasks panel
+shows the short sha and review state per step.
+
+`commit_step` is a mutation: plan mode blocks it, ask/edit gate it like a
+command, and the user's git hooks run (a hook failure records nothing). It
+commits on the checkout the chat is already in; it does not create a worktree.
+
 ## Bot-to-Bot work
 
 **Bot-to-Bot work needs its own ceiling, because every loop guard is per-turn.**

@@ -53,6 +53,10 @@ The index is [docs/agent/README.md](docs/agent/README.md).
   definitions must return the same ordered name list.
 - **A capability the model cannot use is not advertised.** A knob that always
   refuses is a lie ([security.md](docs/agent/security.md)).
+- **Project skills are untrusted until the workspace is approved.** A
+  repo-supplied `<workspace>/.aug/skills` root does not load before the user's
+  trust grant; hook trust is a separate decision
+  ([skills.md](docs/agent/skills.md), [security.md](docs/agent/security.md)).
 - **Delete your scratch files before you commit**, and **never mint a new
   "Part N+"** — the numbered series is closed
   ([workflow.md](docs/agent/workflow.md)).

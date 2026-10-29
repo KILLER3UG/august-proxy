@@ -212,6 +212,17 @@ the proposal route the only one a model can take. The BUNDLED layer
 that is a developer's checkout, reviewed in a diff, not app state a model owns.
 Code mode has its own `write_file`, so the port carries the rule by injection.
 
+**Project skills are trust-gated at the read door.** A workspace's
+`.aug/skills` root is repo-supplied instruction content, so
+`skill_service._skillRoots` includes it only when
+`is_skill_workspace_trusted(workspace)` says the user approved that workspace
+for skills. The approval lives in its own data-dir store, separate from the
+hook-workspace store: trusting shell hooks is not consent to load instruction
+packages. The raw root is still parsed for the pending-skill notice and the
+Settings → Skills trust banner, so an untrusted repository is visible rather
+than silently ignored; the model sees a count of inactive project skills and
+`load_skill` cannot load them. Revoking busts the catalogue and prompt caches.
+
 ## Gate participation and file ceilings
 
 **Gate participation** — every sandbox / permission / URL guard is an inline

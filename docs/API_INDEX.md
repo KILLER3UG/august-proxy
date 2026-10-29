@@ -5,7 +5,7 @@
 
 # API Index — every route
 
-426 routes across 353 paths,
+429 routes across 355 paths,
 grouped by family. **This file is generated.** For the prose that explains what
 these are for and when to reach for them, read
 [`API_REFERENCE.md`](./API_REFERENCE.md) — it covers the families that matter in
@@ -144,7 +144,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `GET` | `/api/brain/stores/facts/{row_id}/history` | Edit history for one fact, projected from the rollback store. |
 | `GET` | `/api/brain/turn-outcomes` | M5 telemetry: per-model/provider error rates plus the per-turn verdict distribution (046) for the Observabili… |
 
-## Skills (12)
+## Skills (15)
 
 | Method | Path | Summary |
 | --- | --- | --- |
@@ -160,6 +160,9 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `POST` | `/api/skills/packs` | Packs Install |
 | `DELETE` | `/api/skills/packs/{name}` | Packs Uninstall |
 | `POST` | `/api/skills/restore/{trashId}` | Undo a delete or an approved archive: restore a trashed skill directory (24h window). |
+| `POST` | `/api/skills/revoke-trust` | Withdraw approval; the next catalogue build drops the project root. |
+| `GET` | `/api/skills/trust` | Whether this workspace's project skills are trusted, plus what is waiting. |
+| `POST` | `/api/skills/trust` | Approve loading an opened workspace's repo-supplied skills. |
 
 ## Curator & learning (11)
 
@@ -545,4 +548,4 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 
 ---
 
-Generated from `docs/api/openapi.json` (426 operations).
+Generated from `docs/api/openapi.json` (429 operations).

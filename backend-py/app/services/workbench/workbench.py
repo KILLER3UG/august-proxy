@@ -1067,6 +1067,15 @@ def buildSystemPrompt(
         intake.append('\n'.join(memParts))
     if skillsLine:
         intake.append(f'- Skills: {skillsLine}. Bodies load on demand via load_skill.')
+    if workspacePath:
+        try:
+            from app.services import skill_service as _skill_svc
+
+            projectNotice = _skill_svc.pending_project_skill_notice(workspacePath)
+            if projectNotice:
+                intake.append(f'- {projectNotice}')
+        except Exception:
+            logger.debug('prompt: project-skill trust notice failed', exc_info=True)
     intake.append('</intake>')
     parts.append('\n'.join(intake))
     if hookTrustNotice:
@@ -7151,9 +7160,23 @@ def submitClarify(session: WorkbenchSession, clarifyData: dict[str, object]) -> 
 
 
 def submitTodos(session: WorkbenchSession, todosData: list[dict[str, object]], *, title: str = '') -> None:
-    """Store a todo list on the session."""
+    """Store a todo list on the session.
+
+    The host enriches the list first: stable step ids (matched by content so
+    they survive the wholesale replace), host-owned commit/review fields, and
+    an `in_progress` baseline for the step-commit map. The model's list remains
+    the plan; these fields are proof, not instructions.
+    """
     if not isinstance(todosData, list):
         todosData = [todosData] if todosData else []
+    try:
+        from app.services.workbench import step_commits
+
+        todosData = step_commits.enrich_todos(
+            session, [t for t in todosData if isinstance(t, dict)]
+        )
+    except Exception:
+        logger.debug('todo enrichment failed', exc_info=True)
     session.todos = todosData
     session.updatedAt = _now()
     _emitSessionStatus(session.id)
@@ -7184,7 +7207,14 @@ def routeTodos(
         except Exception:
             handle = None
         if handle is not None:
-            handle.todos = todosData
+            try:
+                from app.services.workbench import step_commits
+
+                handle.todos = step_commits.ensure_todo_ids(
+                    [t for t in todosData if isinstance(t, dict)]
+                )
+            except Exception:
+                handle.todos = todosData
             if emit:
                 try:
                     emit(
@@ -7508,6 +7538,7 @@ def listProxyCapabilities() -> dict[str, object]:
             'approve_plan',
             'reject_plan',
             'spawn_subagents',
+            'commit_step',
             'spawn_daemon',
             'kill_daemon',
             'kill_background_task',
@@ -7545,7 +7576,7 @@ def listProxyCapabilities() -> dict[str, object]:
             group = 'skill'
         elif name in ('web_fetch', 'web_search'):
             group = 'web'
-        elif name in ('spawn_subagents', 'review_change', 'create_agent', 'list_agents', 'list_workstreams', 'send_subagent_message', 'interrupt_subagent'):
+        elif name in ('spawn_subagents', 'review_change', 'commit_step', 'step_review', 'create_agent', 'list_agents', 'list_workstreams', 'send_subagent_message', 'interrupt_subagent'):
             group = 'agent'
         elif name in ('spawn_daemon', 'list_daemons', 'kill_daemon'):
             group = 'daemon'
