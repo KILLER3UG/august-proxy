@@ -3,5 +3,7 @@
 -- times each rule was injected into prompts (use_count) and when it was
 -- last surfaced. Feeds skill promotion (Prime /refine: frequent high-
 -- confidence rules graduate into pending-skill proposals).
-ALTER TABLE learned_heuristics ADD COLUMN use_count INTEGER DEFAULT 0;
-ALTER TABLE learned_heuristics ADD COLUMN last_surfaced_at TEXT;
+-- learned_heuristics retired 2026-10-30 (no live writer; empty-then-drop).
+-- The statements below were removed because the table no longer exists on
+-- fresh installs and every older install already applied them.
+-- (removed: ALTER TABLE learned_heuristics ADD COLUMN use_count / last_surfaced_at)

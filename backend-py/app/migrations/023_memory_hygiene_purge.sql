@@ -31,6 +31,7 @@ WHERE key LIKE 'session_context:eval_%'
 
 DELETE FROM episodic_timeline WHERE event_summary = 'user activity' AND category = 'activity';
 
--- Stale learned rule: asserts a verifier gate that was removed 2026-08-24
--- (AGENTS.md: "No verifier gate exists"). Re-injecting it would lie to models.
-DELETE FROM learned_heuristics WHERE rule LIKE '%Verifier gate%';
+-- learned_heuristics retired 2026-10-30 (no live writer; empty-then-drop).
+-- The statements below were removed because the table no longer exists on
+-- fresh installs and every older install already applied them.
+-- (removed: DELETE FROM learned_heuristics WHERE rule LIKE '%Verifier gate%')

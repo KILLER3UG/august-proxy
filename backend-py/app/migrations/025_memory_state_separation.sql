@@ -22,10 +22,10 @@ DELETE FROM memory_store WHERE key IN (
   'userProfile'
 );
 
--- 2. Immutable legacy turn-lessons (writer deleted; nothing reads them into
---    prompts; the UI is forbidden from deleting them — brain.py 403). The
---    failure mode they encode is not actionable memory.
-DELETE FROM learned_heuristics WHERE source = 'turn-lesson';
+-- learned_heuristics retired 2026-10-30 (no live writer; empty-then-drop).
+-- The statements below were removed because the table no longer exists on
+-- fresh installs and every older install already applied them.
+-- (removed: DELETE FROM learned_heuristics WHERE source = 'turn-lesson')
 
 -- 3. Dead tables (0 live readers verified by grep of backend-py/app, 2026-08-27).
 DROP TABLE IF EXISTS curation_ledger;
