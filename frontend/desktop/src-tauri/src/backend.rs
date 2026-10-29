@@ -244,6 +244,81 @@ fn runtimeStampPath(app: &AppHandle) -> PathBuf {
     runtimeRoot(app).join("runtime.stamp")
 }
 
+// ── Self-edit clone (Stage 4) ──────────────────────────────────────────────
+//
+// The opt-in switch is a FILE, same shape as the lan-access switch: the
+// shell reads it at SPAWN time because which backend-py tree runs cannot
+// change in a running process. `{appData}/self-edit.enabled` present means
+// the self-edit loop is on; the clone then lives at the FIXED location
+// `{appData}/clone` — a sibling of `data/` and `backend-runtime/`, so the
+// update-path wipe (which only ever deletes inside backend-runtime) can
+// never touch it, and so "where is my clone" has one answer.
+
+const CLONE_DIR_LEAF: &str = "clone";
+const SELF_EDIT_SWITCH: &str = "self-edit.enabled";
+const UPSTREAM_FETCH_URL: &str = "https://github.com/KILLER3UG/august-proxy.git";
+const CLONE_PUSH_LOCK_URL: &str = "https://push-locked.invalid/august-proxy.git";
+
+fn selfEditEnabled(app: &AppHandle) -> bool {
+    appDataRoot(app).join(SELF_EDIT_SWITCH).is_file()
+}
+
+fn selfEditCloneRoot(app: &AppHandle) -> PathBuf {
+    appDataRoot(app).join(CLONE_DIR_LEAF)
+}
+
+/// Create the self-edit clone when the switch is on and it does not exist
+/// yet. The clone is born with its push URL pointed at the unroutable lock
+/// host — the Stage-1 structural lock applies to the clone from its first
+/// second of existence, before any model can run in it.
+fn ensureSelfEditClone(app: &AppHandle) {
+    if !selfEditEnabled(app) {
+        return;
+    }
+    let clone_root = selfEditCloneRoot(app);
+    let clone_main = clone_root.join("backend-py/app/main.py");
+    if clone_main.is_file() {
+        return; // already bootstrapped
+    }
+    let Some(git) = which::which("git").ok() else {
+        log::warn!("[self-edit] enabled but git is not on PATH — clone bootstrap skipped");
+        return;
+    };
+    let _ = std::fs::create_dir_all(appDataRoot(app));
+    log::info!("[self-edit] bootstrapping clone → {}", clone_root.display());
+    let clone_out = Command::new(&git)
+        .args(["clone", UPSTREAM_FETCH_URL])
+        .arg(&clone_root)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .status();
+    match clone_out {
+        Ok(status) if status.success() => {
+            log::info!("[self-edit] clone created; locking push URL");
+            let lock = Command::new(&git)
+                .args(["remote", "set-url", "--push", "origin", CLONE_PUSH_LOCK_URL])
+                .current_dir(&clone_root)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+            if !lock.map(|s| s.success()).unwrap_or(false) {
+                // The clone is still born locked: remove it rather than leave
+                // a model-editable tree whose push URL points upstream. The
+                // next boot retries the bootstrap.
+                log::error!("[self-edit] could not lock the clone's push URL — removing the clone");
+                let _ = std::fs::remove_dir_all(&clone_root);
+            }
+        }
+        Ok(status) => {
+            log::warn!(
+                "[self-edit] git clone failed ({status}) — retry on next boot"
+            );
+        }
+        Err(e) => log::warn!("[self-edit] git clone could not start: {e}"),
+    }
+}
+
 // ── Single-instance guard ──────────────────────────────────────────────────
 // A lock file in the AppData tree holds the PID of the owning instance.
 // Without one, two instances (double-click, relaunch before exit) attach to
@@ -713,6 +788,24 @@ fn wipeStaleTreeWith(
 /// First-launch (or stamp mismatch): copy bundled backend-py into AppData,
 /// create a venv with the portable Python, install offline from wheels.
 fn bootstrapBundledBackend(app: &AppHandle) -> Result<(), String> {
+    if cfg!(debug_assertions) {
+        // Stage-4 landmine fix: a dev checkout's src-tauri/resources can hold
+        // a leftover REAL backend-runtime.stamp from a local
+        // `prepare-desktop-backend` run (the file is gitignored, and
+        // bundledStamp only filters the literal "dev-placeholder"). Without
+        // this guard, `tauri dev` saw a complete bundled payload and
+        // bootstrapped — copying over and wiping the user's INSTALLED AppData
+        // runtime on stamp mismatch. A debug build never treats local
+        // resources as the installer payload; release builds (the only ones
+        // that ship) keep the bootstrap flow.
+        if bundledStamp(app).is_some() {
+            log::warn!(
+                "[backend] dev build ignores bundled resources in src-tauri/resources — \
+                 the installed AppData runtime is left alone"
+            );
+        }
+        return Ok(());
+    }
     let Some(stamp) = bundledStamp(app) else {
         // No stamp → unpackaged / dev checkout. Prefer silent skip unless
         // other backend pieces are present without a stamp (broken install).
@@ -996,6 +1089,22 @@ fn runCloneRecovery(python: &Path, data_dir: &Path) {
 }
 
 fn resolvePythonBackend(app: &AppHandle) -> Option<PathBuf> {
+    // Stage-4 clone-first: when the self-edit switch is on and the clone has
+    // a runnable backend, the CLONE is the runtime. "Restart to apply" only
+    // means something if the restarted process executes the edited source;
+    // every other candidate (AppData runtime, bundled resources, dev
+    // checkout) would silently run the pre-edit tree. The clone's own venv
+    // is not required: the spawn's cwd is the clone's backend-py root, so
+    // `app` imports from the clone while dependencies resolve from the venv
+    // whose interpreter is chosen by resolvePython (clone HEAD tracks the
+    // release the runtime was built for, so dependency sets match).
+    if selfEditEnabled(app) {
+        let clone_main = selfEditCloneRoot(app).join("backend-py/app/main.py");
+        if clone_main.is_file() {
+            return Some(clone_main);
+        }
+    }
+
     // Prefer writable AppData copy (after bootstrap).
     let runtime_main = runtimeBackendMain(app);
     if runtime_main.is_file() {
@@ -1694,6 +1803,21 @@ fn ensureRunningLocked(app: &AppHandle) -> bool {
                 let _ = std::fs::create_dir_all(&logDir);
                 let logPath = logDir.join("backend.log");
 
+                // Stage-4: the clone gates (unattended writes) and the
+                // obligation journal key off AUGUST_CLONE_ROOT; empty means
+                // "no self-edit" and every gate is dormant.
+                let cloneRootEnv = if selfEditEnabled(app) {
+                    selfEditCloneRoot(app).to_string_lossy().into_owned()
+                } else {
+                    String::new()
+                };
+
+                // Stage-4: bootstrap the self-edit clone when the switch is
+                // on (before recovery — the sweep reads the journal, not the
+                // clone, so order is not load-bearing here, but the clone
+                // should exist before anything spawns from it).
+                ensureSelfEditClone(app);
+
                 // Stage-3 boot-time recovery: undo every uncommitted clone
                 // edit from the journal's recorded bytes BEFORE the backend
                 // spawns — an edit that broke the Python import path cannot
@@ -1746,6 +1870,7 @@ fn ensureRunningLocked(app: &AppHandle) -> bool {
                         .env("AUGUST_PROXY_PORT", port.to_string())
                         .env("AUGUST_PROXY_ROOT", &repoRoot)
                         .env("AUGUST_DATA_DIR", &dataDir)
+                        .env("AUGUST_CLONE_ROOT", &cloneRootEnv)
                         .env("AUGUST_PROXY_DESKTOP", "1")
                         // The backend is TOLD that LAN access is on rather
                         // than asked: it widens the token's scope to the

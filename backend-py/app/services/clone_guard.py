@@ -108,6 +108,26 @@ def clone_allow_unattended_writes() -> bool:
     return False
 
 
+def running_from_clone() -> bool:
+    """True when THIS process is running out of the self-edit clone.
+
+    The runtime pin (Stage 4): the shell resolves the backend entry the same
+    way every boot, and with the self-edit switch on that entry is the clone
+    — so "Restart to apply" is real only while this returns True. Read from
+    ``AUGUST_PROXY_ROOT`` (set by the shell at spawn since long before Stage
+    4; until Stage 4 nothing in backend-py read it).
+    """
+    try:
+        from app.config import settings
+
+        proxy_root = str(getattr(settings, 'proxyRoot', '') or '').strip()
+    except (ImportError, AttributeError, OSError, ValueError):
+        return False
+    if not proxy_root:
+        return False
+    return is_clone_path(proxy_root)
+
+
 def _canonical(text: str) -> str:
     return text.replace('\\', '/')
 

@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     port: int = int(os.environ.get('AUGUST_PROXY_PORT', '8085'))
     projectRoot: Path = _findProjectRoot()
     dataDir: Path = Path(os.environ.get('AUGUST_DATA_DIR', str(_findProjectRoot() / 'data')))
+    # Stage-4 runtime pin: the source tree this process is RUNNING from, as
+    # the shell resolved it (repo checkout, AppData runtime, or — when the
+    # self-edit switch is on — the clone). The shell has always SET
+    # AUGUST_PROXY_ROOT; until now nothing read it, so a backend could not
+    # tell which tree it was serving. Empty when not spawned by the shell.
+    proxyRoot: str = os.environ.get('AUGUST_PROXY_ROOT', '')
     webDist: Path = _findProjectRoot() / 'web-dist'
     gatewayApiKey: str | None = None
     _config: Dict[str, object] = {}
