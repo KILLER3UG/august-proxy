@@ -317,8 +317,10 @@ export async function branchWorkbenchSession(
   return workbenchClient.branchSession(sessionId, upToIndex);
 }
 
-/** Force context compression (“Free up chat memory”). */
-export async function compactWorkbenchSession(sessionId: string): Promise<{
+/** Force context compression (“Free up chat memory”).
+ *  ``instructions`` optionally names what must survive and what comes next;
+ *  an empty value keeps the old immediate compaction. */
+export async function compactWorkbenchSession(sessionId: string, instructions = ''): Promise<{
   session: WorkbenchSession;
   underThreshold?: boolean;
   originalTokens?: number;
@@ -328,7 +330,7 @@ export async function compactWorkbenchSession(sessionId: string): Promise<{
   tailCount?: number;
   message?: string;
 }> {
-  return workbenchClient.compactSession(sessionId);
+  return workbenchClient.compactSession(sessionId, instructions);
 }
 
 export interface WorkbenchCheckpoint {

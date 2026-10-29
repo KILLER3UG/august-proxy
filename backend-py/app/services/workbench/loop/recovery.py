@@ -154,6 +154,7 @@ async def _compactionCall(
     goalHint: str,
     summarizer: object | None,
     thresholdOverride: int | None = None,
+    keep_hint: str = '',
 ) -> tuple[list[dict[str, object]], str, dict[str, int]]:
     """THE compaction policy — one site, shared by every path that compacts.
 
@@ -182,6 +183,9 @@ async def _compactionCall(
     heuristic summarizer, a count-budgeted tail, no tool-output prune, no landmark
     pins and no verbatim replay of the user's own words; the manual button shared
     most of that. `tests/test_compaction_policy_parity.py` now gates the census.
+
+    ``keep_hint`` is set only by the manual endpoint; every automatic path
+    passes '' and gets the exact note it got before.
 
     Returns ``(messages, relief)`` — the route is returned rather than left for
     each caller to recompute, because a path that emitted a frame about a route it
@@ -216,6 +220,7 @@ async def _compactionCall(
         replayUserBytes=REPLAY_USER_BUDGET_BYTES,
         rotate=relief == RELIEF_ROTATE,
         reliefStats=stats,
+        keep_hint=keep_hint,
     )
     return compressed, relief, stats
 

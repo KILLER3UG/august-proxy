@@ -18,6 +18,7 @@ import { folderNameFromPath } from '@/api/folder';
 import { toast } from 'sonner';
 import { UploadCloud } from 'lucide-react';
 import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
+import { PromptDialog } from '@/components/overlays/PromptDialog';
 import {
   useSessionsStore,
   isPlaceholderTitle,
@@ -712,7 +713,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     void stopChatStream(sessionId);
   };
 
-  useChatUiActions({
+  const compactControls = useChatUiActions({
     sessionId,
     messages,
     setMessages,
@@ -1711,6 +1712,17 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           variant={confirmState.variant}
           onConfirm={handleConfirm}
           onCancel={handleCancel}
+        />
+        <PromptDialog
+          open={compactControls.compactPromptOpen}
+          title="Free up chat memory"
+          label="What must survive compaction? (optional)"
+          placeholder="e.g. Keep the auth refactor; the next step is the migration"
+          confirmLabel="Compact"
+          allowEmpty
+          maxLength={500}
+          onSubmit={compactControls.submitCompact}
+          onCancel={compactControls.cancelCompact}
         />
         {comparePrompt !== null && (
           <ArenaLaunchModal

@@ -11,7 +11,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 from app.json_narrowing import as_int, as_str, coerce_json_list
 from app.services import tool_registry
-from app.services.execution_world import bind_path, run_sandboxed
+from app.services.background_commands import DEFAULT_FOREGROUND_WAIT_S
+from app.services.execution_world import bind_path
 from app.services.sandbox import policy_from_session, unsandboxed_grant_key
 
 if TYPE_CHECKING:
@@ -1469,6 +1470,7 @@ async def _runCommand(
     timeout_s: float | int | None = None,
     cwd: str | None = None,
     network: bool | None = None,
+    background: bool = False,
     **_extra: object,
 ) -> str:
     """Run a shell command inside the Codex-like sandbox.
@@ -1564,7 +1566,31 @@ async def _runCommand(
         allow_unsandboxed=allow_unsandboxed,
     )
 
-    result = await run_sandboxed(command, policy, timeout=timeout_val)
+    from app.lib.async_subprocess import current_command_output
+    from app.services.background_commands import getManager
+    from app.services.workbench.context import currentSessionId
+
+    def _formatResult(sandbox_result: 'SandboxResult') -> str:
+        hint = _network_hint(sandbox_result, network_on)
+        text = sandbox_result.as_tool_text()
+        return f'{text}{hint}' if hint else text
+
+    outcome = await getManager().run(
+        command=command,
+        policy=policy,
+        timeout=timeout_val,
+        session_id=currentSessionId.get(),
+        workspace=_workspace(),
+        format_result=_formatResult,
+        on_output=current_command_output.get(),
+        background=bool(background),
+        foreground_wait=DEFAULT_FOREGROUND_WAIT_S,
+    )
+    if outcome.detached:
+        return outcome.text
+    result = outcome.result
+    if result is None:
+        return outcome.text
     # Only queue sandbox-escape approval outside Full Access — Full Access must
     # never interrupt the chat with a permission banner for terminal commands.
     if result.denial_reason and session is not None and not allow_unsandboxed:
@@ -1737,6 +1763,8 @@ def register() -> None:
         'Run a non-interactive shell command in the session sandbox (workspace-write by default, network off). '
         'Stdin is closed — no pagers/REPLs/prompts; prefer --yes flags. '
         f'Default timeout {_DEFAULTCommandTimeout}s (max {_MAXCommandTimeout}s); optional timeout_s. '
+        f'Long commands hand off to a background task after {int(DEFAULT_FOREGROUND_WAIT_S)}s in the SAME process — you get a notification when '
+        'it finishes. Use background:true to return immediately; read_background_task / kill_background_task manage it. '
         'network:true enables curl/gh/pip for this command only.',
         _runCommand,
         {
@@ -1756,6 +1784,13 @@ def register() -> None:
                 'network': {
                     'type': 'boolean',
                     'description': 'Enable network for this command only (curl/gh/pip). Default follows session sandboxNetwork.',
+                },
+                'background': {
+                    'type': 'boolean',
+                    'description': (
+                        'Return a task id immediately instead of waiting for the foreground window. '
+                        'The command keeps running in the same process; completion arrives as a notification.'
+                    ),
                 },
                 'requires_approval': {
                     'type': 'boolean',

@@ -161,6 +161,31 @@ reads that one string (`classify_error`, the deterministic-400 replay decision,
 this ladder, and the receipt the user sees), so an error envelope that nests is
 a silent-blindness bug at the extractor, not a formatting detail.
 
+## Long commands and background tasks
+
+`run_command` still runs in the same sandbox and behind the same approval
+gate, but it no longer blocks for the whole command. It waits up to 60 s; a
+command still running then is handed back as a task id while the SAME process
+continues — nothing is killed and nothing is re-run. `background: true` skips
+the wait. This is the long-command rule applied: foreground for fast commands,
+background for long ones, one process connecting the two.
+
+The task table lives outside the transcript. `<dataDir>/background/` holds a
+metadata JSON and the output log (capped at 8 MB, with a truncation marker).
+Completion is delivered as a queued machine message (`kind='shell'`, tagged
+`[BACKGROUND_COMMAND_…]`) that wakes the session, so compaction cannot lose an
+unread result and the model does not poll. `read_background_task` returns
+status plus a bounded log tail; `kill_background_task` stops a running task;
+`list_background_tasks` names what is alive. A command's own timeout is
+unchanged and is not reset by reads. Session deletion cancels that session's
+tasks, app shutdown cancels the rest. A restart cannot reattach to a child, so
+a task still marked `running` on disk is reported `orphaned`, not fake-live.
+
+The foreground wait is `DEFAULT_FOREGROUND_WAIT_S` in
+`background_commands.py`, deliberately below a typical prompt-cache lifetime.
+The cap is 8 live commands per session. `background: true` only skips the wait;
+the sandbox and approval checks are the same as a foreground command.
+
 ## Bot-to-Bot work
 
 **Bot-to-Bot work needs its own ceiling, because every loop guard is per-turn.**
@@ -253,6 +278,15 @@ model's real window measured 71 messages → 71 and 0 tokens freed on a 128k
 window — a token tail of 16% exceeds a short transcript, so the control silently
 stopped doing anything while reporting "Context is already compact enough".
 
+**The manual endpoint also takes a keep instruction.** `POST
+/sessions/{id}/compact` accepts `{instructions}`, and `_compactionCall` passes
+it to the deterministic note as a `## Keep` section at the TOP — verbatim,
+capped at 1,000 characters, before the Goal, so the summary cap cannot truncate
+it. Automatic paths pass nothing and their notes are byte-identical to before.
+This tells the compactor what to preserve; it does not make the extractor claim
+it analyzed the decisions. Settings' "Free up chat memory" action opens a
+prompt for it; an empty submit is the old immediate compaction.
+
 The pre-turn path archived the transcript AFTER `pruneToolOutputs`, so the
 snapshot held `[Old tool result content cleared]` where old tool outputs had been
 while compaction then persisted the reduced list — the content was in neither
@@ -304,6 +338,11 @@ cancelled the moment a real tool call arrives, and only a narration with NO tool
 call triggers the reminder + retry. Per-model capability profiles
 (`toolSurface` full/reduced/bare, `maxTools`, `maxToolResultChars` in Model
 settings) are honored by both tool-definition paths and result truncation.
+Progressive disclosure treats MCP tools as deferrable, like any other
+low-frequency tool: a catalog small enough to stay under the 10% threshold is
+offered whole, and a large one is preloaded by BM25 then served through
+`tool_search` / `tool_call` by name. An MCP call still takes the same hooks,
+approval axis and timeout as a resident tool.
 
 **Agent modes (0.12.55+)** — `set_agent_mode(chat|agent|code|orchestrator)`
 (`planner` is an alias for `orchestrator`) switches the session: `chat` blocks

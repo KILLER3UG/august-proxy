@@ -148,7 +148,8 @@ def _compactionNotice(session: WorkbenchSession) -> str:
         if pct >= 70:
             return (
                 'compaction: transcript is near the auto-compact threshold — '
-                'call summarize_session and update your scratchpad THIS turn, '
+                'write the state you must keep to the scratchpad THIS turn '
+                '(summarize_session only shows a snapshot and does not preserve it), '
                 'or uncommitted reasoning will be lost.'
             )
     except Exception:

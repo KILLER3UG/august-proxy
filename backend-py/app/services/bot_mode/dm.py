@@ -191,7 +191,7 @@ def _unattendedCeiling() -> int:
 # to be chosen here; defaulting an unknown value to "human" keeps the ceiling
 # lenient rather than locking a chat out.
 _NON_HUMAN_SOURCES: frozenset[str] = frozenset(
-    {'harness_nudge', 'subagent_results', 'memory_delivery', 'live_transcript'}
+    {'harness_nudge', 'subagent_results', 'machine_results', 'memory_delivery', 'live_transcript'}
 )
 
 

@@ -19,6 +19,7 @@
     "check:docs": "node scripts/check-docs-sync.mjs",
     "check:minisign": "node scripts/check-minisign.mjs",
     "check:naming": "node scripts/check-naming.mjs",
+    "check:skills": "node scripts/run-python.mjs check_skills.py",
     "check:sse": "node scripts/check-sse-parity.mjs",
     "check:tool-registration": "node scripts/check-tool-registration.mjs",
     "check:truncate": "node scripts/check-truncate.mjs",

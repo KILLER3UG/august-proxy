@@ -42,13 +42,14 @@ _ERROR_FAMILY_WINDOW = 6
 
 
 # ── Runaway backstop (roadmap item #1, 2026-09-27) ───────────────────────────
-# Nothing bounds a turn by default: MAX_MANAGED_TOOL_ROUNDS is 0 (uncapped)
-# and the budget-ladder arms are all-off opt-in. What remains is the stall
-# counter above — and it resets on argument novelty and on world delta, so a
-# model that calls a DIFFERENT tool with DIFFERENT arguments every round is
-# permanently "novel", never stalls, and never hits a bound short of overflowing
-# the context window. That is a real hole: the nudges exist, but the thing they
-# cannot detect is the thing most worth detecting.
+# The flat round cap (MAX_MANAGED_TOOL_ROUNDS, 150) and this backstop are
+# separate bounds. The cap counts model dispatches and ends with a tool-free
+# summary round; the backstop counts rounds that moved nothing, because the
+# stall counter above resets on argument novelty and on world delta — a model
+# that calls a DIFFERENT tool with DIFFERENT arguments every round is
+# permanently "novel", never stalls, and can spend the whole cap without
+# achieving anything. That is the hole this backstop exists for: the nudges
+# exist, but the thing they cannot detect is the thing most worth detecting.
 #
 # These two thresholds are counted on WORLD DELTA ALONE, which neither novelty
 # nor self-report can fake: a round moved the world only if the turn touched a
@@ -77,10 +78,9 @@ def _runawayBudget() -> tuple[int, int]:
     different thing from absent and is honoured as such.
 
     The other three arms of this rule each ended a turn the user did not expect:
-    ``MAX_MANAGED_TOOL_ROUNDS`` stays uncapped by default (a flat round cap
-    punished long legitimate runs, and this guard is the version of that bound
-    that only counts rounds which achieved nothing), and the budget ladder
-    remains opt-in because it degrades an answer that is merely expensive.
+    the flat round cap is armed separately at 150 rounds and only fires after a
+    tool-free summary round, and the budget ladder remains opt-in because it
+    degrades an answer that is merely expensive.
 
     A read failure falls back to the shipped constants, and says so at warning:
     silently disarming the only bound on a turn is how the loop came back.

@@ -207,7 +207,8 @@ export class WorkbenchClient {
     );
   }
 
-  async compactSession(sessionId: string) {
+  async compactSession(sessionId: string, instructions = '') {
+    const trimmed = instructions.trim();
     return wbFetch<{
       session: WorkbenchSession;
       underThreshold?: boolean;
@@ -216,7 +217,7 @@ export class WorkbenchClient {
       message?: string;
     }>(
       `/api/workbench/sessions/${encodeURIComponent(sessionId)}/compact`,
-      jsonInit('POST'),
+      jsonInit('POST', trimmed ? { instructions: trimmed } : {}),
     );
   }
 

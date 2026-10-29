@@ -55,6 +55,7 @@ check:minisign      # verifier matches the app's format and key
 check:truncate      # truncate sits on an element that can truncate
 check:brain-config  # Settings keys/ranges exist in the backend
 check:tool-registration  # every register() module is claimed
+check:skills        # every bundled SKILL.md parses and matches its directory
 lint:ratchet        # eslint warnings do not grow
 ```
 
@@ -102,6 +103,13 @@ gate, and each has already caught a live bug:
   or offers a value it refuses. It has caught a key with a `fieldTable` entry
   but no writable-set entry (every PUT naming it was rejected) and a backend
   range that started at 1 while the panel's own default was 0.
+
+`check:skills` covers the same blind spot at the skill layer: discovery skips
+a malformed `SKILL.md` with a runtime warning, so without a static scan a
+bundled skill can disappear from the catalogue with nothing red. It is
+preventive — the shipped tree is green today — and it also refuses a
+frontmatter name that disagrees with its directory or two bundled skills that
+share a name.
 
 The static gates cannot see whether the app **starts**. `e2e:smoke` is that
 floor, and it is deliberately not a behaviour test.
@@ -161,7 +169,7 @@ commit message is a defect, not a citation.
 | a turn, a tool loop, a budget, a stop reason | [harness.md](harness.md) | `uv run ruff check . && uv run mypy app/`, `npm run e2e:smoke` |
 | a provider, a model, a wire format, pricing | [providers.md](providers.md) | `npm run check:api`, the app's Test button |
 | memory, recall, backups, the memory mirror | [memory.md](memory.md) | the memory spec, `npm run check:brain-config` |
-| a skill, the learning pipeline, the review pass | [skills.md](skills.md) | `npm run check:docs`, `check:brain-config` |
+| a skill, the learning pipeline, the review pass | [skills.md](skills.md) | `npm run check:skills`, `npm run check:docs`, `check:brain-config` |
 | a sandbox rule, a path door, a secret | [security.md](security.md) | `uv run mypy app/`, the smoke's policy checks |
 | the desktop shell, the chat surface, the update flow | [product.md](product.md) | `npm run check -w frontend/desktop`, a human running the app |
 | the version number, a release, the OpenAPI artifacts | [release.md](release.md) | `npm run check:version`, `gen:openapi`, `gen:api` |

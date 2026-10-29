@@ -168,7 +168,12 @@ async def _writeScratchpad(text: str) -> str:
 
 
 async def _summarizeSession(include_scratchpad: bool = True) -> str:
-    """Summarize the current session's state for handoff/compaction."""
+    """Return a read-only snapshot of the current session.
+
+    It does not persist anything: the result is a tool result the next
+    compaction will summarize like any other. Durable state belongs in
+    write_scratchpad or a file.
+    """
     from app.services.workbench.workbench import get_session
 
     try:
@@ -524,7 +529,9 @@ def register() -> None:
     )
     tool_registry.register(
         'summarize_session',
-        'Summarize the current session (tokens, costs, scratchpad, recent dialogue) for handoff or compaction. Preserves key state without manual work. At high/critical cognitive budget, use this plus write_scratchpad before compact.',
+        'Return a snapshot of the current session (tokens, costs, scratchpad, recent dialogue) for your own reading. '
+        'It does NOT persist anything — write state that must survive compaction with write_scratchpad or a file. '
+        'At high/critical cognitive budget, call write_scratchpad before compact.',
         _summarizeSession,
         {
             'type': 'object',

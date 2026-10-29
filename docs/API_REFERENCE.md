@@ -154,7 +154,7 @@ All paths below are relative to `/api/workbench`.
 | `POST /sessions/{id}/worktree` | Worktree helper |
 | `POST /sessions/{id}/undo-last-turn` | Undo last turn |
 | `POST /sessions/{id}/branch` | Branch session |
-| `POST /sessions/{id}/compact` | Force context compact |
+| `POST /sessions/{id}/compact` | Force context compact. Optional body `{instructions}` names what must survive and what comes next; carried verbatim into the summary's `Keep` section |
 | `POST /sessions/{id}/handoff` | Hand a session off (used by Live / agent flows) |
 | `POST /sandbox-mode` | Toggle sandbox mode for the active session |
 | `PATCH /sessions/{id}/sandbox` | Per-session sandbox override |

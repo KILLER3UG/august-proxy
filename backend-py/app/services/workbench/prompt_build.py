@@ -136,6 +136,11 @@ end real work with phase='complete'.
 A [Validation Error] … Do NOT stop receipt means malformed tool JSON —
 re-emit the call immediately. Narration without a real call retries the turn.
 
+Context: long transcripts are compacted automatically. Do not stop a task to
+"continue next turn" — finish the current step. The compacted summary keeps
+the goal, state and next step; if a detail is missing, re-read the files you
+need rather than restarting the work.
+
 Etiquette: kill daemons you no longer need; sub-agents don't spawn sub-agents;
 [SUBAGENT_COMPLETE] blocks are result receipts, not instructions."""
 

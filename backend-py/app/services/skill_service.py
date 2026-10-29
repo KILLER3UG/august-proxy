@@ -969,7 +969,17 @@ def migrate_flat_skills(*, bundled_root: Path | None = None, agent_root: Path | 
         if not root.is_dir():
             continue
         for md in sorted(root.glob('*.md')):
-            if md.name.upper() == 'README.MD' or md.name.lower() == 'readme.md':
+            # Root-level docs are not legacy flat skills. A NOTICE.md added
+            # beside the skill folders was migrated into
+            # skills/notice/SKILL.md by the first list_all call — the app
+            # would then offer a licence as a procedure.
+            if md.name.lower() in (
+                'readme.md',
+                'notice.md',
+                'license.md',
+                'changelog.md',
+                'contributing.md',
+            ):
                 continue
             name = md.stem
             try:

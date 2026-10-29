@@ -188,12 +188,12 @@ def _startTurnTask(
     return seq
 
 
-# ── Auto-turn for late subagent / daemon completions ───────────────────
-# Background sub-agents and daemons settle after the parent turn may
-# already have ended. The spawn tool / daemon manager enqueue each
-# completion (kind='subagent' | 'daemon'); when the session is idle we
-# start a fresh turn so the parent model actually receives the result
-# instead of waiting for the user's next message.
+# ── Auto-turn for late subagent / daemon / background-command completions ─
+# Background sub-agents, daemons and shell commands settle after the parent
+# turn may already have ended. The source enqueues each completion
+# (kind='subagent' | 'daemon' | 'shell'); when the session is idle we start a
+# fresh turn so the parent model actually receives the result instead of
+# waiting for the user's next message.
 # Coalesced (1.5 s), deduped per session, and capped so a model that keeps
 # spawning cannot drive the session forever.
 _AUTO_TURN_COALESCE_S = 1.5
@@ -202,7 +202,7 @@ _autoTurnWakes: dict[str, asyncio.Task] = {}
 
 
 def _notifyAutoTurnCapReached(sessionId: str, consecutive: int) -> None:
-    """Tell the client why queued subagent results stopped being delivered.
+    """Tell the client why queued machine completions stopped being delivered.
 
     Uses ``session.updated`` because that is an event the desktop realtime
     bridge actually handles (it invalidates the workbench-session query so the
@@ -214,14 +214,14 @@ def _notifyAutoTurnCapReached(sessionId: str, consecutive: int) -> None:
         pending = sum(
             1
             for e in wb.listQueuedMessages(sessionId)
-            if str(e.get('kind') or 'queue').lower() in ('subagent', 'daemon')
+            if str(e.get('kind') or 'queue').lower() in ('subagent', 'daemon', 'shell')
         )
     except Exception:
         pending = 0
     if not pending:
         return
     logger.warning(
-        '[auto-turn] %s: cap reached (%s consecutive); %s subagent result(s) held in queue',
+        '[auto-turn] %s: cap reached (%s consecutive); %s machine completion(s) held in queue',
         sessionId,
         consecutive,
         pending,
@@ -242,18 +242,18 @@ def _notifyAutoTurnCapReached(sessionId: str, consecutive: int) -> None:
 
 
 def _rearmAutoTurnIfPending(sessionId: str) -> None:
-    """Schedule an auto-turn when subagent/daemon completions are still queued.
+    """Schedule an auto-turn while machine completions are still queued.
 
     Called once a turn has fully ended (and its stream slot is released), so the
     wake that fires after the coalesce window will find the session idle. Uses
     the non-destructive ``listQueuedMessages`` peek — a user's own queued
-    message must never be consumed here, only subagent/daemon kinds.
+    message must never be consumed here, only machine kinds.
     """
     try:
         entries = wb.listQueuedMessages(sessionId)
     except Exception:
         return
-    if not any(str(e.get('kind') or 'queue').lower() in ('subagent', 'daemon') for e in entries):
+    if not any(str(e.get('kind') or 'queue').lower() in ('subagent', 'daemon', 'shell') for e in entries):
         return
     try:
         scheduleSubagentAutoTurn(sessionId)
@@ -262,7 +262,7 @@ def _rearmAutoTurnIfPending(sessionId: str) -> None:
 
 
 async def _startSubagentAutoTurn(sessionId: str) -> None:
-    """Run one turn from the session's queued subagent completions."""
+    """Run one turn from the session's queued machine completions."""
     session = wb.getWorkbenchSession(sessionId)
     if not session:
         return
@@ -282,7 +282,7 @@ async def _startSubagentAutoTurn(sessionId: str) -> None:
     entries = wb.drainQueuedMessages(
         sessionId,
         emit=_log_emit(sessionId),
-        kinds={'subagent', 'daemon'},
+        kinds={'subagent', 'daemon', 'shell'},
     )
     if not entries:
         return
@@ -300,12 +300,12 @@ async def _startSubagentAutoTurn(sessionId: str) -> None:
 
 
 def scheduleSubagentAutoTurn(sessionId: str) -> None:
-    """Schedule a coalesced auto-turn once queued subagent completions settle.
+    """Schedule a coalesced auto-turn once queued machine completions settle.
 
-    Safe to call from any async context; dedupes per session and never
-    raises. The parent session's own loop drains mid-turn completions at
-    its next round boundary — this only covers completions that arrive
-    after the turn already ended.
+    Covers subagent results, daemon notices and background-command results that
+    arrive after a turn already ended. Safe to call from any async context;
+    dedupes per session and never raises. The parent session's own loop drains
+    mid-turn completions at its next round boundary.
     """
     wake = _autoTurnWakes.get(sessionId)
     if wake is not None and not wake.done():
@@ -2253,11 +2253,25 @@ async def branchSession(sessionId: str, request: Request):
 
 
 @router.post('/sessions/{sessionId}/compact')
-async def compactSession(sessionId: str):
+async def compactSession(sessionId: str, request: Request):
     """Force context compression (\"Free up chat memory\")."""
+    # Optional body: {instructions: "what must survive / what comes next"}.
+    # The text is carried verbatim into the deterministic summary's Keep
+    # section; it is not interpreted by a model. An absent body keeps the old
+    # immediate compaction. Kept out of the docstring so the optional body does
+    # not churn the committed OpenAPI description for an operation FastAPI does
+    # not model a body for.
+    instructions = ''
+    try:
+        if request.headers.get('content-type', '').startswith('application/json'):
+            raw = await request.json()
+            if isinstance(raw, dict):
+                instructions = as_str(raw.get('instructions') or raw.get('keep') or '')[:2000]
+    except Exception:
+        instructions = ''
     from app.services.workbench.sessions import compact_workbench_session_now
 
-    result = await compact_workbench_session_now(sessionId)
+    result = await compact_workbench_session_now(sessionId, instructions=instructions)
     if result is None:
         raise HTTPException(status_code=404, detail='Session not found')
     return result

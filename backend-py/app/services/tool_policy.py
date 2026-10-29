@@ -165,7 +165,7 @@ _PROMPT_WRITE = frozenset({
 _PROMPT_DESTRUCTIVE = frozenset({
     'clear_blackboard', 'delete_agent', 'delete_alias', 'disconnect_integration',
     'delete_folder', 'delete_session', 'delete_sessions', 'kill_daemon',
-    'kill_daemons',
+    'kill_daemons', 'kill_background_task',
     # Bot Mode routines: removes a Bot-owned scheduled job.
     'delete_routine',
     # Circuit workbench: removes a netlist file from the workspace.
@@ -176,6 +176,7 @@ _PROMPT_SHELL = frozenset({'run_command', 'run_commands', 'simulate_circuit', 'c
 
 _PROMPT_AGENT = frozenset({
     'create_agent', 'list_agents', 'list_daemons', 'spawn_daemon',
+    'list_background_tasks', 'read_background_task', 'kill_background_task',
             'spawn_subagents', 'update_agent', 'set_agent_mode',
             'list_workstreams', 'send_subagent_message', 'interrupt_subagent',
             # Bot Mode routines: Bot-owned scheduled jobs.
@@ -278,6 +279,7 @@ _PLAN_BLOCKED_BULK_PLURALS = frozenset({
 _PLAN_BLOCKED_MARKERS = (
     'write', 'edit', 'delete', 'remove', 'install', 'uninstall',
     'exec', 'command', 'bash', 'shell', 'patch', 'rename', 'kill_daemon',
+    'kill_background',
 )
 
 _PLAN_BLOCKED_BULK_OPS = frozenset({

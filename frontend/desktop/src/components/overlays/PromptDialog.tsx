@@ -23,6 +23,8 @@ export function PromptDialog({
   initialValue = '',
   placeholder,
   confirmLabel = 'Save',
+  allowEmpty = false,
+  maxLength = 120,
   onSubmit,
   onCancel,
 }: {
@@ -33,7 +35,10 @@ export function PromptDialog({
   initialValue?: string;
   placeholder?: string;
   confirmLabel?: string;
-  /** Receives the trimmed value. Empty values are not submitted. */
+  /** When true, an empty value is a valid submission (an optional instruction). */
+  allowEmpty?: boolean;
+  maxLength?: number;
+  /** Receives the trimmed value. Empty values are not submitted unless allowEmpty. */
   onSubmit: (value: string) => void;
   onCancel: () => void;
 }) {
@@ -67,7 +72,7 @@ export function PromptDialog({
 
   const submit = () => {
     const trimmed = value.trim();
-    if (!trimmed) return;
+    if (!trimmed && !allowEmpty) return;
     onSubmit(trimmed);
   };
 
@@ -107,7 +112,7 @@ export function PromptDialog({
             onChange={(e) => setValue(e.target.value)}
             aria-label={label}
             placeholder={placeholder}
-            maxLength={120}
+            maxLength={maxLength}
             className={cn(
               'mt-3 w-full rounded-lg border border-border/70 bg-background/60 px-3 py-2 text-sm',
               'text-foreground placeholder:text-muted-foreground/50 outline-none transition',
@@ -126,7 +131,7 @@ export function PromptDialog({
             </button>
             <button
               type="submit"
-              disabled={!value.trim()}
+              disabled={!value.trim() && !allowEmpty}
               className="rounded-lg bg-primary px-3.5 py-1.5 text-[0.8125rem] font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
               data-testid="prompt-dialog-confirm"
             >

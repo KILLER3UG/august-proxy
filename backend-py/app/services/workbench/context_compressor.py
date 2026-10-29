@@ -541,17 +541,21 @@ def schemaSummarize(
     priorSummaryTexts: list[str] | None = None,
     goalHint: str = '',
     maxChars: int = SUMMARY_CAP_TOKENS * 4,
+    keep_hint: str = '',
 ) -> str:
     """Fixed-handoff markdown summary (deterministic, no LLM).
 
-    Part 18 P2.2: the shape is a handoff contract — Goal / State / Context /
-    Memory / Next / Pitfalls — so a compacted session hands the next agent (or the
-    next LLM call) enough to act without re-asking the user, with the file
-    ledger carried forward as trailing tags across repeated compactions.
-    Mapping from the pre-P2.2 schema: Progress → State, Key Decisions /
-    Constraints / earlier-summary prose → Context, Next Steps → Next, the
-    latest failing receipt + update_state blockers were split into Pitfalls
-    (they were previously buried in Critical Context).
+    Part 18 P2.2: the shape is a handoff contract — Goal / Keep / State /
+    Context / Memory / Next / Pitfalls — so a compacted session hands the next
+    agent (or the next LLM call) enough to act without re-asking the user, with
+    the file ledger carried forward as trailing tags across repeated
+    compactions. ``keep_hint`` is the manual-compaction instruction, carried
+    verbatim (and capped) at the TOP so the summary cap cannot truncate it
+    away; this deterministic extractor never interprets it. Mapping from the
+    pre-P2.2 schema: Progress → State, Key Decisions / Constraints /
+    earlier-summary prose → Context, Next Steps → Next, the latest failing
+    receipt + update_state blockers were split into Pitfalls (they were
+    previously buried in Critical Context).
     """
     goal = ' '.join((goalHint or '').split())[:400] or _firstUserText(messages)[:400] or '(not recorded)'
 
@@ -634,7 +638,10 @@ def schemaSummarize(
                 savedTitles.append(label)
         elif name == 'forget':
             forgotten += 1
-    lines: list[str] = [
+    keepLines: list[str] = []
+    if keep_hint:
+        keepLines = ['## Keep', ' '.join(keep_hint.split())[:1000], '']
+    lines: list[str] = keepLines + [
         '## Goal',
         goal,
         '',
@@ -827,6 +834,7 @@ async def compressMessages(
     replayUserBytes: int = 0,
     rotate: bool = False,
     reliefStats: dict[str, int] | None = None,
+    keep_hint: str = '',
 ) -> list[dict[str, object]]:
     """Compress messages to fit within a token threshold by summarizing the middle.
 
@@ -874,7 +882,8 @@ async def compressMessages(
         goalHint: Session goal forwarded to the schema summarizer.
         schema: Use the fixed handoff schema for deterministic summaries.
         replayUserBytes: Byte budget for verbatim user-message replay (0 = off).
-        rotate: Re-anchor instead of stacking (see :func:`reliefStrategy`). Keeps
+        keep_hint: Manual-compaction instruction, carried verbatim into the
+            schema note's Keep section (automatic paths pass '').        rotate: Re-anchor instead of stacking (see :func:`reliefStrategy`). Keeps
             NO head verbatim, so the summarized span includes the opening — the
             note's Goal becomes the original ask rather than whatever the user
             said fifth — and the original ask itself is claimed back verbatim
@@ -1074,7 +1083,13 @@ async def compressMessages(
                 text = await text
             return as_str(text)
         if schema:
-            return schemaSummarize(chunk, priorSummaryTexts, goalHint, maxChars=summaryMaxChars)
+            return schemaSummarize(
+                chunk,
+                priorSummaryTexts,
+                goalHint,
+                maxChars=summaryMaxChars,
+                keep_hint=keep_hint,
+            )
         return localSummarize(chunk)
 
     summaryText = await _summarize(middle)

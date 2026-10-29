@@ -65,6 +65,7 @@ const GROUPS = {
   backend: [
     ['npm', ['run', 'check:api'], root],
     ['npm', ['run', 'check:brain-config'], root],
+    ['npm', ['run', 'check:skills'], root],
     ['lint', [], backend],
     ['npm', ['run', 'e2e:smoke'], root],
   ],

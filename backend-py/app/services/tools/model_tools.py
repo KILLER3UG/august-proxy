@@ -2,11 +2,11 @@
 Model tools — assembles the tool definitions that the model sees (Phase 3).
 
 The ``assemble_tool_defs()`` function is the orchestrator:
-1. Classify tools into core + deferrable
+1. Classify tools into core + deferrable (MCP tools are deferrable too)
 2. BM25-score deferrable tools against conversation context → top-K pre-loaded
 3. Check threshold: if deferrable tokens < 10% of context → pass-through
 4. Assemble: core + preloaded + bridge tools
-5. Budget check: drop auto-loaded skills first, then reduce K
+5. Budget check: reduce the preloaded set, keeping at least three
 
 This is a pure function — trivially testable.
 """
@@ -51,6 +51,12 @@ AUGUST_CORE_TOOLS: frozenset[str] = frozenset(
         'spawn_daemon',
         'list_daemons',
         'kill_daemon',
+        # Background command control is the same door as the daemon trio: a
+        # completion notification names these tools, so they must be visible
+        # even when progressive disclosure hides the rest of the shell group.
+        'list_background_tasks',
+        'read_background_task',
+        'kill_background_task',
         'write_blackboard',
         'read_blackboard',
         'clear_blackboard',
@@ -65,8 +71,6 @@ class AssemblyResult:
     activated: bool = False
     preloadedTools: list[str] = field(default_factory=list)
     preloadedToolCount: int = 0
-    autoLoadedSkills: list[str] = field(default_factory=list)
-    autoLoadedSkillCount: int = 0
     deferredCount: int = 0
     deferredTokens: int = 0
     thresholdTokens: int = 0
@@ -123,8 +127,6 @@ def assembleToolDefs(
     contextLength: int = 200000,
     thresholdPct: float = 10.0,
     preloadK: int = 10,
-    skillIndex: list[dict] | None = None,
-    autoPrimeJ: int = 2,
     tool_keywords_by_name: dict[str, list[str]] | None = None,
 ) -> AssemblyResult:
     """Assemble the tool definitions the model will see.
@@ -140,7 +142,13 @@ def assembleToolDefs(
     deferrableTokens = 0
     for td in all_tool_defs:
         name = td.get('name', '') if isinstance(td, dict) else ''
-        if name in coreToolNames or name.startswith('mcp__'):
+        # MCP tools used to be forced resident here. That is exactly the
+        # catalog progressive disclosure exists for: a configured server can
+        # add dozens of rarely used schemas to every request. They are
+        # deferrable now; a small catalog still passes through whole because
+        # activation is threshold-gated, and `tool_search`/`tool_call` can
+        # reach a hidden MCP tool by name.
+        if name in coreToolNames:
             coreDefs.append(td)
         else:
             deferrableDefs.append(td)
@@ -162,16 +170,6 @@ def assembleToolDefs(
         preloadedNames = [td.get('name', '') if isinstance(td, dict) else '' for td in deferrableDefs[:preloadK]]
     result.preloadedTools = preloadedNames
     result.preloadedToolCount = len(preloadedNames)
-    autoSkills: list[str] = []
-    if skillIndex and query:
-        from app.services.tools.retrieval import buildSkillCatalog, searchSkills
-
-        skCatalog = buildSkillCatalog(skillIndex)
-        autoSkills = searchSkills(skCatalog, query, j=autoPrimeJ)
-    elif skillIndex:
-        autoSkills = [s.get('name', '') if isinstance(s, dict) else str(s) for s in skillIndex[:autoPrimeJ]]
-    result.autoLoadedSkills = autoSkills
-    result.autoLoadedSkillCount = len(autoSkills)
     preloadedDefs: list[dict] = []
     for td in deferrableDefs:
         name = td.get('name', '') if isinstance(td, dict) else ''
@@ -180,9 +178,6 @@ def assembleToolDefs(
     totalTokens = sum((_estimateToolTokens(t) for t in coreDefs))
     totalTokens += sum((_estimateToolTokens(t) for t in preloadedDefs))
     totalTokens += sum((_estimateToolTokens(t) for t in _BRIDGEToolDefs))
-    if totalTokens >= result.thresholdTokens:
-        result.autoLoadedSkills = []
-        result.autoLoadedSkillCount = 0
     while totalTokens >= result.thresholdTokens and len(preloadedDefs) > 3:
         removed = preloadedDefs.pop()
         totalTokens -= _estimateToolTokens(removed)

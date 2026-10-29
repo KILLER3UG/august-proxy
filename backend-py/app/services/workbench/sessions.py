@@ -1257,6 +1257,25 @@ def cancel_session_work(session_id: str) -> None:
         _schedule_daemon_kill()
     except Exception:
         logger.debug('daemon session cleanup failed', exc_info=True)
+    try:
+        # Background shell commands are children of the app, not of the chat
+        # row; deleting the chat must stop them or they leak until shutdown.
+        import asyncio as _asyncio
+
+        from app.services.background_commands import getManager as _getBackgroundManager
+
+        _bgManager = _getBackgroundManager()
+
+        def _schedule_background_kill() -> None:
+            try:
+                _loop = _asyncio.get_running_loop()
+                _loop.create_task(_bgManager.cancel_for_session(session_id))
+            except RuntimeError:
+                _asyncio.run(_bgManager.cancel_for_session(session_id))
+
+        _schedule_background_kill()
+    except Exception:
+        logger.debug('background command session cleanup failed', exc_info=True)
 
 
 # Strong refs for in-flight browser teardowns, so the task cannot be
@@ -1596,7 +1615,9 @@ def _emit_manual_compaction_frame(
         logger.debug('manual compaction frame emit failed', exc_info=True)
 
 
-async def compact_workbench_session_now(session_id: str) -> dict[str, object] | None:
+async def compact_workbench_session_now(
+    session_id: str, instructions: str = ''
+) -> dict[str, object] | None:
     """Force context compression on a session (user-triggered \"Free up memory\")."""
     session = get_workbench_session(session_id)
     if not session:
@@ -1645,6 +1666,7 @@ async def compact_workbench_session_now(session_id: str) -> dict[str, object] | 
         goalHint=as_str(getattr(session, 'goal', '') or ''),
         summarizer=None,
         thresholdOverride=0,
+        keep_hint=as_str(instructions or '')[:2000],
     )
     compressed_tokens = estimateTokens(compressed)
     compressed_count = max(0, len(original) - len(compressed))

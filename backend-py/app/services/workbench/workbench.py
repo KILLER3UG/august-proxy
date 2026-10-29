@@ -191,7 +191,7 @@ def service_turn_in_flight(sessionId: str) -> bool:
 # historical names stay importable from here for tests and callers.
 from app.services.error_families import ERROR_FAMILY_ADVICE as _ERROR_FAMILY_ADVICE  # noqa: E402, F401
 from app.services.error_families import ERROR_FAMILY_RULES as _ERROR_FAMILY_RULES  # noqa: E402, F401
-from app.services.message_sources import SOURCE_HARNESS_NUDGE, SOURCE_QUEUED_USER  # noqa: E402
+from app.services.message_sources import SOURCE_HARNESS_NUDGE, SOURCE_MACHINE_RESULTS, SOURCE_QUEUED_USER  # noqa: E402
 
 # Stall/novelty guards live in loop/guards.py (P1#11 split): the stall
 # constants, canonical-argument identity, (tool, target) polling keys,
@@ -1812,8 +1812,11 @@ def _formatQueuedMessagesAsUserTurn(entries: list[dict[str, object]]) -> dict[st
 
     Steers (``kind=steer``) are mid-run course corrections and take priority
     in the preamble. Subagent completions (``kind=subagent``) are next so the
-    model sees per-subagent results as they settle. Ordinary queue entries
-    are follow-ups for later.
+    model sees per-subagent results as they settle. Daemon notifications
+    (``kind=daemon``) follow with their own preamble — they are machine
+    messages, not something the user queued. Background-command results
+    (``kind=shell``) do the same. Ordinary queue entries are follow-ups for
+    later.
     """
     if not entries:
         return {'role': 'user', 'content': '', 'source': SOURCE_QUEUED_USER}
@@ -1824,12 +1827,22 @@ def _formatQueuedMessagesAsUserTurn(entries: list[dict[str, object]]) -> dict[st
             return 0
         if k == 'subagent':
             return 1
-        return 2
+        if k == 'daemon':
+            return 2
+        if k == 'shell':
+            return 3
+        return 4
 
     ordered = sorted(entries, key=_kind_rank)
     steers = [e for e in ordered if as_str(e.get('kind'), 'queue') == 'steer']
     subagents = [e for e in ordered if as_str(e.get('kind'), 'queue') == 'subagent']
-    queues = [e for e in ordered if as_str(e.get('kind'), 'queue') not in ('steer', 'subagent')]
+    daemons = [e for e in ordered if as_str(e.get('kind'), 'queue') == 'daemon']
+    shells = [e for e in ordered if as_str(e.get('kind'), 'queue') == 'shell']
+    queues = [
+        e
+        for e in ordered
+        if as_str(e.get('kind'), 'queue') not in ('steer', 'subagent', 'daemon', 'shell')
+    ]
     parts: list[str] = []
     if steers:
         parts.append(
@@ -1855,6 +1868,29 @@ def _formatQueuedMessagesAsUserTurn(entries: list[dict[str, object]]) -> dict[st
         )
         parts.append('')
         for entry in subagents:
+            text = as_str(entry.get('text'), '')
+            parts.append(text)
+            parts.append('')
+    if daemons:
+        parts.append(
+            '[DAEMON UPDATES — One or more background daemons triggered or finished. '
+            'Each block below is a daemon notification, not a user message. Read the output; '
+            'call list_daemons for status or the full stored result when needed.]'
+        )
+        parts.append('')
+        for entry in daemons:
+            text = as_str(entry.get('text'), '')
+            parts.append(text)
+            parts.append('')
+    if shells:
+        parts.append(
+            '[BACKGROUND COMMAND RESULTS — One or more background shell commands finished. '
+            'Each block below is a command completion with its exit code, not a user message. '
+            'Read the output; use read_background_task for more of a log. Do not re-run a command '
+            'that already succeeded.]'
+        )
+        parts.append('')
+        for entry in shells:
             text = as_str(entry.get('text'), '')
             parts.append(text)
             parts.append('')
@@ -1889,13 +1925,16 @@ def _formatQueuedMessagesAsUserTurn(entries: list[dict[str, object]]) -> dict[st
             parts.append(text)
             parts.append('</queued_message>')
             parts.append('')
-    # The whole composite is queue-drain plumbing (it may embed steer notes
-    # and [SUBAGENT RESULTS …] receipts) — one provenance value covers it for
-    # mining and persist trimming; the audit's subagent_results kind is kept
-    # in the vocabulary for any future pure-receipt row.
+    # The whole composite is queue-drain plumbing (it may embed steer notes,
+    # [SUBAGENT RESULTS …] receipts, [DAEMON UPDATES …] notices and
+    # [BACKGROUND COMMAND RESULTS …] notices) — one provenance value covers it
+    # for mining and persist trimming. A queue with a human entry stays
+    # `queued_user`; a drain containing only machine entries is
+    # `machine_results`, so the Bot runaway ceiling does not read a completion
+    # as the human speaking.
     return {
         'role': 'user',
-        'source': SOURCE_QUEUED_USER,
+        'source': SOURCE_QUEUED_USER if (queues or steers) else SOURCE_MACHINE_RESULTS,
         'content': '\n'.join(parts).strip(),
     }
 
@@ -1912,6 +1951,8 @@ def enqueueUserMessage(
       - ``queue`` — follow-up for the next loop boundary (default)
       - ``steer`` — mid-run course correction; formatted with higher priority
       - ``subagent`` — background subagent completion; delivered per-agent as it settles
+      - ``daemon`` — background daemon notification; delivered with its own preamble
+      - ``shell`` — background shell command completion; delivered with its own preamble
 
     Returns the queued entry on success, or None if the session does not
     exist. Emits a ``user_message_queued`` SSE event so open tabs can
@@ -1930,11 +1971,11 @@ def enqueueUserMessage(
     kind_n = (kind or 'queue').strip().lower()
     # 'daemon' must be a storable kind: daemon_manager enqueues its completion
     # notices with it, and the subagent auto-turn drains with
-    # kinds={'subagent','daemon'} (routers/workbench.py:274). Coercing it to
+    # kinds={'subagent','daemon','shell'} (the auto-turn route). Coercing it to
     # 'queue' here made that drain filter permanently unsatisfiable, so a
     # daemon notification could never wake its session — the whole daemon
     # auto-turn path was dead while every call site looked correct.
-    if kind_n not in ('queue', 'steer', 'subagent', 'daemon'):
+    if kind_n not in ('queue', 'steer', 'subagent', 'daemon', 'shell'):
         kind_n = 'queue'
     entry: dict[str, object] = {
         'id': f'qm_{uuid.uuid4().hex[:12]}',
@@ -1943,10 +1984,11 @@ def enqueueUserMessage(
         'queuedAt': _now(),
         'kind': kind_n,
     }
-    # FIFO for every kind: steers/subagent completions get PRIORITY as a
-    # group in the drain formatter (steer → subagent → queue), but within a
-    # group the user's order must hold — front-inserting here made three
-    # steers drain as 3,2,1 (both to the model and to the injected bubbles).
+    # FIFO for every kind: steers/subagent/daemon/shell completions get
+    # PRIORITY as groups in the drain formatter (steer → subagent → daemon →
+    # shell → queue), but within a group the user's order must hold —
+    # front-inserting here made three steers drain as 3,2,1 (both to the model
+    # and to the injected bubbles).
     # Hard cap with drop-oldest — the queue is unbounded
     # otherwise, and a model that keeps spawning subagents grows it every
     # completion (each _enqueue_completion lands here as kind='subagent').
@@ -1960,7 +2002,7 @@ def enqueueUserMessage(
         # only spent when the queue is nothing but human messages. Refusing the
         # incoming entry instead would lose a completion the parent turn is
         # waiting on, which is the worse failure.
-        _MACHINE_KINDS = ('subagent', 'daemon')
+        _MACHINE_KINDS = ('subagent', 'daemon', 'shell')
         queue = session.queuedUserMessages
         oldestMachineIdx = next(
             (i for i, q in enumerate(queue) if str(q.get('kind') or '') in _MACHINE_KINDS),
@@ -7467,6 +7509,7 @@ def listProxyCapabilities() -> dict[str, object]:
             'spawn_subagents',
             'spawn_daemon',
             'kill_daemon',
+            'kill_background_task',
             'interrupt_subagent',
             'send_subagent_message',
             'write_blackboard',
@@ -7493,7 +7536,7 @@ def listProxyCapabilities() -> dict[str, object]:
             'create_file',
         ):
             group = 'file'
-        elif name in ('run_command',):
+        elif name in ('run_command', 'list_background_tasks', 'read_background_task', 'kill_background_task'):
             group = 'shell'
         elif name in ('brain_query', 'remember'):
             group = 'memory'

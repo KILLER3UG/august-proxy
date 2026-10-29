@@ -35,6 +35,12 @@ heading present. `amend_trigger` carries no body, so it must ship the target's
 current body through: normalizing the empty one wrote placeholders over a real
 skill on approval.
 
+`npm run check:skills` runs this same loader over the bundled tree. A file it
+would skip at discovery, a frontmatter `name` that disagrees with its
+directory, or two bundled skills sharing a name fails the gate; without it,
+the runtime skip is the only symptom and the skill simply disappears from the
+catalogue.
+
 ## Mutation and undo
 
 Every mutation on the skills surface protects content first:

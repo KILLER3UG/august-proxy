@@ -412,6 +412,12 @@ async def lifespan(app: FastAPI):
         await shutdownAll()
     except Exception:
         pass
+    try:
+        from app.services.background_commands import shutdownAll as shutdownBackgroundCommands
+
+        await shutdownBackgroundCommands()
+    except Exception:
+        pass
     # Every subprocess we own must be reaped by us, not left to the OS: a
     # graceful stop (dev uvicorn, an in-process lifespan end) used to leave
     # winpty shells and MCP stdio children resident, and the next backend

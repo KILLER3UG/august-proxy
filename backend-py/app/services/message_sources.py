@@ -29,6 +29,11 @@ SOURCE_TOOL = 'tool'
 SOURCE_HARNESS_NUDGE = 'harness_nudge'
 SOURCE_QUEUED_USER = 'queued_user'
 SOURCE_SUBAGENT_RESULTS = 'subagent_results'
+# A queue drain that contained ONLY machine entries (subagent completion,
+# daemon notice, background-command result). The composite is written as one
+# user-role row, so without its own source the Bot runaway ceiling read it as
+# the human speaking and reset itself.
+SOURCE_MACHINE_RESULTS = 'machine_results'
 # Passive memory delivery is written INTO the transcript as role='user' with no
 # turn (automation_memory.py), and a Live/BTW exchange is appended the same way
 # (routers/live.py). Neither is the human talking, and a memory body can easily
@@ -42,6 +47,7 @@ MACHINE_SOURCES: frozenset[str] = frozenset(
         SOURCE_HARNESS_NUDGE,
         SOURCE_QUEUED_USER,
         SOURCE_SUBAGENT_RESULTS,
+        SOURCE_MACHINE_RESULTS,
         SOURCE_MEMORY_DELIVERY,
         SOURCE_LIVE_TRANSCRIPT,
     }

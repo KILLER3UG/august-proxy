@@ -2,7 +2,7 @@
 /* Command-palette / ui-action handlers: guard mode, undo, compact, branch, */
 /* restore latest checkpoint.                                               */
 
-import { useEffect, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
@@ -43,9 +43,20 @@ export interface UseChatUiActionsOptions {
 /**
  * Subscribes to shell ui-actions for the active chat (mode, undo, compact,
  * branch, restore checkpoint, stop generation).
+ *
+ * Returns the manual-compaction prompt state: "Free up chat memory" opens the
+ * prompt so the user can say what must survive; an empty submit is the old
+ * immediate compaction.
  */
-export function useChatUiActions(opts: UseChatUiActionsOptions): void {
+export interface ChatUiActionsControls {
+  compactPromptOpen: boolean;
+  submitCompact: (instructions: string) => void;
+  cancelCompact: () => void;
+}
+
+export function useChatUiActions(opts: UseChatUiActionsOptions): ChatUiActionsControls {
   const navigate = useNavigate();
+  const [compactPromptOpen, setCompactPromptOpen] = useState(false);
   const {
     sessionId,
     messages,
@@ -169,16 +180,7 @@ export function useChatUiActions(opts: UseChatUiActionsOptions): void {
           toast.message('This chat has no conversation to free up yet.');
           return;
         }
-        void compactWorkbenchSession(wbId)
-          .then((res) => {
-            if (res.session) setWorkbenchSession(res.session);
-            toast.success(res.message || 'Chat memory updated');
-          })
-          .catch((err: unknown) => {
-            toast.error(
-              `Could not free memory: ${err instanceof Error ? err.message : String(err)}`,
-            );
-          });
+        setCompactPromptOpen(true);
         return;
       }
 
@@ -272,4 +274,30 @@ export function useChatUiActions(opts: UseChatUiActionsOptions): void {
     activeSession?.folderId,
     activeSession?.title,
   ]);
+
+  const compactTargetId =
+    workbenchSession?.id ||
+    activeSession?.workbenchSessionId ||
+    (sessionId?.startsWith('wb_') ? sessionId : null);
+
+  const submitCompact = (instructions: string) => {
+    setCompactPromptOpen(false);
+    if (!compactTargetId) return;
+    void compactWorkbenchSession(compactTargetId, instructions)
+      .then((res) => {
+        if (res.session) setWorkbenchSession(res.session);
+        toast.success(res.message || 'Chat memory updated');
+      })
+      .catch((err: unknown) => {
+        toast.error(
+          `Could not free memory: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
+  };
+
+  return {
+    compactPromptOpen,
+    submitCompact,
+    cancelCompact: () => setCompactPromptOpen(false),
+  };
 }

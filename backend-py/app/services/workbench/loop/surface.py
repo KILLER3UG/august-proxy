@@ -81,6 +81,8 @@ _BARE_TOOL_ALLOW = frozenset(
         'write_file',
         'edit_lines',
         'run_command',
+        'read_background_task',
+        'kill_background_task',
         'update_state',
         'submit_todos',
         'update_todos',

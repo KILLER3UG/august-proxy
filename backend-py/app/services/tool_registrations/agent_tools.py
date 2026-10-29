@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.json_narrowing import as_bool, as_dict, as_str
+from app.json_narrowing import as_bool, as_dict, as_int, as_str
 from app.services import tool_registry
 
 
@@ -17,8 +17,9 @@ async def _spawnDaemon(
 
     Daemons run headless on the Cerebellum model (fast, cheap) with a
     restricted read-only tool set. They are best for polling, monitoring,
-    and watching. The model gets results in <subconscious_updates> on
-    subsequent turns.
+    and watching. A triggered or finished daemon wakes the chat with a
+    ``[DAEMON_TRIGGERED]`` / ``[DAEMON_FINISHED]`` message on a later turn;
+    ``list_daemons`` returns the stored output on demand.
 
     For complex background tasks that need full tool access, use
     ``spawn_subagents`` instead.
@@ -76,6 +77,27 @@ async def _killDaemon(daemonId: str) -> str:
         return f"Daemon '{daemonId}' not found."
     except Exception as exc:
         return f'Error killing daemon: {exc}'
+
+
+async def _listBackgroundTasks() -> str:
+    from app.services.background_commands import getManager
+    from app.services.workbench.context import currentSessionId
+
+    return getManager().list_tasks(currentSessionId.get())
+
+
+async def _readBackgroundTask(taskId: str = '', tailChars: int = 8000) -> str:
+    from app.services.background_commands import getManager
+    from app.services.workbench.context import currentSessionId
+
+    return getManager().read(taskId, currentSessionId.get(), as_int(tailChars, 8000))
+
+
+async def _killBackgroundTask(taskId: str = '') -> str:
+    from app.services.background_commands import getManager
+    from app.services.workbench.context import currentSessionId
+
+    return await getManager().kill(taskId, currentSessionId.get())
 
 
 async def _writeBlackboard(key: str, value: str, priority: int = 0, persistWorkspace: bool = False) -> str:
@@ -233,7 +255,8 @@ def register() -> None:
     tool_registry.register(
         'spawn_daemon',
         'Spawn a background daemon (subconscious agent) on the Cerebellum model with a read-only tool set. '
-        'Use for polling, monitoring, watching CI. Results appear in <subconscious_updates> on later turns. '
+        'Use for polling, monitoring, watching CI. A triggered or finished daemon wakes the chat with a '
+        '[DAEMON_TRIGGERED] / [DAEMON_FINISHED] message on a later turn; list_daemons returns its output. '
         'Max 10 per session (20 per workspace). persistWorkspace makes watchers survive the session.',
         _spawnDaemon,
         {
@@ -277,6 +300,40 @@ def register() -> None:
             'type': 'object',
             'properties': {'daemonId': {'type': 'string', 'description': 'Daemon ID to kill.'}},
             'required': ['daemonId'],
+        },
+    )
+    tool_registry.register(
+        'list_background_tasks',
+        'List background shell commands for this session: id, status, elapsed time and command. '
+        'A background command is a long run_command that outlived its foreground wait, not a daemon.',
+        _listBackgroundTasks,
+        {'type': 'object', 'properties': {}, 'required': []},
+    )
+    tool_registry.register(
+        'read_background_task',
+        "Read a background command's status and the tail of its log. A running task notifies you when it "
+        'finishes — do not poll it repeatedly. The full log stays on disk at the path the result names.',
+        _readBackgroundTask,
+        {
+            'type': 'object',
+            'properties': {
+                'taskId': {'type': 'string', 'description': 'Background task id (bg_...).'},
+                'tailChars': {
+                    'type': 'integer',
+                    'description': 'Trailing characters to return (default 8000, max 40000).',
+                },
+            },
+            'required': ['taskId'],
+        },
+    )
+    tool_registry.register(
+        'kill_background_task',
+        'Stop a running background shell command by id. This kills the command process; the chat turn is not interrupted.',
+        _killBackgroundTask,
+        {
+            'type': 'object',
+            'properties': {'taskId': {'type': 'string', 'description': 'Background task id (bg_...).'}},
+            'required': ['taskId'],
         },
     )
     tool_registry.register(
