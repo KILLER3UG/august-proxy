@@ -1,6 +1,6 @@
 {
   "name": "august-proxy",
-  "version": "0.18.25",
+  "version": "0.18.26",
   "private": true,
   "type": "module",
   "workspaces": [
