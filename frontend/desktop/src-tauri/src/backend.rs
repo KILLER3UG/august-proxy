@@ -263,6 +263,27 @@ fn selfEditEnabled(app: &AppHandle) -> bool {
     appDataRoot(app).join(SELF_EDIT_SWITCH).is_file()
 }
 
+/// The update/clone collision, decided: deferred, not silently overwritten.
+///
+/// With self-edit on, the CLONE is the running source. An update re-stages
+/// `backend-runtime` from the new bundle, and the pin keeps preferring the clone —
+/// so the app would report the new version while executing the clone's old HEAD,
+/// which is the worst possible state: the number you read is not the code you run.
+/// The refusal says what to do instead, because a refusal that names no door is a
+/// dead end the user cannot leave.
+fn selfEditUpdateBlock(app: &AppHandle) -> Option<String> {
+    if !selfEditEnabled(app) {
+        return None;
+    }
+    Some(format!(
+        "update deferred — self-edit is ON, so the running source is the clone at {}. An update \
+         would re-stage the installed payload while the clone keeps its old HEAD, and August would \
+         report the new version while executing the old code. Turn self-edit off in Settings → \
+         Self-edit to update, or update from your own terminal and then re-sync the clone.",
+        selfEditCloneRoot(app).display()
+    ))
+}
+
 fn selfEditCloneRoot(app: &AppHandle) -> PathBuf {
     appDataRoot(app).join(CLONE_DIR_LEAF)
 }
@@ -2993,6 +3014,9 @@ pub async fn set_lan_access(app: AppHandle, enabled: bool) -> Result<LanAccessSt
 /// Kill the backend (and Windows orphans locking bundled Python) before NSIS runs.
 #[tauri::command]
 pub fn stop_backend_for_update(app: AppHandle) -> Result<String, String> {
+    if let Some(reason) = selfEditUpdateBlock(&app) {
+        return Err(reason);
+    }
     stopBackendForUpdate(&app);
     Ok("stopped".into())
 }
@@ -3198,6 +3222,11 @@ fn decodeInstallerSignature(signature_text: &str) -> Result<Signature, String> {
 /// so bundled backend changes always land.
 #[tauri::command]
 pub async fn download_release_installer(app: AppHandle, version: String) -> Result<String, String> {
+    // Refused before the bytes move: a progress bar that completes and then fails
+    // at install teaches the user to distrust the bar.
+    if let Some(reason) = selfEditUpdateBlock(&app) {
+        return Err(reason);
+    }
     UPDATE_DOWNLOAD_CANCEL.store(false, Ordering::SeqCst);
     let filename = expectedReleaseFilename(&version)?;
     let url = expectedReleaseUrl(&version, &filename);
@@ -3411,6 +3440,12 @@ pub fn downloaded_installer(app: AppHandle, version: String) -> Option<String> {
 /// processes so locked `resources/python/*.pyd` files don't abort the copy.
 #[tauri::command]
 pub fn launch_installer_and_exit(app: AppHandle, path: String) -> Result<String, String> {
+    // The last door before the payload is replaced, guarded like the others: an
+    // installer already downloaded (or sitting in the updates folder) must not be
+    // able to run underneath a live clone.
+    if let Some(reason) = selfEditUpdateBlock(&app) {
+        return Err(reason);
+    }
     let supplied = PathBuf::from(&path);
     let installer =
         std::fs::canonicalize(&supplied).map_err(|_| format!("installer not found: {path}"))?;
