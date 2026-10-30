@@ -44,6 +44,7 @@ import {
   Monitor,
   Network,
   Radio,
+  RefreshCw,
   Search as SearchIcon,
   Shield,
   SlidersHorizontal,
@@ -727,6 +728,15 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     category: 'capabilities',
     tier: 'hidden',
     keywords: ['api', 'access', 'gateway', 'key', 'external', 'client', 'curl', 'openai', 'anthropic', 'bearer', 'sdk', 'endpoint'],
+  },
+  {
+    id: 'self-edit',
+    label: 'Self-edit',
+    description: 'The self-edit switch and its clone, the gates this app owns, and the only apply door.',
+    icon: RefreshCw,
+    category: 'capabilities',
+    tier: 'basic',
+    keywords: ['self-edit', 'switch', 'clone', 'restart', 'apply', 'gate', 'journal', 'source'],
   },
 
   /* ── Data and statistics header ────────────────────────────────── */

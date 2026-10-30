@@ -322,6 +322,7 @@ const ObservabilitySectionWrapper = lazySection(() => import('./ObservabilitySec
 const BackendMonitorWrapper = lazySection(() => import('./BackendMonitorSection'), 'BackendMonitorSection');
 const FeatureFlowWrapper = lazySection(() => import('./FeatureFlowSection'), 'FeatureFlowSection');
 const ExternalAccessWrapper = lazySection(() => import('./ExternalAccessSection'), 'ExternalAccessSection');
+const SelfEditWrapper = lazySection(() => import('./SelfEditSection'), 'SelfEditSection');
 const AppUpdatesWrapper = lazySection(() => import('./UpdateSection'), 'UpdateSection');
 const BrowserUseWrapper = lazySection(
   () => import('./CapabilitySections').then((m) => ({ default: m.BrowserUseSection })),
@@ -420,6 +421,7 @@ export const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps
   'feature-flow': FeatureFlowWrapper,
   'computer-use': ComputerUseWrapper,
   'api-access': ExternalAccessWrapper,
+  'self-edit': SelfEditWrapper,
   'tool-grants': AgentSandboxWrapper,
   'python-sandbox': AgentSandboxWrapper,
   'kernel-venv': AgentSandboxWrapper,
