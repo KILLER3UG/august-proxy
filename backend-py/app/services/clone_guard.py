@@ -36,6 +36,7 @@ from __future__ import annotations
 import contextvars
 import os
 import re
+import stat
 from pathlib import Path
 
 #: Set by the turn dispatch beside ``currentSessionId``: True while the
@@ -164,6 +165,64 @@ def is_clone_path(path: str | Path) -> bool:
         if form == root_form or form.startswith(root_form + '/'):
             return True
     return False
+
+
+def _is_reparse(path: Path) -> bool:
+    """True for a symlink (POSIX) or a junction/reparse point (Windows).
+
+    Checked per step, not on the final component only: ``open(..., O_TRUNC)``
+    and ``unlink()`` both follow a directory junction, so a link anywhere on
+    the way out of the clone is an escape from the containment the journal
+    needs.
+    """
+    try:
+        info = os.lstat(str(path))
+    except OSError:
+        return False
+    if stat.S_ISLNK(info.st_mode):
+        return True
+    flag = getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0)
+    return bool(flag and getattr(info, 'st_file_attributes', 0) & flag)
+
+
+def contained_target(path: str | Path, root: Path | None = None) -> Path | None:
+    """The safe absolute target for a journaled entry, or None when it is not safe.
+
+    :func:`is_clone_path` compares *spellings*, which is what a write denial
+    needs. Restoring is different: the path comes out of a manifest, and a
+    manifest is data the editable tree can produce — so the component that
+    writes it must resolve containment for itself rather than trust the entry.
+    Refused: a path that is not under the root after a lexical walk (``..``,
+    another drive), and any step that is a link or junction.
+
+    The same algorithm lives, stdlib-only and byte-identical in behaviour, in
+    ``frontend/desktop/src-tauri/src/clone_recovery.py``. That copy cannot
+    import this module — it runs with ``-I -S`` outside the tree it repairs —
+    so keep the two in step.
+    """
+    base = root if root is not None else clone_root()
+    if base is None:
+        return None
+    raw = str(path).strip()
+    if not raw:
+        return None
+    try:
+        candidate = Path(raw).expanduser()
+        if not candidate.is_absolute():
+            candidate = base / candidate
+        rel = os.path.relpath(str(candidate), str(base))
+    except (OSError, ValueError, RuntimeError):
+        return None
+    if os.path.isabs(rel) or rel == os.pardir or rel.startswith(os.pardir + os.sep):
+        return None
+    cursor = base
+    for part in rel.split(os.sep):
+        if part in ('', '.'):
+            continue
+        cursor = cursor / part
+        if _is_reparse(cursor):
+            return None
+    return cursor
 
 
 def clone_write_denial(

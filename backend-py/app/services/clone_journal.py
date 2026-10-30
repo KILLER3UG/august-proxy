@@ -56,7 +56,7 @@ import time
 import uuid
 from pathlib import Path
 
-from app.services.clone_guard import clone_root, is_clone_path
+from app.services.clone_guard import clone_root, contained_target, is_clone_path
 
 logger = logging.getLogger(__name__)
 
@@ -233,15 +233,39 @@ def commit(marker_id: str) -> None:
             _set_state(other_dir, 'committed')
 
 
-def _restore_marker(marker_dir: Path, reason: str = '') -> bool:
-    """Undo one marker's entries from recorded bytes. True when fully undone."""
+def _restore_marker(marker_dir: Path, reason: str = '') -> str:
+    """Undo one marker's entries from recorded bytes.
+
+    Returns ``'restored'``, ``'failed'`` (a byte could not be written — the
+    marker stays for the next boot), ``'refused'`` (an entry is not safely
+    inside the clone — the marker stays, and nothing was trusted) or
+    ``'unresolved'`` (the journal entry itself is unreadable — nothing was
+    attempted, so it must not be reported as a restore attempt).
+    """
     manifest = _read_manifest(marker_dir)
     if manifest is None:
-        return False
+        return 'unresolved'
     files_dir = marker_dir / _FILES_SUBDIR
     ok = True
+    refused = False
     for entry in manifest.get('entries', []):
-        path = Path(str(entry.get('path') or ''))
+        raw = str(entry.get('path') or '')
+        # Containment is re-derived here, not inherited from arm time: this
+        # module lives in the tree the model edits, so the manifest is data
+        # this function may not trust. A poisoned arm would otherwise hand the
+        # sweep an arbitrary write (``existed`` true) or an arbitrary delete
+        # (``existed`` false) to perform under the user's own account.
+        path = contained_target(raw)
+        if path is None:
+            refused = True
+            ok = False
+            logger.error(
+                'clone_journal: marker %s entry %r is not safely inside the clone — '
+                'refused, marker kept for a human',
+                manifest.get('id'),
+                raw,
+            )
+            continue
         try:
             if not entry.get('existed'):
                 # The edit ADDED this file: recovery deletes it.
@@ -263,13 +287,14 @@ def _restore_marker(marker_dir: Path, reason: str = '') -> bool:
         _set_state(marker_dir, 'restored', restored_at=time.time(), restore_reason=reason)
         logger.info('clone_journal: marker %s restored (%s)', manifest.get('id'), reason)
     else:
-        _set_state(marker_dir, 'restore-failed', restore_reason=reason)
+        state_reason = 'unsafe-entry: refused, not retried blindly' if refused else reason
+        _set_state(marker_dir, 'restore-failed', restore_reason=state_reason)
         logger.warning(
             'clone_journal: marker %s could not be fully restored (%s) — kept for the next boot',
             manifest.get('id'),
-            reason,
+            state_reason,
         )
-    return ok
+    return 'refused' if refused else ('restored' if ok else 'failed')
 
 
 def restore_pending() -> dict[str, int]:
@@ -277,26 +302,45 @@ def restore_pending() -> dict[str, int]:
 
     Returns counts; a marker that cannot be restored now stays on disk in
     ``restore-failed`` and is retried on the next boot — the obligation does
-    not expire because one attempt hit a locked file.
+    not expire because one attempt hit a locked file. A marker whose bytes are
+    unreadable, whose state this build does not know, or whose entry points
+    outside the clone is counted, never dropped silently: an obligation that
+    vanishes from the summary is how a poisoned edit boots as if it were clean.
+
+    **Newest marker first.** Each marker holds the bytes that preceded *its*
+    edit, so replaying them in chronological order leaves the file at "before
+    the last edit" and every earlier edit survives. Reverse order walks the
+    chain back to the oldest recorded state, which is what "undo" means.
     """
-    counts = {'restored': 0, 'failed': 0, 'committed': 0}
+    counts = {'restored': 0, 'failed': 0, 'committed': 0, 'unresolved': 0, 'refused': 0, 'done': 0}
     root = journal_root()
     if not root.is_dir():
         return counts
-    for marker_dir in sorted(root.iterdir()):
+    for marker_dir in sorted(root.iterdir(), reverse=True):
         if not marker_dir.is_dir():
             continue
         manifest = _read_manifest(marker_dir)
         if manifest is None:
+            counts['unresolved'] += 1
+            logger.error('clone_journal: marker %s has no readable manifest — booting on it', marker_dir.name)
             continue
         state = str(manifest.get('state') or 'armed')
         if state == 'committed':
             counts['committed'] += 1
             continue
-        if state not in _UNDONE_STATES and state != 'restore-failed':
+        if state == 'restored':
+            # Already undone by an earlier boot: a finished obligation, not an
+            # unknown one. Counting it as unresolved would page a human about
+            # work that is done.
+            counts['done'] += 1
             continue
-        if _restore_marker(marker_dir, reason='boot sweep of an uncommitted edit'):
-            counts['restored'] += 1
-        else:
-            counts['failed'] += 1
+        if state not in _UNDONE_STATES and state != 'restore-failed':
+            counts['unresolved'] += 1
+            logger.error(
+                'clone_journal: marker %s has unknown state %r — not restored, not ignored',
+                marker_dir.name,
+                state,
+            )
+            continue
+        counts[_restore_marker(marker_dir, reason='boot sweep of an uncommitted edit')] += 1
     return counts

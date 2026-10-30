@@ -332,18 +332,27 @@ async def lifespan(app: FastAPI):
     # never applies anything. Replaces the two independent loops that used
     # to start here and in cognitive_boot.
     # Stage-2 obligation journal: undo every uncommitted clone edit from its
-    # recorded pre-edit bytes. INTERIM placement — Stage 3 moves this to the
-    # out-of-tree launcher, because an edit that broke the Python import path
-    # cannot run in-tree recovery. The sweep is stdlib-only so that move is a
-    # cut-and-paste.
-    try:
-        from app.services.clone_journal import restore_pending
+    # recorded pre-edit bytes. INTERIM placement — Stage 3 moved the DECISION
+    # out-of-tree (the shell runs the same sweep from the embedded recovery
+    # script before spawning); this in-tree sweep remains the second layer.
+    # Suppressed on an apply boot (AUGUST_APPLY_BOOT=1): the shell gated the
+    # edits and is committing them after health — undoing them here would
+    # destroy exactly what the user just approved.
+    if os.environ.get('AUGUST_APPLY_BOOT', '').strip() != '1':
+        try:
+            from app.services.clone_journal import restore_pending
 
-        _sweep = restore_pending()
-        if _sweep.get('restored') or _sweep.get('failed'):
-            logger.info('Clone journal boot sweep: %s', _sweep)
-    except Exception:
-        logger.exception('Clone journal boot sweep failed (continuing)')
+            _sweep = restore_pending()
+            # Every bucket is reported, not just the successful ones. A
+            # refused or unreadable marker means an uncommitted self-edit is
+            # still live in the tree this process is about to serve from, and
+            # a quiet boot would be the bug.
+            if _sweep.get('restored'):
+                logger.info('Clone journal boot sweep: %s', _sweep)
+            if any(_sweep.get(k) for k in ('failed', 'refused', 'unresolved')):
+                logger.error('Clone journal boot sweep NEEDS ATTENTION: %s', _sweep)
+        except Exception:
+            logger.exception('Clone journal boot sweep failed (continuing)')
     try:
         from app.services.learning_scheduler import scheduler_loop
 
