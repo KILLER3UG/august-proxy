@@ -2471,6 +2471,7 @@ fn run_python_wait(
     cwd: Option<&Path>,
     args: &[String],
     stdin: Option<&[u8]>,
+    clone_root: Option<&Path>,
     timeout_ms: u64,
 ) -> Result<(String, Option<i32>), String> {
     use std::io::{Read, Write};
@@ -2481,6 +2482,13 @@ fn run_python_wait(
         .stderr(Stdio::piped());
     if let Some(dir) = cwd {
         cmd.current_dir(dir);
+    }
+    // The same value the backend is given, from the same owner. Without it the
+    // gate child resolves no clone root, and the harness's containment check
+    // fails — a shell-supplied root is what makes that check mean something; the
+    // harness must not be allowed to invent the bound it is judged against.
+    if let Some(root) = clone_root {
+        cmd.env("AUGUST_CLONE_ROOT", root);
     }
     if stdin.is_some() {
         cmd.stdin(Stdio::piped());
@@ -2544,7 +2552,7 @@ fn run_python_gate(
     args: &[String],
     timeout_ms: u64,
 ) -> Result<String, String> {
-    match run_python_wait(python, Some(cwd), args, None, timeout_ms) {
+    match run_python_wait(python, Some(cwd), args, None, None, timeout_ms) {
         Ok((out, Some(0))) => Ok(if out.trim().is_empty() {
             "(no output)".into()
         } else {
@@ -2695,6 +2703,7 @@ fn gate_smoke(app: &AppHandle, clone_root: &Path) -> ApplyGateResult {
         Some(&backend),
         &args,
         Some(SMOKE_HARNESS.as_bytes()),
+        Some(clone_root),
         600_000,
     ) {
         Ok((out, Some(0))) => ApplyGateResult {
