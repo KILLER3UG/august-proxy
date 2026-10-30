@@ -267,6 +267,68 @@ fn selfEditCloneRoot(app: &AppHandle) -> PathBuf {
     appDataRoot(app).join(CLONE_DIR_LEAF)
 }
 
+/// What the Self-edit panel needs in order to tell the truth. `running_from_clone`
+/// is the part that used to be invisible: the switch being on does not mean the
+/// clone is the code that is executing, and a panel that cannot say which tree is
+/// live will report "applied" over a runtime that never read the edits.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SelfEditStatus {
+    pub enabled: bool,
+    pub clone_root: String,
+    pub clone_complete: bool,
+    pub running_from_clone: bool,
+    pub live_backend: String,
+}
+
+fn self_edit_status_of(app: &AppHandle) -> SelfEditStatus {
+    let clone_root = selfEditCloneRoot(app);
+    let clone_main = clone_root.join("backend-py/app/main.py");
+    let complete = clone_main.is_file()
+        && clone_root.join("backend-py/pyproject.toml").is_file()
+        && clone_root.join(".git").exists();
+    let live = resolvePythonBackend(app);
+    SelfEditStatus {
+        enabled: selfEditEnabled(app),
+        clone_root: clone_root.display().to_string(),
+        clone_complete: complete,
+        running_from_clone: live.as_deref() == Some(clone_main.as_path()),
+        live_backend: live
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "unresolved".into()),
+    }
+}
+
+#[tauri::command]
+pub fn self_edit_status(app: AppHandle) -> SelfEditStatus {
+    self_edit_status_of(&app)
+}
+
+/// The switch is a file — `{appData}/self-edit.enabled` — and until now nothing
+/// in the app could create it, so the panel that documented the loop was a
+/// description of a door rather than a door. The path is built from the app data
+/// root and one constant leaf; no caller-supplied path reaches the filesystem.
+#[tauri::command]
+pub fn set_self_edit_enabled(app: AppHandle, enabled: bool) -> Result<SelfEditStatus, String> {
+    let root = appDataRoot(&app);
+    let marker = root.join(SELF_EDIT_SWITCH);
+    if enabled {
+        std::fs::create_dir_all(&root)
+            .map_err(|e| format!("could not create the app data directory: {e}"))?;
+        std::fs::write(&marker, b"")
+            .map_err(|e| format!("could not write {}: {e}", marker.display()))?;
+        log::info!("[self-edit] switch ON — the clone is created on the next backend start");
+    } else {
+        match std::fs::remove_file(&marker) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("could not remove {}: {e}", marker.display())),
+        }
+        log::info!("[self-edit] switch OFF");
+    }
+    Ok(self_edit_status_of(&app))
+}
+
 /// Create the self-edit clone when the switch is on and it does not exist
 /// yet. The clone is born with its push URL pointed at the unroutable lock
 /// host — the Stage-1 structural lock applies to the clone from its first
@@ -1029,62 +1091,106 @@ fn resolvePython(app: &AppHandle) -> Option<PathBuf> {
 /// where the in-tree lifespan sweep in main.py is the second layer.
 const CLONE_RECOVERY_TIMEOUT_MS: u64 = 15_000;
 
-fn runCloneRecovery(python: &Path, data_dir: &Path) {
+/// Pipe the embedded recovery script to `python -I -S -` on stdin.
+///
+/// Never staged to a file: the previous design wrote it to a fixed name in
+/// `temp_dir()` and executed that, and a workspace-less session is allowed to
+/// write into the system temp dir (`sandbox/paths.py` decides that), so the
+/// artifact could be pre-created, held open or made read-only by exactly the
+/// party recovery exists to undo — and a failed staging was a `log::warn!`
+/// with the boot continuing unrecovered. stdin leaves nothing on disk to race
+/// with, and a run that cannot start is now an error the operator sees.
+///
+/// The clone root is passed as an argument because the script refuses to write
+/// or delete anything it cannot prove sits inside it; the manifest is data the
+/// editable tree can produce, so it must not be the source of that bound.
+fn run_clone_recovery_script(
+    python: &Path,
+    data_dir: &Path,
+    clone_root: Option<&Path>,
+    mode: Option<&str>,
+) -> Result<String, String> {
+    use std::io::{Read, Write};
     const RECOVERY_SCRIPT: &str = include_str!("clone_recovery.py");
-    let journal = data_dir.join("clone_journal");
-    if !journal.is_dir() {
-        return; // nothing was ever journaled — the common case, zero cost
+    let root_arg = clone_root
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let mut args: Vec<String> = vec![
+        "-I".into(),
+        "-S".into(),
+        "-".into(),
+        data_dir.to_string_lossy().into_owned(),
+        root_arg,
+    ];
+    if let Some(m) = mode {
+        args.push(m.to_string());
     }
-    let script = std::env::temp_dir().join("august-clone-recovery.py");
-    if let Err(e) = std::fs::write(&script, RECOVERY_SCRIPT) {
-        log::warn!("[backend] clone recovery skipped — cannot write script: {e}");
-        return;
-    }
-    // -I -S: isolated mode ignores PYTHONPATH, user site-packages and env —
-    // the sweep must not be able to load a single line of the tree it edits.
-    let script_arg = script.to_string_lossy().into_owned();
-    let data_arg = data_dir.to_string_lossy().into_owned();
     let mut cmd = Command::new(python);
-    cmd.args(["-I", "-S", script_arg.as_str(), data_arg.as_str()])
+    cmd.args(&args)
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+        .stderr(Stdio::piped());
     applyNoWindow(&mut cmd);
-    let mut child = match cmd.spawn() {
-        Ok(child) => child,
-        Err(e) => {
-            log::warn!("[backend] clone recovery could not start: {e}");
-            return;
+    let mut child = cmd.spawn().map_err(|e| format!("could not start: {e}"))?;
+    // Hand the script over, then close stdin so the interpreter sees EOF.
+    if let Some(mut stdin) = child.stdin.take() {
+        if let Err(e) = stdin.write_all(RECOVERY_SCRIPT.as_bytes()) {
+            let _ = child.kill();
+            return Err(format!("could not feed the recovery script: {e}"));
         }
-    };
+        let _ = stdin.flush();
+    }
     let deadline = std::time::Instant::now() + Duration::from_millis(CLONE_RECOVERY_TIMEOUT_MS);
-    let summary = loop {
+    loop {
         match child.try_wait() {
             Ok(Some(status)) => {
                 let mut out = String::new();
                 if let Some(mut stdout) = child.stdout.take() {
-                    use std::io::Read;
                     let _ = stdout.read_to_string(&mut out);
                 }
-                break if status.success() {
-                    out.trim().to_string()
+                let mut err = String::new();
+                if let Some(mut stderr) = child.stderr.take() {
+                    let _ = stderr.read_to_string(&mut err);
+                }
+                let err = err.trim();
+                if status.success() {
+                    return Ok(out.trim().to_string());
+                }
+                return Err(if err.is_empty() {
+                    format!("exited with {status}")
                 } else {
-                    format!("recovery exited with {status}")
-                };
+                    format!("exited with {status}: {err}")
+                });
             }
             Ok(None) if std::time::Instant::now() < deadline => {
                 std::thread::sleep(Duration::from_millis(100));
             }
-            _ => {
+            Ok(None) => {
                 let _ = child.kill();
-                log::warn!("[backend] clone recovery timed out — boot continues");
-                return;
+                return Err(format!(
+                    "timed out after {} ms",
+                    CLONE_RECOVERY_TIMEOUT_MS
+                ));
+            }
+            Err(e) => {
+                let _ = child.kill();
+                return Err(format!("wait failed: {e}"));
             }
         }
-    };
-    if summary.is_empty() {
-        log::info!("[backend] clone recovery ran (no summary printed)");
-    } else {
-        log::info!("[backend] clone recovery: {summary}");
+    }
+}
+
+fn runCloneRecovery(python: &Path, data_dir: &Path, clone_root: Option<&Path>) {
+    let journal = data_dir.join("clone_journal");
+    if !journal.is_dir() {
+        return; // nothing was ever journaled — the common case, zero cost
+    }
+    match run_clone_recovery_script(python, data_dir, clone_root, None) {
+        Ok(summary) if summary.is_empty() => {
+            log::error!("[backend] clone recovery ran but printed no summary — treat the clone as unverified");
+        }
+        Ok(summary) => log::info!("[backend] clone recovery: {summary}"),
+        Err(e) => log::error!("[backend] CLONE RECOVERY DID NOT RUN ({e}) — uncommitted self-edits were NOT undone and boot continues"),
     }
 }
 
@@ -1099,10 +1205,25 @@ fn resolvePythonBackend(app: &AppHandle) -> Option<PathBuf> {
     // whose interpreter is chosen by resolvePython (clone HEAD tracks the
     // release the runtime was built for, so dependency sets match).
     if selfEditEnabled(app) {
-        let clone_main = selfEditCloneRoot(app).join("backend-py/app/main.py");
-        if clone_main.is_file() {
+        let clone_root = selfEditCloneRoot(app);
+        let clone_main = clone_root.join("backend-py/app/main.py");
+        // A completeness rule, not "the entry file exists": a `git clone` that
+        // died partway leaves a tree that imports and then fails on the first
+        // missing module, and pinning to it on every launch would replace a
+        // working runtime with a broken one with no way back. `.git` is required
+        // because an unversioned tree is one the journal cannot reason about.
+        if clone_main.is_file()
+            && clone_root.join("backend-py/pyproject.toml").is_file()
+            && clone_root.join(".git").exists()
+        {
             return Some(clone_main);
         }
+        log::error!(
+            "[self-edit] the clone at {} is not a complete checkout (needs .git and \
+             backend-py/pyproject.toml) — running the installed runtime instead, so self-edits \
+             in the clone are NOT the live code",
+            clone_root.display()
+        );
     }
 
     // Prefer writable AppData copy (after bootstrap).
@@ -1827,7 +1948,20 @@ fn ensureRunningLocked(app: &AppHandle) -> bool {
                 // is rebuilt, which is a human act). Best-effort: a failed
                 // sweep never blocks boot, and the in-tree lifespan sweep in
                 // main.py stays as the second layer.
-                runCloneRecovery(&python, &dataDir);
+                //
+                // The apply path stands this DOWN. `restart_to_apply_locked`
+                // routes through `ensureRunning`, so an unguarded sweep here
+                // would undo the `applied` markers the user just approved
+                // before the new code ever ran: health would pass on the
+                // restored tree, commit would find nothing to commit, and the
+                // UI would report a restart that applied nothing. That path
+                // owns its own outcomes instead — it commits after health and
+                // sweeps explicitly when the backend fails to come back.
+                if APPLY_BOOT.load(Ordering::SeqCst) {
+                    log::info!("[backend] apply boot — clone recovery standing down");
+                } else {
+                    runCloneRecovery(&python, &dataDir, Some(selfEditCloneRoot(app)).as_deref());
+                }
 
                 // LAN access: read the switch ONCE, here, and use it for
                 // both the bind address and the flag the backend is told
@@ -1871,6 +2005,14 @@ fn ensureRunningLocked(app: &AppHandle) -> bool {
                         .env("AUGUST_PROXY_ROOT", &repoRoot)
                         .env("AUGUST_DATA_DIR", &dataDir)
                         .env("AUGUST_CLONE_ROOT", &cloneRootEnv)
+                        // Stage 5: on a gated apply boot the in-tree journal
+                        // sweep stands down — the shell commits the markers
+                        // itself once health confirms, and the watchdog's
+                        // own respawns never carry this flag.
+                        .env(
+                            "AUGUST_APPLY_BOOT",
+                            if APPLY_BOOT.load(Ordering::SeqCst) { "1" } else { "0" },
+                        )
                         .env("AUGUST_PROXY_DESKTOP", "1")
                         // The backend is TOLD that LAN access is on rather
                         // than asked: it widens the token's scope to the
@@ -2170,6 +2312,575 @@ pub async fn proxy_status() -> String {
     } else {
         "down".into()
     }
+}
+
+// ── Stage 5: Restart to apply ──────────────────────────────────────────────
+//
+// The UI button behind the self-edit loop. NEVER a model-callable tool: it
+// lives here in the shell, reachable only through Tauri IPC from the webview
+// the human clicks — the backend's tool surface has no path to it, and no
+// register_all() entry exists or may exist for it.
+
+/// Set while the spawn is a gated apply boot; the backend's in-tree journal
+/// sweep sees AUGUST_APPLY_BOOT=1 and stands down (the shell commits the
+/// markers itself once health confirms). Cleared on every other path so
+/// watchdog respawns always keep their sweep.
+static APPLY_BOOT: AtomicBool = AtomicBool::new(false);
+
+/// Clears `APPLY_BOOT` on scope exit. The flag now does more than silence the
+/// in-tree sweep — the boot sweep stands down on it too — so a panic or an
+/// early return between set and clear would leave BOTH layers disabled for the
+/// life of the process, which is precisely the window in which a poisoned
+/// self-edit must still be undone. Explicit clears stay where they are; this is
+/// the backstop that makes the flag safe to hold across a restart.
+struct ApplyBootGuard;
+
+impl Drop for ApplyBootGuard {
+    fn drop(&mut self) {
+        APPLY_BOOT.store(false, Ordering::SeqCst);
+    }
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyGateResult {
+    pub name: String,
+    /// pass | fail | skipped
+    pub status: String,
+    pub detail: String,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyResult {
+    pub ok: bool,
+    pub restarted: bool,
+    pub healthy: bool,
+    pub gates: Vec<ApplyGateResult>,
+    pub note: String,
+    pub disclaimer: String,
+}
+
+const APPLY_DISCLAIMER: &str = "The smoke gate boots the backend against a throwaway data dir and re-checks the token doors, the tool-surface order and clone containment from a checklist the SHELL ships, so the edited tree cannot choose what it is judged on. It proves the code runs and still refuses what it must refuse — not that the change behaves, and not the desktop shell.";
+
+/// The clone's uncommitted paths, or None when git could not be asked.
+///
+/// `None` is not "nothing changed": a gate that cannot see the change set has
+/// verified nothing, and the caller must say so instead of reporting a clean
+/// apply.
+fn clone_changed_files(clone_root: &Path) -> Option<Vec<String>> {
+    // An ABSOLUTE git, resolved before any working directory is set:
+    // CreateProcess searches the current directory first, so
+    // `Command::new("git")` with `current_dir(clone_root)` would execute a
+    // `git.exe` planted in the clone — as the user, on a human click. The
+    // clone-bootstrap call already resolves it this way.
+    let Ok(git) = which::which("git") else {
+        log::error!("[self-edit] git is not resolvable — the apply gates cannot see what changed");
+        return None;
+    };
+    let out = Command::new(&git)
+        .args(["status", "--porcelain=v1", "-z"])
+        .current_dir(clone_root)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .output();
+    let Ok(out) = out else {
+        log::error!("[self-edit] git status could not run in the clone");
+        return None;
+    };
+    if !out.status.success() {
+        log::error!(
+            "[self-edit] git status failed in the clone: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+        return None;
+    }
+    // `-z` (NUL-separated, never quoted) because the default form escapes
+    // non-ASCII paths as `"caf\303\251.py"`, and a byte-sliced, quote-escaped
+    // string is a path that does not exist as far as ruff is concerned.
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut records = text.split('\0');
+    let mut files = Vec::new();
+    while let Some(record) = records.next() {
+        if record.len() < 4 {
+            continue;
+        }
+        let xy = &record[..2];
+        let path = &record[3..];
+        // A rename/copy is two records: `xy new\0old`. Consume the source or it
+        // is read as the next entry and linted as a file nobody wrote.
+        if xy.starts_with('R') || xy.starts_with('C') {
+            let _ = records.next();
+        }
+        if path.is_empty() || path.ends_with('/') {
+            continue; // an untracked directory ("?? some/dir/") is not a file
+        }
+        // Deleted paths are a real change to the tree and nothing to check;
+        // the filesystem is the arbiter, not the status letter.
+        if !clone_root.join(path).is_file() {
+            continue;
+        }
+        files.push(path.to_string());
+    }
+    files.sort();
+    files.dedup();
+    Some(files)
+}
+
+fn gate_output_tail(text: &str, code: Option<i32>) -> String {
+    let tail: String = text
+        .lines()
+        .rev()
+        .take(30)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<Vec<_>>()
+        .join("\n");
+    if tail.is_empty() {
+        match code {
+            Some(c) => format!("exited with {c}"),
+            None => "killed before it exited".into(),
+        }
+    } else {
+        tail
+    }
+}
+
+/// Spawn an interpreter with a deadline. Returns the combined stdout+stderr and
+/// the exit code, or Err only when the process could not be run or was killed
+/// for overrunning.
+///
+/// Both pipes are drained on their own threads while waiting. Reading them only
+/// after the child exits deadlocks a chatty gate on the ~64 KB pipe buffer, and
+/// the old code then reported `"timed out"` — a lint that printed a lot looked
+/// exactly like a hung toolchain.
+fn run_python_wait(
+    python: &Path,
+    cwd: Option<&Path>,
+    args: &[String],
+    stdin: Option<&[u8]>,
+    timeout_ms: u64,
+) -> Result<(String, Option<i32>), String> {
+    use std::io::{Read, Write};
+    let mut cmd = Command::new(python);
+    cmd.args(args)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Some(dir) = cwd {
+        cmd.current_dir(dir);
+    }
+    if stdin.is_some() {
+        cmd.stdin(Stdio::piped());
+    }
+    applyNoWindow(&mut cmd);
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("could not start {}: {e}", python.display()))?;
+    let stdout = child
+        .stdout
+        .take()
+        .map(|mut s| std::thread::spawn(move || {
+            let mut buf = String::new();
+            let _ = s.read_to_string(&mut buf);
+            buf
+        }));
+    let stderr = child
+        .stderr
+        .take()
+        .map(|mut s| std::thread::spawn(move || {
+            let mut buf = String::new();
+            let _ = s.read_to_string(&mut buf);
+            buf
+        }));
+    // Feed the program on stdin (when there is one) and close the pipe so the
+    // interpreter sees EOF.
+    if let Some(payload) = stdin {
+        if let Some(mut sink) = child.stdin.take() {
+            if let Err(e) = sink.write_all(payload).and_then(|_| sink.flush()) {
+                let _ = child.kill();
+                return Err(format!("could not feed the program: {e}"));
+            }
+        }
+    }
+    let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
+    let code = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status.code(),
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(200));
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                return Err(format!("timed out after {timeout_ms} ms"));
+            }
+            Err(e) => {
+                let _ = child.kill();
+                return Err(format!("wait failed: {e}"));
+            }
+        }
+    };
+    let out = stdout.map(|h| h.join().unwrap_or_default()).unwrap_or_default();
+    let err = stderr.map(|h| h.join().unwrap_or_default()).unwrap_or_default();
+    Ok((format!("{out}{err}"), code))
+}
+
+/// Run `python …` as a gate; Ok(output) only on exit code 0.
+fn run_python_gate(
+    python: &Path,
+    cwd: &Path,
+    args: &[String],
+    timeout_ms: u64,
+) -> Result<String, String> {
+    match run_python_wait(python, Some(cwd), args, None, timeout_ms) {
+        Ok((out, Some(0))) => Ok(if out.trim().is_empty() {
+            "(no output)".into()
+        } else {
+            out
+        }),
+        Ok((out, code)) => Err(gate_output_tail(&out, code)),
+        Err(e) => Err(e),
+    }
+}
+
+fn gate_ruff(app: &AppHandle, clone_root: &Path, py_files: &[String]) -> ApplyGateResult {
+    if py_files.is_empty() {
+        return ApplyGateResult {
+            name: "ruff".into(),
+            status: "skipped".into(),
+            detail: "no changed .py files".into(),
+        };
+    }
+    // A ruff-capable interpreter: the clone's venv, the runtime venv, then
+    // whatever resolvePython finds. None of them carries ruff → skipped with
+    // a loud reason (the smoke gate is the load-bearing one; this is stated
+    // in the report, not hidden).
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Some(clone_main) = Some(clone_root.join("backend-py/app/main.py")) {
+        if let Some(py) = resolveVenvPython(&clone_main) {
+            candidates.push(py);
+        }
+    }
+    if let Some(py) = resolveVenvPython(&runtimeBackendMain(app)) {
+        candidates.push(py);
+    }
+    if let Some(py) = resolvePython(app) {
+        candidates.push(py);
+    }
+    let clone_backend = clone_root.join("backend-py");
+    for python in &candidates {
+        if run_python_gate(
+            python,
+            &clone_backend,
+            &["-m".into(), "ruff".into(), "--version".into()],
+            30_000,
+        )
+        .is_err()
+        {
+            continue;
+        }
+        let mut args = vec!["-m".to_string(), "ruff".to_string(), "check".to_string()];
+        // git status paths are clone-root-relative; the gate runs with cwd =
+        // clone's backend-py, so absolutize (ruff discovers its config from
+        // the cwd, the paths just name the targets).
+        args.extend(py_files.iter().map(|f| clone_root.join(f).to_string_lossy().into_owned()));
+        return match run_python_gate(python, &clone_backend, &args, 120_000) {
+            Ok(_) => ApplyGateResult {
+                name: "ruff".into(),
+                status: "pass".into(),
+                detail: format!("{} file(s) clean", py_files.len()),
+            },
+            Err(e) => ApplyGateResult {
+                name: "ruff".into(),
+                status: "fail".into(),
+                detail: e,
+            },
+        };
+    }
+    ApplyGateResult {
+        name: "ruff".into(),
+        status: "skipped".into(),
+        detail: "no interpreter on this install has ruff — restart is NOT lint-gated".into(),
+    }
+}
+
+fn gate_eslint(clone_root: &Path, all_files: &[String]) -> ApplyGateResult {
+    let fe_files: Vec<String> = all_files
+        .iter()
+        .filter(|f| f.contains("frontend/"))
+        .cloned()
+        .collect();
+    if fe_files.is_empty() {
+        return ApplyGateResult {
+            name: "eslint".into(),
+            status: "skipped".into(),
+            detail: "no changed frontend files".into(),
+        };
+    }
+    let fe_dir = clone_root.join("frontend/desktop");
+    let eslint = fe_dir
+        .join("node_modules/eslint/bin/eslint.js");
+    if !eslint.is_file() {
+        return ApplyGateResult {
+            name: "eslint".into(),
+            status: "skipped".into(),
+            detail: "the clone has no frontend node_modules (npm install there first for the lint gate)".into(),
+        };
+    }
+    let node = which::which("node").ok();
+    let Some(node) = node else {
+        return ApplyGateResult {
+            name: "eslint".into(),
+            status: "skipped".into(),
+            detail: "node not on PATH".into(),
+        };
+    };
+    let mut args: Vec<String> = vec![eslint.to_string_lossy().into_owned()];
+    args.extend(fe_files.iter().map(|f| clone_root.join(f).to_string_lossy().into_owned()));
+    return match run_python_gate(&node, &fe_dir, &args, 180_000) {
+        Ok(_) => ApplyGateResult {
+            name: "eslint".into(),
+            status: "pass".into(),
+            detail: format!("{} file(s) clean", fe_files.len()),
+        },
+        Err(e) => ApplyGateResult {
+            name: "eslint".into(),
+            status: "fail".into(),
+            detail: e,
+        },
+    };
+}
+
+/// The apply gate the SHELL owns: `src/clone_smoke.py`, embedded via
+/// `include_str!` and piped to the interpreter, run against the clone's code.
+///
+/// Two properties the previous design did not have. The checklist cannot be
+/// edited by the tree being judged — changing it means rebuilding the shell,
+/// which is a human act. And the verdict is the exit code the OS records, not a
+/// line of stdout the clone may print: deciding from output text meant a
+/// self-edited tree could write "20/20 smoke check(s) passed" and be believed,
+/// and a believed pass promoted the journal markers to `committed`, the one
+/// state that stops boot recovery undoing the edit.
+///
+/// A run that cannot start is `fail`, never `skipped`. An unrun gate has
+/// verified nothing, and `skipped` did not block the apply.
+fn gate_smoke(app: &AppHandle, clone_root: &Path) -> ApplyGateResult {
+    const SMOKE_HARNESS: &str = include_str!("clone_smoke.py");
+    let name = "smoke (shell-owned)".to_string();
+    let Some(python) = resolvePython(app) else {
+        return ApplyGateResult {
+            name,
+            status: "fail".into(),
+            detail: "no interpreter to run the apply gate — nothing was verified".into(),
+        };
+    };
+    let backend = clone_root.join("backend-py");
+    // `-I` (isolated: no PYTHONPATH, no user site) but NOT `-S`: the harness
+    // imports fastapi and the app under test from the venv's site-packages.
+    let args = vec!["-I".into(), "-".into(), backend.to_string_lossy().into_owned()];
+    match run_python_wait(
+        &python,
+        Some(&backend),
+        &args,
+        Some(SMOKE_HARNESS.as_bytes()),
+        600_000,
+    ) {
+        Ok((out, Some(0))) => ApplyGateResult {
+            name,
+            status: "pass".into(),
+            detail: gate_output_tail(&out, Some(0)),
+        },
+        Ok((out, Some(1))) => ApplyGateResult {
+            name,
+            status: "fail".into(),
+            detail: gate_output_tail(&out, Some(1)),
+        },
+        Ok((out, code)) => ApplyGateResult {
+            name,
+            status: "fail".into(),
+            detail: format!(
+                "the gate could not run against this tree (exit {:?}) — an unrun gate is not a pass\n{}",
+                code,
+                gate_output_tail(&out, code)
+            ),
+        },
+        Err(e) => ApplyGateResult {
+            name,
+            status: "fail".into(),
+            detail: e,
+        },
+    }
+}
+
+/// Run the embedded recovery script in `commit` or default sweep mode; the
+/// shell owns both, out-of-tree, exactly like the Stage-3 boot sweep.
+fn runCloneRecoveryMode(
+    python: &Path,
+    data_dir: &Path,
+    clone_root: Option<&Path>,
+    mode: Option<&str>,
+) -> Option<String> {
+    match run_clone_recovery_script(python, data_dir, clone_root, mode) {
+        Ok(summary) => Some(summary),
+        Err(e) => {
+            log::error!(
+                "[backend] clone recovery '{}' DID NOT RUN ({e}) — the journal was not touched",
+                mode.unwrap_or("sweep")
+            );
+            None
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn restart_to_apply(app: AppHandle) -> Result<ApplyResult, String> {
+    let app2 = app.clone();
+    // Gates + restart take minutes (smoke boots the whole backend) — spawn_blocking.
+    tokio::task::spawn_blocking(move || restart_to_apply_locked(&app2))
+        .await
+        .map_err(|e| format!("restart_to_apply task failed: {e}"))?
+}
+
+fn restart_to_apply_locked(app: &AppHandle) -> Result<ApplyResult, String> {
+    let disclaimer = APPLY_DISCLAIMER.to_string();
+    if !selfEditEnabled(app) {
+        return Ok(ApplyResult {
+            ok: false,
+            restarted: false,
+            healthy: false,
+            gates: Vec::new(),
+            note: "self-edit is not enabled — the {appData}/self-edit.enabled switch file is missing".into(),
+            disclaimer,
+        });
+    }
+    let clone_root = selfEditCloneRoot(app);
+    let clone_main = clone_root.join("backend-py/app/main.py");
+    if !clone_main.is_file() {
+        return Ok(ApplyResult {
+            ok: false,
+            restarted: false,
+            healthy: false,
+            gates: Vec::new(),
+            note: "the clone has no runnable backend yet".into(),
+            disclaimer,
+        });
+    }
+    // The restart only means something if the tree that comes back IS the clone.
+    // `resolvePythonBackend` prefers the clone but falls through to the AppData
+    // runtime when the clone is unusable, so "applied" against a tree that will
+    // never be executed would commit the journal markers — the one state that
+    // stops boot recovery — over edits that never ran.
+    let live_main = resolvePythonBackend(app);
+    if live_main.as_deref() != Some(clone_main.as_path()) {
+        let live = live_main
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "nothing resolved".into());
+        return Ok(ApplyResult {
+            ok: false,
+            restarted: false,
+            healthy: false,
+            gates: Vec::new(),
+            note: format!(
+                "the clone is not the running tree — a restart would boot {live}, so these edits \
+                 would be applied to code that never runs"
+            ),
+            disclaimer,
+        });
+    }
+    let files = match clone_changed_files(&clone_root) {
+        None => {
+            return Ok(ApplyResult {
+                ok: false,
+                restarted: false,
+                healthy: false,
+                gates: vec![ApplyGateResult {
+                    name: "change set".into(),
+                    status: "fail".into(),
+                    detail: "git could not be asked what changed — nothing was verified".into(),
+                }],
+                note: "the apply stopped before the gates: an unseen change set is not a clean one".into(),
+                disclaimer,
+            })
+        }
+        Some(files) => files,
+    };
+    if files.is_empty() {
+        return Ok(ApplyResult {
+            ok: false,
+            restarted: false,
+            healthy: false,
+            gates: Vec::new(),
+            note: "nothing to apply — the clone has no uncommitted edits".into(),
+            disclaimer,
+        });
+    }
+    let py_files: Vec<String> = files.iter().filter(|f| f.ends_with(".py")).cloned().collect();
+    let gates = vec![
+        gate_ruff(app, &clone_root, &py_files),
+        gate_eslint(&clone_root, &files),
+        gate_smoke(app, &clone_root),
+    ];
+    if gates.iter().any(|g| g.status == "fail") {
+        return Ok(ApplyResult {
+            ok: false,
+            restarted: false,
+            healthy: false,
+            gates,
+            note: "a gate failed — the restart did NOT happen and the edits stay uncommitted \
+                   (the next boot's sweep will undo them unless they pass before then)"
+                .into(),
+            disclaimer,
+        });
+    }
+    // Gates passed: apply boot. The spawn env carries AUGUST_APPLY_BOOT=1 so
+    // the in-tree sweep stands down; the boot sweep stands down on the same
+    // flag (see `ApplyBootGuard`); commit happens AFTER health confirms.
+    APPLY_BOOT.store(true, Ordering::SeqCst);
+    let _apply_boot = ApplyBootGuard;
+    killStoredChild(app);
+    let healthy = ensureRunning(app);
+    if !healthy {
+        APPLY_BOOT.store(false, Ordering::SeqCst);
+        if let Some(python) = resolvePython(app) {
+            // The backend never came up — undo the edits now instead of
+            // leaving the clone broken until the next boot's sweep.
+            let _ = runCloneRecoveryMode(
+                &python,
+                &appDataDir(app),
+                Some(selfEditCloneRoot(app)).as_deref(),
+                None,
+            );
+        }
+        return Ok(ApplyResult {
+            ok: false,
+            restarted: true,
+            healthy: false,
+            gates,
+            note: "the backend did not come back healthy — the edits were RESTORED from the \
+                   journal and the markers kept for inspection"
+                .into(),
+            disclaimer,
+        });
+    }
+    let committed = resolvePython(app)
+        .and_then(|py| {
+            runCloneRecoveryMode(
+                &py,
+                &appDataDir(app),
+                Some(selfEditCloneRoot(app)).as_deref(),
+                Some("commit"),
+            )
+        })
+        .unwrap_or_else(|| "{\"error\":\"commit did not run\"}".into());
+    APPLY_BOOT.store(false, Ordering::SeqCst);
+    Ok(ApplyResult {
+        ok: true,
+        restarted: true,
+        healthy: true,
+        gates,
+        note: format!("applied; journal commit: {committed}"),
+        disclaimer,
+    })
 }
 
 #[tauri::command]

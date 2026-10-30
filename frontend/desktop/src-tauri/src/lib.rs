@@ -118,6 +118,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             backend::restart_proxy,
+            backend::restart_to_apply,
+            backend::self_edit_status,
+            backend::set_self_edit_enabled,
             backend::proxy_status,
             backend::select_directory,
             backend::read_file_base64,
