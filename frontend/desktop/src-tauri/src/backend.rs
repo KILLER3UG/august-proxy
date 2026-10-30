@@ -1167,10 +1167,7 @@ fn run_clone_recovery_script(
             }
             Ok(None) => {
                 let _ = child.kill();
-                return Err(format!(
-                    "timed out after {} ms",
-                    CLONE_RECOVERY_TIMEOUT_MS
-                ));
+                return Err(format!("timed out after {} ms", CLONE_RECOVERY_TIMEOUT_MS));
             }
             Err(e) => {
                 let _ = child.kill();
@@ -1339,6 +1336,21 @@ fn projectRootFor(entry: &Path) -> Option<PathBuf> {
 /// The `{appData}` both user state and the re-extractable runtime hang off.
 /// One helper so the two can never be resolved from different bases.
 fn appDataRoot(app: &AppHandle) -> PathBuf {
+    // Dev-only isolation seam. `tauri dev` and the packaged app share one
+    // identifier, so without this every experiment in a debug build writes into
+    // the live store — the brain database, provider keys, config.json, and the
+    // self-edit switch file. A debug build may be pointed at a scratch root; a
+    // release build ignores the variable entirely, because an env-controlled
+    // data root is a way to make the app read and write somewhere else.
+    #[cfg(debug_assertions)]
+    if let Some(dir) = env::var_os("AUGUST_DESKTOP_APP_DATA") {
+        let path = PathBuf::from(dir);
+        if path.is_absolute() {
+            log::warn!("[dev] app data root overridden → {}", path.display());
+            return path;
+        }
+        log::error!("[dev] AUGUST_DESKTOP_APP_DATA must be an absolute path — ignored");
+    }
     app.path()
         .app_data_dir()
         .unwrap_or_else(|_| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
