@@ -458,7 +458,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `POST` | `/api/privacy/delete-sessions` | Delete every chat/workbench session, transcript, and topic row. |
 | `POST` | `/api/privacy/delete-usage` | Delete token usage history (usage_events). |
 | `POST` | `/api/privacy/export` | Bundle user data (memories, usage, sessions) into one JSON file. |
-| `POST` | `/api/privacy/purge-memories` | Erase the agent's memory of you: facts, heuristics, proposals, the episodic timeline, the learning corpus (ep… |
+| `POST` | `/api/privacy/purge-memories` | Erase the agent's memory of you: facts, proposals, the episodic timeline, the learning corpus (episodes, fail… |
 | `GET` | `/api/privacy/summary` | Counts of everything the app stores about you, in one place. |
 | `GET` | `/api/rollback` | List Rollback |
 | `GET` | `/api/security` | Get Security |

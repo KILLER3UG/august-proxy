@@ -4291,7 +4291,7 @@ export interface paths {
         put?: never;
         /**
          * Purgememories
-         * @description Erase the agent's memory of you: facts, heuristics, proposals, the
+         * @description Erase the agent's memory of you: facts, proposals, the
          *     episodic timeline, the learning corpus (episodes, failure fingerprints,
          *     turn outcomes), and memory-adjacent KV residue.
          *     The KV purge keeps only the live agent registry/jobs keys.
@@ -14395,7 +14395,9 @@ export interface operations {
     git_checkout_api_git_checkout_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -14461,7 +14463,9 @@ export interface operations {
     git_commit_api_git_commit_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -14560,7 +14564,9 @@ export interface operations {
     git_push_api_git_push_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -14593,7 +14599,9 @@ export interface operations {
     git_restore_api_git_restore_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-August-Local-Token"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
