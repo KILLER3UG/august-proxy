@@ -94,7 +94,7 @@
   FileWrite $R0 "}$\r$\n"
   FileWrite $R0 "$$candidates = @($\r$\n"
   FileWrite $R0 "  (Join-Path $$InstallDir 'resources\python'),$\r$\n"
-  FileWrite $R0 "  (Join-Path $$env:APPDATA 'com.august.proxy\backend-runtime\backend-py\.venv')$\r$\n"
+  FileWrite $R0 "  (Join-Path $$env:APPDATA 'com.august.harness\backend-runtime\backend-py\.venv')$\r$\n"
   FileWrite $R0 ") | Select-Object -Unique$\r$\n"
   FileWrite $R0 "foreach ($$c in $$candidates) { Move-LockedPythonTree $$c }$\r$\n"
   ; Same rule as the loop above: the last sweep and its second of settling only

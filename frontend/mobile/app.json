@@ -10,7 +10,7 @@
       "supportsTablet": true
     },
     "android": {
-      "package": "com.august.proxy",
+      "package": "com.august.harness",
       "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#0e0e10",

@@ -36,7 +36,7 @@ pub fn run() {
     unsafe {
         use windows::core::w;
         use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
-        let _ = SetCurrentProcessExplicitAppUserModelID(w!("com.august.proxy"));
+        let _ = SetCurrentProcessExplicitAppUserModelID(w!("com.august.harness"));
     }
 
     tauri::Builder::default()
@@ -50,6 +50,10 @@ pub fn run() {
             // first instance's backend (quitting either would kill the shared
             // process mid-request). The guard logs and exits; the first
             // instance keeps running untouched.
+            // The user-state directory must exist under the new bundle
+            // identifier before anything writes into it, and the instance lock
+            // below is the first writer.
+            backend::migrateAppDataRoot(app.handle());
             if !backend::acquireInstanceLock(app.handle()) {
                 app.handle().exit(0);
                 return Ok(());

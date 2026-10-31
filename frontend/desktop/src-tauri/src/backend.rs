@@ -1377,6 +1377,184 @@ fn appDataRoot(app: &AppHandle) -> PathBuf {
         .unwrap_or_else(|_| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
 }
 
+/// The directory the previous bundle identifier put under `%APPDATA%`. It holds
+/// the brain database, provider keys, backups, session history, the self-edit
+/// clone and its journal — everything the user owns.
+const LEGACY_APP_DATA_LEAF: &str = "com.august.proxy";
+/// Debug-only override so the move can be rehearsed against a fabricated store
+/// instead of a real one. Release builds always use the legacy identifier path.
+const LEGACY_APP_DATA_ENV: &str = "HARNESS_LEGACY_APP_DATA";
+
+fn legacyAppDataRoot(app: &AppHandle) -> Option<PathBuf> {
+    #[cfg(debug_assertions)]
+    if let Some(dir) = env::var_os(LEGACY_APP_DATA_ENV) {
+        let path = PathBuf::from(dir);
+        return path.is_absolute().then_some(path);
+    }
+    let _ = app;
+    let roaming = env::var_os("APPDATA").map(PathBuf::from)?;
+    Some(roaming.join(LEGACY_APP_DATA_LEAF))
+}
+
+/// One-time move of the user-state directory onto the new bundle identifier.
+///
+/// Renaming the identifier silently changes where the app looks for everything,
+/// so without this the first launch after the rename is an empty store — and an
+/// empty store looks exactly like the "new download" case the install guards are
+/// written for. The move is: refuse if the target already holds data, rename the
+/// directory (Windows refuses to rename one with a file open, which is the
+/// safety net if the old app is still running), leave a junction at the OLD path
+/// so anything still spelling it keeps resolving, then verify the brain database
+/// landed with the same size and put it back if it did not.
+pub fn migrateAppDataRoot(app: &AppHandle) {
+    let target = appDataRoot(app);
+    let Some(source) = legacyAppDataRoot(app) else {
+        return;
+    };
+    if source == target {
+        return;
+    }
+    let Ok(meta) = source.metadata() else {
+        return; // nothing to migrate — a fresh machine or an already-moved tree
+    };
+    if !meta.is_dir() {
+        return;
+    }
+    if dirHasEntries(&target) {
+        log::error!(
+            "[migrate] {} already holds data while {} still exists — touching neither; \
+             merge by hand if this is a downgrade-then-upgrade path",
+            target.display(),
+            source.display()
+        );
+        return;
+    }
+    let before = dataFingerprint(&source.join(DATA_DIR_LEAF));
+    if let Some(parent) = target.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Err(e) = std::fs::rename(&source, &target) {
+        log::error!(
+            "[migrate] could not move {} → {} ({e}); the old store stays exactly where it is",
+            source.display(),
+            target.display()
+        );
+        return;
+    }
+    // Reachability under the old spelling, not a compatibility shim for code:
+    // anything still joining the legacy path (a user bookmark, a shell
+    // shortcut, a downgraded build) must find the same bytes, not an empty dir.
+    if !makeJunction(&source, &target) {
+        log::warn!(
+            "[migrate] moved the store but could not leave a junction at {} — the data is \
+             intact at {}",
+            source.display(),
+            target.display()
+        );
+    }
+    let after = dataFingerprint(&target.join(DATA_DIR_LEAF));
+    if before != after {
+        log::error!(
+            "[migrate] verification failed ({before:?} → {after:?}) — moving the tree back to {}",
+            source.display()
+        );
+        let _ = removeJunction(&source);
+        let _ = std::fs::rename(&target, &source);
+        return;
+    }
+    let marker = format!(
+        "{{\n  \"moved_from\": \"{}\",\n  \"moved_to\": \"{}\",\n  \"data_dir_fingerprint\": \
+         {{\"files\": {}, \"bytes\": {}}},\n  \"legacy_path_still_resolves\": {},\n  \
+         \"written_by\": \"app-data-identifier-migration\"\n}}\n",
+        escapeJsonPath(&source),
+        escapeJsonPath(&target),
+        after.0,
+        after.1,
+        dataFingerprint(&source.join(DATA_DIR_LEAF)).0 == after.0
+    );
+    if std::fs::write(target.join("app-data-migration.json"), marker).is_ok() {
+        log::info!(
+            "[migrate] user state moved {} → {} ({} files, {} bytes verified), legacy path kept \
+             resolvable",
+            source.display(),
+            target.display(),
+            after.0,
+            after.1
+        );
+    } else {
+        log::warn!("[migrate] moved the store but could not write the migration record");
+    }
+}
+
+/// (file count, total bytes) under a directory, recursively. Metadata only — no
+/// file is opened, so this cannot disturb a WAL sidecar or a locked log.
+fn dataFingerprint(root: &Path) -> (u64, u64) {
+    fn walk(dir: &Path, files: &mut u64, bytes: &mut u64) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Ok(meta) = entry.metadata() else { continue };
+            if meta.is_dir() {
+                walk(&path, files, bytes);
+            } else if meta.is_file() {
+                *files += 1;
+                *bytes += meta.len();
+            }
+        }
+    }
+    let (mut files, mut bytes) = (0u64, 0u64);
+    walk(root, &mut files, &mut bytes);
+    (files, bytes)
+}
+
+fn dirHasEntries(path: &Path) -> bool {
+    match std::fs::read_dir(path) {
+        Ok(mut entries) => entries.next().is_some(),
+        Err(_) => false,
+    }
+}
+
+/// A directory junction: no elevation, unlike a symlink, and the app is not
+/// allowed to require an administrator just to find its own data.
+fn makeJunction(link: &Path, target: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        let mut cmd = Command::new("cmd");
+        cmd.args([
+            "/C",
+            "mklink",
+            "/J",
+            &link.to_string_lossy(),
+            &target.to_string_lossy(),
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+        applyNoWindow(&mut cmd);
+        matches!(cmd.status(), Ok(s) if s.success())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (link, target);
+        false
+    }
+}
+
+/// Removes the junction itself. `remove_dir` on a junction unlinks it without
+/// walking into the target; `remove_dir_all` would be the destructive choice.
+fn removeJunction(link: &Path) -> bool {
+    match std::fs::remove_dir(link) {
+        Ok(()) => true,
+        Err(e) => {
+            log::warn!("[migrate] could not remove the legacy junction: {e}");
+            false
+        }
+    }
+}
+
+fn escapeJsonPath(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "\\\\")
+}
+
 fn appDataDir(app: &AppHandle) -> PathBuf {
     appDataRoot(app).join(DATA_DIR_LEAF)
 }
@@ -3921,7 +4099,7 @@ mod wipe_stale_tree_tests {
     /// than assumed from the call sites.
     #[test]
     fn only_a_tree_inside_the_runtime_folder_may_be_wiped() {
-        let app_data = Path::new("C:/Users/rober/AppData/Roaming/com.august.proxy");
+        let app_data = Path::new("C:/Users/rober/AppData/Roaming/com.august.harness");
         assert!(isReextractableRuntimePath(
             &app_data.join("backend-runtime/backend-py")
         ));
