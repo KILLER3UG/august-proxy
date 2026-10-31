@@ -26,7 +26,7 @@ conventions, the test suite, and how to extend the codebase.
 ## Repository layout
 
 ```text
-august-proxy/
+august-harness/
 ├── backend-py/
 │   ├── app/
 │   │   ├── main.py              # FastAPI app + lifespan + /api/health
@@ -144,7 +144,7 @@ set; they are simply never invoked.
 
 The fixtures below are gone; the mechanisms they protected are not:
 
-- **Data isolation** — every test got a temp `AUGUST_DATA_DIR` and brain SQLite
+- **Data isolation** — every test got a temp `HARNESS_DATA_DIR` and brain SQLite
   path so nothing touched live `data/`. `app/lib/paths.py` still carries the
   guard that refuses a live data dir, and `memory_store` still calls
   `assertPytestDataDirIsolated` on its internal writers — dead code today, kept
@@ -194,7 +194,7 @@ camelCase **parameter** names (wire keys stay camelCase by design), which is wha
 - **A swallow must be named.** New best-effort blocks go through
   `with best_effort('session.title-backfill'):` (`app/services/best_effort.py`)
   instead of a bare `except Exception: pass`, so `rg 'best_effort\['` finds
-  every one and each logs with a traceback. `AUGUST_STRICT_BEST_EFFORT=1`
+  every one and each logs with a traceback. `HARNESS_STRICT_BEST_EFFORT=1`
   makes the same block re-raise instead — the escape hatch that let a suite
   assert "production would have eaten this" is gone with the suite, but the flag
   still re-raises if you set it by hand while reproducing a silent failure. The
@@ -386,7 +386,7 @@ Note: prefer direct `memory_store` transactions for user-facing SoT.
   `/api/brain/turn-outcomes`, `/api/brain/memory/metrics`,
   `/api/brain/memory/preview`, `/api/brain/state-lookup`,
   `/api/brain/consolidation/log`
-- **Perf:** `GET /api/perf/recent` with `AUGUST_PERF_TIMING=1`
+- **Perf:** `GET /api/perf/recent` with `HARNESS_PERF_TIMING=1`
 - **Frontend stream marks:** `localStorage.august_stream_perf=1`
 - **Stale workbench state:** sessions live in SQLite; optional delete of
   `data/workbench-sessions.json` only affects JSON export. Resetting brain wipes
@@ -399,23 +399,23 @@ Note: prefer direct `memory_store` transactions for user-facing SoT.
 
 | Env / flag | Effect |
 |---|---|
-| `AUGUST_PERF_TIMING=1` | Structured workbench timings + `/api/perf/recent` |
-| `AUGUST_P1_TOOL_CACHE=0` | Disable tool definition list cache |
-| `AUGUST_P1_PROMPT_CACHE=0` | (removed — never read; Part 25 Phase 7.2) |
-| `AUGUST_P1_PARALLEL_TOOLS=0` | Force serial tool execution |
-| `AUGUST_SQLITE_CACHE_KB` | Opt-in page cache KiB |
-| `AUGUST_SQLITE_MMAP_MB` | Opt-in mmap MiB |
-| `AUGUST_SQLITE_SYNC` | Opt-in only: `NORMAL` / `FULL` / `OFF` (default leaves SQLite FULL) |
-| `AUGUST_SESSION_JSON_EXPORT` | Session JSON backup toggle |
-| `AUGUST_TOOL_TIMEOUT_S` | Per-tool execution timeout |
-| `AUGUST_CONNECT_TIMEOUT_S` / `AUGUST_TTFB_TIMEOUT_S` | Upstream connect / time-to-first-byte |
-| `AUGUST_ANTHROPIC_CACHE=0` | Master kill-switch for Anthropic prompt caching |
-| `AUGUST_STRICT_BEST_EFFORT=1` | Make `best_effort(...)` swallows **re-raise** so tests surface what production would eat |
-| `AUGUST_CORS_ORIGINS` | Extra explicit origins (the default allowlist is localhost/tauri only) |
-| `AUGUST_ENABLE_DOCS` | Serve FastAPI `/docs` |
-| `AUGUST_HEADLESS` | Run without a UI surface |
+| `HARNESS_PERF_TIMING=1` | Structured workbench timings + `/api/perf/recent` |
+| `HARNESS_P1_TOOL_CACHE=0` | Disable tool definition list cache |
+| `HARNESS_P1_PROMPT_CACHE=0` | (removed — never read; Part 25 Phase 7.2) |
+| `HARNESS_P1_PARALLEL_TOOLS=0` | Force serial tool execution |
+| `HARNESS_SQLITE_CACHE_KB` | Opt-in page cache KiB |
+| `HARNESS_SQLITE_MMAP_MB` | Opt-in mmap MiB |
+| `HARNESS_SQLITE_SYNC` | Opt-in only: `NORMAL` / `FULL` / `OFF` (default leaves SQLite FULL) |
+| `HARNESS_SESSION_JSON_EXPORT` | Session JSON backup toggle |
+| `HARNESS_TOOL_TIMEOUT_S` | Per-tool execution timeout |
+| `HARNESS_CONNECT_TIMEOUT_S` / `HARNESS_TTFB_TIMEOUT_S` | Upstream connect / time-to-first-byte |
+| `HARNESS_ANTHROPIC_CACHE=0` | Master kill-switch for Anthropic prompt caching |
+| `HARNESS_STRICT_BEST_EFFORT=1` | Make `best_effort(...)` swallows **re-raise** so tests surface what production would eat |
+| `HARNESS_CORS_ORIGINS` | Extra explicit origins (the default allowlist is localhost/tauri only) |
+| `HARNESS_ENABLE_DOCS` | Serve FastAPI `/docs` |
+| `HARNESS_HEADLESS` | Run without a UI surface |
 
-> `AUGUST_DB_WRITER_LOW_DROP_S` is **gone** — there is no `db_writer` queue and no
+> `HARNESS_DB_WRITER_LOW_DROP_S` is **gone** — there is no `db_writer` queue and no
 > priority/age-drop parameter. Commit batching is
 > `services/deferred_writes.defer_commit(conn, window_s=…)`; see
 > [`ARCHITECTURE.md`](ARCHITECTURE.md).

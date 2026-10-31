@@ -24,7 +24,7 @@ update must keep everything. `{appData}/data` holds everything a user owns
 siblings, never nested. `scripts/desktop-backend-payload.mjs` therefore refuses
 to stage runtime user state (`data/`, `*.sqlite*`, `providers.json`,
 `config.json`, `.env`, `.usage.json`), because staging reads from a working
-checkout and one stray `AUGUST_DATA_DIR` run would otherwise ship a developer's
+checkout and one stray `HARNESS_DATA_DIR` run would otherwise ship a developer's
 memory and API keys to every user. And `wipeStaleTree` in `backend.rs` — the
 only recursive delete the update path performs — refuses any target that is not
 inside `backend-runtime/`. Uninstall deleting app data is deliberately opt-in

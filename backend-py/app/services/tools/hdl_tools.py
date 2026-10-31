@@ -27,7 +27,7 @@ _GHDL_INSTALL_HINT = (
 _MODELSIM_INSTALL_HINT = (
     'No VHDL engine found. GHDL: https://ghdl.github.io/ghdl/ (scoop install '
     'ghdl, apt install ghdl, brew install ghdl). ModelSim-Altera (ships with '
-    'Quartus kits; also fine): point AUGUST_MODELSIM at its win32aloem/vsim.exe.'
+    'Quartus kits; also fine): point HARNESS_MODELSIM at its win32aloem/vsim.exe.'
 )
 _ICARUS_INSTALL_HINT = (
     'Icarus Verilog is not installed. Install it from '
@@ -71,10 +71,10 @@ def _workspace(session: object | None = None) -> str:
 # ── engine resolution ─────────────────────────────────────────────────────
 
 async def resolve_ghdl() -> str | None:
-    """GHDL exe: AUGUST_GHDL override → PATH → common install roots
+    """GHDL exe: HARNESS_GHDL override → PATH → common install roots
     (incl. the winget package tree — `winget install ghdl.ghdl.ucrt64.mcode`
     lands there, not in any of the classic roots). None → absent."""
-    env_exe = os.environ.get('AUGUST_GHDL', '').strip()
+    env_exe = os.environ.get('HARNESS_GHDL', '').strip()
     if env_exe and os.path.isfile(env_exe):
         return env_exe
     # Read LOCALAPPDATA directly: posix os.path.expandvars does not
@@ -114,7 +114,7 @@ async def resolve_modelsim() -> str | None:
     trees that are never on PATH — the same shape as resolve_quartus_sh.
     When present it serves as the VHDL fallback engine for hdl_lint /
     hdl_simulate (GHDL stays preferred)."""
-    env_exe = os.environ.get('AUGUST_MODELSIM', '').strip()
+    env_exe = os.environ.get('HARNESS_MODELSIM', '').strip()
     if env_exe and os.path.isfile(env_exe):
         return env_exe
     roots: list[str] = []

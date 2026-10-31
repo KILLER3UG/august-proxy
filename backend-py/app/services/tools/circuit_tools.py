@@ -254,7 +254,7 @@ def _resolve_ngspice_sync() -> str | None:
     scripting-oriented variant and reliably emit stdout when driven through
     pipes, which the GUI-subsystem ``ngspice.exe`` does not always do.
     """
-    env_exe = os.environ.get('AUGUST_NGSPICE_EXE', '').strip()
+    env_exe = os.environ.get('HARNESS_NGSPICE_EXE', '').strip()
     if env_exe and os.path.isfile(env_exe):
         return env_exe
     bundled = _bundled_ngspice()
@@ -292,7 +292,7 @@ _NGSPICE_INSTALL_HINT = (
     'package mingw-w64-x86_64-ngspice, or through your distro package '
     'manager — the harness uses the same SPICE engine as Kicad/'
     'professional simulators. A non-PATH install can be pointed at with '
-    'AUGUST_NGSPICE_EXE. Until then you can still build/edit/draw '
+    'HARNESS_NGSPICE_EXE. Until then you can still build/edit/draw '
     'circuits with draw_circuit and manage netlists.'
 )
 

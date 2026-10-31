@@ -18,17 +18,20 @@ from typing import Any
 
 # Env vars that must never reach a child process: a model can run
 # `python -c "import os; print(os.environ)"` and dump API keys straight into
-# the tool result (audit finding). AUGUST_* is scrubbed wholesale (gateway
+# the tool result (audit finding). HARNESS_* is scrubbed wholesale (gateway
 # keys and other secrets live there); everything else matches on
 # credential-shaped suffixes/substrings, case-insensitively. `AUTH` requires
 # a trailing underscore/end so benign vars like GIT_AUTHOR_NAME survive.
 _CREDENTIAL_ENV_RE = re.compile(
-    # `AUGUST_*` prefix (config / data-root pointers — any of them tells the
+    # `HARNESS_*` prefix (config / data-root pointers — any of them tells the
     # child where the brain DB lives) OR credential-shaped names. P3.2 warm-
-    # kernel testing found the old exact-`AUGUST_` branch anchored both ends
-    # (`^AUGUST_$`), so AUGUST_BRAIN_SQLITE_FILE / AUGUST_DATA_DIR leaked
-    # into cold-spawned children too. The prefix must match anywhere-forward.
-    r'^(?:AUGUST_\w*.*|.*(?:API[_-]?KEY|_KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH(?:[_-]|$)).*)$',
+    # kernel testing found the old branch anchored the prefix at both ends
+    # (`^AUGUST_$` under the previous prefix), so HARNESS_BRAIN_SQLITE_FILE /
+    # HARNESS_DATA_DIR leaked into cold-spawned children too. The prefix must
+    # match anywhere-forward — and it moved with the AUGUST_* → HARNESS_*
+    # rename: a prefix sweep that misses this literal silently un-scrubs every
+    # pointer the shell hands the backend.
+    r'^(?:HARNESS_\w*.*|.*(?:API[_-]?KEY|_KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH(?:[_-]|$)).*)$',
     re.IGNORECASE,
 )
 
@@ -63,7 +66,7 @@ current_command_output: ContextVar[Any] = ContextVar('command_output', default=N
 def noninteractive_env(base: dict[str, str] | None = None) -> dict[str, str]:
     """Env that discourages pagers/prompts but keeps download progress visible.
 
-    Credential-shaped variables (API keys, tokens, secrets, ``AUGUST_*``) are
+    Credential-shaped variables (API keys, tokens, secrets, ``HARNESS_*``) are
     scrubbed before the child starts — the model can read ``os.environ`` from
     a ``python -c`` child and would otherwise dump them into tool results.
     """
@@ -113,7 +116,7 @@ def terminal_env() -> dict[str, str]:
     it must not inherit THIS app's own credentials. The PTY is a child of the
     backend, and its output is served by ``GET /api/terminal/buffer``; a
     secret inherited here can be printed by a shell and read back by any
-    local caller. That is how ``AUGUST_LOCAL_API_TOKEN`` turned the
+    local caller. That is how ``HARNESS_LOCAL_API_TOKEN`` turned the
     per-install token into a token the model could fetch from its own
     terminal. Remove the same credential-shaped names a noninteractive agent
     child loses, while keeping TERM/COLORTERM for a real interactive shell.

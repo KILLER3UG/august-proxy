@@ -28,7 +28,7 @@ def _refuse_live_store_write(target: str) -> None:
     live = os.path.abspath(str(_repoDataDir()))
     # A target that merely shares a prefix (`data_2`) is not the live store.
     if os.path.commonpath([target, live]) == live:
-        # Raise on the TARGET, not on AUGUST_DATA_DIR: a test can point the env
+        # Raise on the TARGET, not on HARNESS_DATA_DIR: a test can point the env
         # var at a temp dir and still pass a live-store path to the writer, and
         # that is exactly the shape of the leak this fixes.
         raise RuntimeError(

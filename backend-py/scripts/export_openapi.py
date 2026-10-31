@@ -6,7 +6,7 @@ import the backend app) and commit the result. scripts/check-api.mjs re-runs
 this and fails on drift, so a router change without a schema refresh cannot
 merge.
 
-The export runs with AUGUST_DATA_DIR pointed at a throwaway dir — importing
+The export runs with HARNESS_DATA_DIR pointed at a throwaway dir — importing
 the app must not touch a real data dir, and the schema does not depend on
 user state.
 """
@@ -27,7 +27,7 @@ _MAX_DIFF_LINES = 60
 
 def build_schema() -> dict:
     data_dir = tempfile.mkdtemp(prefix='august-openapi-')
-    os.environ['AUGUST_DATA_DIR'] = data_dir
+    os.environ['HARNESS_DATA_DIR'] = data_dir
     sys.path.insert(0, str(REPO / 'backend-py'))
     from app.main import app  # noqa: PLC0415 — import AFTER the env is pinned
 

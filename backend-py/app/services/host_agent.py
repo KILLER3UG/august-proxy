@@ -19,7 +19,7 @@ async def getHostInfo() -> dict[str, object]:
     from datetime import datetime, timezone
 
     at = datetime.now(timezone.utc).isoformat()
-    baseUrl = os.environ.get('AUGUST_HOST_AGENT_URL', '')
+    baseUrl = os.environ.get('HARNESS_HOST_AGENT_URL', '')
     from app.services.post_observation import count_observations, latest_observation_meta
 
     obs_meta = latest_observation_meta()
@@ -46,9 +46,9 @@ async def getHostInfo() -> dict[str, object]:
             'available': local_ok,
             'status': 'local_desktop' if local_ok else 'disconnected',
             'reason': (
-                'No AUGUST_HOST_AGENT_URL; using local desktop automation'
+                'No HARNESS_HOST_AGENT_URL; using local desktop automation'
                 if local_ok
-                else 'AUGUST_HOST_AGENT_URL not set and local desktop unavailable'
+                else 'HARNESS_HOST_AGENT_URL not set and local desktop unavailable'
             ),
             'computerUseEnabled': local_ok,
             'mode': 'local' if local_ok else 'off',
@@ -89,7 +89,7 @@ async def getHostInfo() -> dict[str, object]:
 
 async def executeHostCommand(command: str, args: list[str] | None = None) -> dict[str, object]:
     import httpx
-    baseUrl = os.environ.get('AUGUST_HOST_AGENT_URL', '')
+    baseUrl = os.environ.get('HARNESS_HOST_AGENT_URL', '')
     if not baseUrl:
         return {'error': 'Host agent not available'}
     try:

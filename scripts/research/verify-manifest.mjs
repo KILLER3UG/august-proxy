@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Derive the checkout root; the old absolute C:/Dev/august-proxy path made the
+// Derive the checkout root; the old absolute C:/Dev/august-harness path made the
 // gate runnable on exactly one machine.
 const ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -18,7 +18,7 @@ const ROOT = path.resolve(
   'docs/research',
 );
 const CLONE_BASE =
-  process.env.AUGUST_RESEARCH_CLONES || 'C:/Users/rober/AppData/Local/Temp/harness-research';
+  process.env.HARNESS_RESEARCH_CLONES || 'C:/Users/rober/AppData/Local/Temp/harness-research';
 const CLONES = {
   pi: `${CLONE_BASE}/pi`,
   simulide: `${CLONE_BASE}/simulide`,

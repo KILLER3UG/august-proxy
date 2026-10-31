@@ -358,7 +358,7 @@ flowchart TB
   subgraph body["The request body"]
     direction TB
     DUMP["models/openai.py:dump_openai_upstream_body<br/>models/anthropic.py:dump_anthropic_upstream_body<br/>exclude_none + strip August-only keys"]
-    STRIP["services/message_sources.py<br/>AUGUST_MESSAGE_ONLY_KEYS · strip_august_message_keys<br/>per-message internal keys"]
+    STRIP["services/message_sources.py<br/>HARNESS_MESSAGE_ONLY_KEYS · strip_august_message_keys<br/>per-message internal keys"]
     WIRE["providers/clients/base.py:BaseProviderClient.wireBody<br/>THE transport seam — wraps requestJson and streamSse<br/>scrubs this install's own credentials BY VALUE"]
   end
 

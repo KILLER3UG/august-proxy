@@ -312,8 +312,8 @@ def _isolateData() -> str:
     real inbox.
     """
     home = tempfile.mkdtemp(prefix='harness-eval-')
-    os.environ['AUGUST_DATA_DIR'] = home
-    os.environ['AUGUST_BRAIN_SQLITE_FILE'] = os.path.join(home, 'eval_brain.sqlite')
+    os.environ['HARNESS_DATA_DIR'] = home
+    os.environ['HARNESS_BRAIN_SQLITE_FILE'] = os.path.join(home, 'eval_brain.sqlite')
     os.environ.setdefault('GATEWAY_API_KEY', '')
     from pathlib import Path
 

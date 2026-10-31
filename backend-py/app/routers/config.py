@@ -448,7 +448,7 @@ async def getSessionExportConfig():
 async def putSessionExportConfig(body: dict[str, object]):
     """Admin: set continuous JSON session export on/off (config-backed).
 
-    Body: ``{ "enabled": true|false }``. Env ``AUGUST_SESSION_JSON_EXPORT``
+    Body: ``{ "enabled": true|false }``. Env ``HARNESS_SESSION_JSON_EXPORT``
     still overrides when set. Optional ``exportNow: true`` writes one snapshot.
     """
     from fastapi import HTTPException

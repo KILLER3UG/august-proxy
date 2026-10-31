@@ -8,7 +8,7 @@ the tool loop, a budget, a stop reason, subagent dispatch or context relief.
 **No verifier gate exists (removed 2026-08-24).** There is no final-answer
 review step, no verifier skill, and nothing that withholds answers — the
 opt-in `verifierEnforced` gate, the `/api/workbench/verifier` endpoints, and
-the `AUGUST_VERIFIER_REVIEWER` critic were removed by user request.
+the `HARNESS_VERIFIER_REVIEWER` critic were removed by user request.
 `update_state(phase=…)` exists purely as progress tracking, and `run_command`
 still surfaces exit codes (zero included) in results.
 

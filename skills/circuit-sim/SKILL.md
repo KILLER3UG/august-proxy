@@ -32,7 +32,7 @@ render loop and the install requirements for ngspice.
 ## Prerequisites
 
 - `ngspice` installed on the host (`winget install ngspice` on Windows, or
-  set `AUGUST_NGSPICE_EXE` to the executable path).
+  set `HARNESS_NGSPICE_EXE` to the executable path).
 - Network access for `web_fetch` when pulling a manufacturer model file
   (pass `network: true` on the `run_command` if installing ngspice mid-run).
 
@@ -90,7 +90,7 @@ meas ac vout_max find v(out) at=1k
   use a behavioral equivalent (RC, ideal diode) and say so.
 - ngspice ships inside the desktop app (`src-tauri/resources/ngspice`), so
   simulation works on a clean machine. `circuit_env` reports the resolved
-  engine; set `AUGUST_NGSPICE_EXE` to prefer your own build, and the tool
+  engine; set `HARNESS_NGSPICE_EXE` to prefer your own build, and the tool
   returns install guidance only when no engine is found at all.
 
 ## 3. Render

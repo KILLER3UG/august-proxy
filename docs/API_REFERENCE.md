@@ -102,7 +102,7 @@ aliases/cost helpers under `/api/models/*`).
 | `GET /api/logs/recent` | Recent log events |
 | `WS /api/logs/stream` | Live log stream (Activity Log; hidden Backend Monitor deep-link) |
 | `GET /api/host-agent/health` | Host-agent availability |
-| `GET /api/perf/recent` | Perf ring buffer (when `AUGUST_PERF_TIMING=1`) |
+| `GET /api/perf/recent` | Perf ring buffer (when `HARNESS_PERF_TIMING=1`) |
 | `GET /api/audit` / `GET /api/audit/stats` | Audit listing |
 | `GET /api/usage?limit=` | List recent raw usage events (newest first; `limit` 1-1000, default 200) |
 | `GET /api/usage/session?id=` | Per-session usage |

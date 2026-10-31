@@ -88,18 +88,18 @@ def get_cognitive() -> dict[str, object]:
         if role in nested_providers and isinstance(nested_providers[role], str):
             providers[role] = str(nested_providers[role])
 
-    master = os.environ.get('AUGUST_COGNITIVE_BOOT', '1').strip().lower()
+    master = os.environ.get('HARNESS_COGNITIVE_BOOT', '1').strip().lower()
     if master in ('0', 'false', 'no', 'off'):
         boot = {k: False for k in DEFAULT_BOOT}
 
     for name in DEFAULT_BOOT:
-        env_val = _env_bool(f'AUGUST_LAYER_{name.upper()}')
+        env_val = _env_bool(f'HARNESS_LAYER_{name.upper()}')
         if env_val is not None:
             boot[name] = env_val
     for env_key, boot_key in (
-        ('AUGUST_LAYER_SCHEDULER', 'cron_scheduler'),
-        ('AUGUST_LAYER_SLEEP_CYCLE', 'consolidation'),
-        ('AUGUST_LAYER_ENV_WATCHER', 'environment_watcher'),
+        ('HARNESS_LAYER_SCHEDULER', 'cron_scheduler'),
+        ('HARNESS_LAYER_SLEEP_CYCLE', 'consolidation'),
+        ('HARNESS_LAYER_ENV_WATCHER', 'environment_watcher'),
     ):
         env_val = _env_bool(env_key)
         if env_val is not None:
@@ -109,7 +109,7 @@ def get_cognitive() -> dict[str, object]:
     raw_interval = cognitive.get('consolidation_interval_s') or cognitive.get('consolidationIntervalS')
     if raw_interval is not None:
         interval = max(60.0, as_float(raw_interval, interval))
-    env_interval = os.environ.get('AUGUST_CONSOLIDATION_INTERVAL_S')
+    env_interval = os.environ.get('HARNESS_CONSOLIDATION_INTERVAL_S')
     if env_interval:
         try:
             interval = max(60.0, float(env_interval))

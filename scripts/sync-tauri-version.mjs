@@ -4,7 +4,7 @@
 // Reads the new version from package.json (via npm_package_version env var)
 // and writes it into every version source that AGENTS.md requires on desktop
 // ship: the desktop package/Tauri/Cargo manifests, package-lock root and
-// workspace entries, and the august-desktop Cargo.lock entry.
+// workspace entries, and the august-harness Cargo.lock entry.
 //
 // Mirrors the sync logic in scripts/release-desktop.mjs (syncPackageVersions)
 // so `npm version <bump>` and the formal release flow cannot drift apart.
@@ -75,7 +75,7 @@ const cargoLockPath = join(root, 'frontend/desktop/src-tauri/Cargo.lock');
 if (existsSync(cargoLockPath)) {
   let cargoLock = readFileSync(cargoLockPath, 'utf8');
   cargoLock = cargoLock.replace(
-    /(^name = "august-desktop"[\s\S]*?^version = ")[^"]+(")/m,
+    /(^name = "august-harness"[\s\S]*?^version = ")[^"]+(")/m,
     `$1${newVersion}$2`,
   );
   writeFileSync(cargoLockPath, cargoLock);

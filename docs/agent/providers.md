@@ -62,5 +62,5 @@ Routing evidence (`routing_evidence`) is written by the Arena/Debate verdict
 endpoint (`POST /api/brain/routing/arena`, `source='arena'`) and read back by
 `GET /api/brain/routing/arena` (archive) + `GET /api/brain/routing/suggestions`
 (per-model win-rate ranking). There is NO automatic turn rerouting — the old
-`AUGUST_AUTO_ROUTE` / `routingSuggestion`-SSE / per-turn auto-route claims were
+`HARNESS_AUTO_ROUTE` / `routingSuggestion`-SSE / per-turn auto-route claims were
 never wired into the loop and have been removed.

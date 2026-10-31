@@ -27,7 +27,7 @@ Common issues and how to resolve them.
   `main.py` with a clear `RuntimeError`.
 - Confirm deps: `cd backend-py && uv sync --group dev` (or `pip install -e ".[dev]"`).
 - If `uvicorn` is missing, install it via the project env.
-- Port already in use? Change `--port` or `AUGUST_PROXY_PORT`, or edit
+- Port already in use? Change `--port` or `HARNESS_PROXY_PORT`, or edit
   `docker-compose.yml` `ports:` mapping.
 
 ### `docker compose up` fails
@@ -35,7 +35,7 @@ Common issues and how to resolve them.
 ```bash
 docker compose down
 docker compose up --build -d
-docker logs august-proxy --tail 50
+docker logs august-harness --tail 50
 ```
 
 Ensure `.env` exists (copy `.env.example`). Compose maps **`8085:8085`** (not
@@ -192,7 +192,7 @@ the desktop plan-approval banner.
 ### Context keeps getting compacted
 
 Compression triggers when estimated tokens exceed half the workbench token budget.
-Disable with `AUGUST_SUMMARIZING_COMPACTOR=0`.
+Disable with `HARNESS_SUMMARIZING_COMPACTOR=0`.
 
 ### Sessions don't persist across restarts
 
@@ -257,7 +257,7 @@ the new command/args/env apply on the next start.
 
 - `gateway.enabled: true` in `config.json`.
 - Platform enabled under `gateway.platforms.<name>.enabled`.
-- Bot tokens set (`AUGUST_TELEGRAM_BOT_TOKEN`, etc.).
+- Bot tokens set (`HARNESS_TELEGRAM_BOT_TOKEN`, etc.).
 - SDKs installed where required. Missing `discord.py` / `slack_sdk` logs a
   warning and skips that adapter — the app still boots. Install with
   `pip install -e ".[gateway]"` (or `uv sync --extra gateway`). Check
@@ -357,7 +357,7 @@ For a curator *proposal* (rather than a lifecycle flag), rollback is
 
 ### Memory / brain search empty / no hits
 
-Confirm brain DB path (`AUGUST_DATA_DIR` / `august_brain.sqlite`). FTS requires
+Confirm brain DB path (`HARNESS_DATA_DIR` / `august_brain.sqlite`). FTS requires
 correct table-level `MATCH` queries — the app-path regression case used to be
 pinned by `tests/test_fts_app_path.py`, which was deleted with the whole suite on
 2026-10-17, so check the query by hand now. Do not run invasive scripts against a

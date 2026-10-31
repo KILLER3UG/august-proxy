@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 from app.services.tools.retrieval import buildQueryFromMessages, buildToolCatalog, searchTools
 
-AUGUST_CORE_TOOLS: frozenset[str] = frozenset(
+HARNESS_CORE_TOOLS: frozenset[str] = frozenset(
     {
         'read_file',
         'write_file',
@@ -137,7 +137,7 @@ def assembleToolDefs(
     Returns an ``AssemblyResult`` with the assembled tool list and metadata.
     """
     if coreToolNames is None:
-        coreToolNames = set(AUGUST_CORE_TOOLS)
+        coreToolNames = set(HARNESS_CORE_TOOLS)
     result = AssemblyResult()
     result.thresholdTokens = int(contextLength * thresholdPct / 100)
     coreDefs: list[dict] = []

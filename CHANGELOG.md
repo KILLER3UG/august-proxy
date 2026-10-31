@@ -163,7 +163,7 @@ the response (`deleted`/`ok`), failed ops kept with the sentence, and an
 aria-live review strip.
 
 **Also in this push:** attachments plumbed through the chat route and stripped
-from both wire legs (`AUGUST_MESSAGE_ONLY_KEYS`); the PDF reader/pager rework
+from both wire legs (`HARNESS_MESSAGE_ONLY_KEYS`); the PDF reader/pager rework
 (reading line, eviction, bounded re-render) with a `pdf-pager-math` helper; the
 math delimiters in `ChatMarkdown` (`$5 … $10` currency pairing and the
 malformed `\(…\)` capture group, both measured against marked@18.0.5); the
@@ -185,7 +185,7 @@ the five per-turn records can finally be compared. Three of the pieces feed it
 without a model call: `turn_close` writes a mechanical row per turn priced with
 the same estimator the Usage page uses, the new `journal` job resolves due rows
 and digests the day on a 24 h cadence, and `record_decision` (a tool, deliberately
-not in `AUGUST_CORE_TOOLS`) lets the model log the counterfactual — what it
+not in `HARNESS_CORE_TOOLS`) lets the model log the counterfactual — what it
 considered and rejected. `GET /api/brain/decisions` reports digest, per-model
 Brier and `unscorableRate` side by side, because a good score over three
 resolved rows out of forty is luck, not calibration.
@@ -890,7 +890,7 @@ Full-repo audit delivery: 6-agent scan closed out — subagents usable end-to-en
 - Schema-safe case converters (JSON Schema payloads no longer renamed); `tool_calls`/`toolCalls` dual-read (non-streaming managed tools restored); `message_stop` buffered between rounds; multi-round streaming loop; malformed tool JSON never executes as `{}` (all paths); `tool_result` role wrapping; timing-safe gateway auth; request-log secret sanitization; 400 for non-object bodies; `strict: null` omitted; usage keys normalized.
 
 **Harness self-tuning**
-- Routing wins exclude refusals/thinking-only/tool-error + verified tiebreak; epsilon-greedy exploration; two-way capability auto-detect with auto-apply/auto-revert experiments (`AUGUST_AUTO_PROFILE=1`); reversible in-turn downgrade; verifier reviewer sees receipts; bounded verifier retries with force-release; recovery steer with inferred commands; landmark-preserving compaction; `edit_lines` precision tool with line anchors; model-family `<IMPORTANT>` blocks; protocol few-shot exemplars; empty-response retry; tool-execution timeouts; code-mode `result` capture; per-model pricing (`cost_estimator`) powering the spend ceiling + usage cost.
+- Routing wins exclude refusals/thinking-only/tool-error + verified tiebreak; epsilon-greedy exploration; two-way capability auto-detect with auto-apply/auto-revert experiments (`HARNESS_AUTO_PROFILE=1`); reversible in-turn downgrade; verifier reviewer sees receipts; bounded verifier retries with force-release; recovery steer with inferred commands; landmark-preserving compaction; `edit_lines` precision tool with line anchors; model-family `<IMPORTANT>` blocks; protocol few-shot exemplars; empty-response retry; tool-execution timeouts; code-mode `result` capture; per-model pricing (`cost_estimator`) powering the spend ceiling + usage cost.
 
 **UI/UX**
 - Compare action on messages (Arena lanes), History browse route, notes→memory promotion, capability probe with one-click apply, cost-ceiling chip, eval drill-down, wired File/View/Help chrome, themed context ring, lazy settings sections, sidebar aria-current, modal Escape coverage.

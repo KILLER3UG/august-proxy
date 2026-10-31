@@ -55,7 +55,7 @@ class AnthropicMessage(ExtraAllowBaseModel):
 # August routing / bookkeeping — never forward to Anthropic-compatible gateways.
 # `_endpoint` is the internal Responses-routing marker used on the OpenAI side;
 # stripped here too so no path can leak it to a strict Anthropic gateway.
-_AUGUST_ONLY_ANTHROPIC_KEYS = frozenset({'session_id', 'sessionId', '_endpoint'})
+_HARNESS_ONLY_ANTHROPIC_KEYS = frozenset({'session_id', 'sessionId', '_endpoint'})
 
 
 def dump_anthropic_upstream_body(
@@ -66,7 +66,7 @@ def dump_anthropic_upstream_body(
         dumped: dict[str, object] = body.model_dump(exclude_none=True)  # type: ignore[assignment]
     else:
         dumped = cast('dict[str, object]', strip_none_deep(dict(body)))
-    for key in _AUGUST_ONLY_ANTHROPIC_KEYS:
+    for key in _HARNESS_ONLY_ANTHROPIC_KEYS:
         dumped.pop(key, None)
     if 'messages' in dumped:
         dumped['messages'] = strip_august_message_keys(dumped['messages'])

@@ -37,13 +37,13 @@
   FileWrite $R0 "      $$p.CommandLine -match '[\\/]August([\\/]|$)' -or$\r$\n"
   FileWrite $R0 "      $$p.CommandLine -match 'com\.august\.proxy' -or$\r$\n"
   FileWrite $R0 "      $$p.CommandLine -match 'uvicorn.*app\.main' -or$\r$\n"
-  FileWrite $R0 "      $$p.CommandLine -match 'AUGUST_PROXY' -or$\r$\n"
+  FileWrite $R0 "      $$p.CommandLine -match 'HARNESS_PROXY' -or$\r$\n"
   FileWrite $R0 "      ($$InstallDir -and $$p.CommandLine.IndexOf($$InstallDir, [System.StringComparison]::OrdinalIgnoreCase) -ge 0)$\r$\n"
   FileWrite $R0 "    ))$\r$\n"
   FileWrite $R0 "  ))$\r$\n"
   FileWrite $R0 "}$\r$\n"
   FileWrite $R0 "function Stop-AugustEverything {$\r$\n"
-  FileWrite $R0 "  Get-Process -Name 'August','august-desktop' -ErrorAction SilentlyContinue | Stop-Process -Force$\r$\n"
+  FileWrite $R0 "  Get-Process -Name 'August','august-harness' -ErrorAction SilentlyContinue | Stop-Process -Force$\r$\n"
   FileWrite $R0 "  Get-CimInstance Win32_Process | Where-Object { Test-AugustProcess $$_ } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force }$\r$\n"
   FileWrite $R0 "  foreach ($$port in 8085, 8787) {$\r$\n"
   FileWrite $R0 "    Get-NetTCPConnection -LocalPort $$port -State Listen -ErrorAction SilentlyContinue |$\r$\n"
@@ -80,7 +80,7 @@
   FileWrite $R0 "    ForEach-Object { Remove-Item -LiteralPath $$_.FullName -Recurse -Force -ErrorAction SilentlyContinue }$\r$\n"
   FileWrite $R0 "}$\r$\n"
   FileWrite $R0 "function Test-AnyAugustProcess {$\r$\n"
-  FileWrite $R0 "  if (Get-Process -Name 'August','august-desktop' -ErrorAction SilentlyContinue) { return $$true }$\r$\n"
+  FileWrite $R0 "  if (Get-Process -Name 'August','august-harness' -ErrorAction SilentlyContinue) { return $$true }$\r$\n"
   FileWrite $R0 "  return [bool]@(Get-CimInstance Win32_Process | Where-Object { Test-AugustProcess $$_ })$\r$\n"
   FileWrite $R0 "}$\r$\n"
   ; Four passes was a timer, not a condition: with nothing left to kill it still
@@ -108,7 +108,7 @@
   StrCpy $R1 0
   stop_retry_loop:
     nsExec::ExecToLog 'taskkill /F /IM August.exe /T'
-    nsExec::ExecToLog 'taskkill /F /IM august-desktop.exe /T'
+    nsExec::ExecToLog 'taskkill /F /IM august-harness.exe /T'
     nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$TEMP\august-preinstall-stop.ps1" -InstallDir "$INSTDIR"'
     Sleep 1500
 

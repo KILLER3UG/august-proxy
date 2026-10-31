@@ -4,7 +4,7 @@ Moved from workbench.py VERBATIM: ``_executeTool`` (the whole dispatcher —
 MCP routing, hash-anchored edit rejection, the first-mutation baseline
 snapshot join, the managed-tool budget) plus its immediate private helpers
 (grant key / preview / categories and the four grant-store accessors), and
-the two exec-only support symbols it reads: the ``AUGUST_TOOL_TIMEOUT_S``
+the two exec-only support symbols it reads: the ``HARNESS_TOOL_TIMEOUT_S``
 constant and the best-effort baseline-snapshot join.
 
 Nothing here was edited. workbench.py re-exports every name under its
@@ -38,7 +38,7 @@ logger = logging.getLogger('workbench')
 
 def _envTimeoutSeconds(default: int = 300) -> int:
     try:
-        return max(30, int(os.environ.get('AUGUST_TOOL_TIMEOUT_S', str(default))))
+        return max(30, int(os.environ.get('HARNESS_TOOL_TIMEOUT_S', str(default))))
     except (TypeError, ValueError):
         return max(30, default)
 

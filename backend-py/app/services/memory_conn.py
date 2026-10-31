@@ -17,7 +17,7 @@ from app.lib.paths import dataPath
 
 logger = logging.getLogger('august.memory_conn')
 
-_BRAIN_FILE_ENV = 'AUGUST_BRAIN_SQLITE_FILE'
+_BRAIN_FILE_ENV = 'HARNESS_BRAIN_SQLITE_FILE'
 _DEFAULT_BRAIN_FILE = 'august_brain.sqlite'
 _TIMEOUT_MS = 10000
 # Bounded wait for a concurrent first open of the same database file:
@@ -77,10 +77,10 @@ def apply_conn_pragmas(conn: sqlite3.Connection) -> None:
         explicit measure + accept-loss decision
 
     **Opt-in only (not measured as default wins):**
-      * ``AUGUST_SQLITE_SYNC=NORMAL|FULL|OFF`` — NORMAL under WAL can lose the
+      * ``HARNESS_SQLITE_SYNC=NORMAL|FULL|OFF`` — NORMAL under WAL can lose the
         last uncheckpointed transaction on hard power loss; OFF is unsafe
-      * ``AUGUST_SQLITE_CACHE_KB`` — page cache KiB (negative PRAGMA cache_size)
-      * ``AUGUST_SQLITE_MMAP_MB`` — mmap size MiB (0 / unset = do not set)
+      * ``HARNESS_SQLITE_CACHE_KB`` — page cache KiB (negative PRAGMA cache_size)
+      * ``HARNESS_SQLITE_MMAP_MB`` — mmap size MiB (0 / unset = do not set)
     """
     # Retry the WAL conversion, and only the WAL conversion. SQLite does NOT
     # invoke the busy handler when a connection has to take the write lock to
@@ -105,10 +105,10 @@ def apply_conn_pragmas(conn: sqlite3.Connection) -> None:
     conn.execute('PRAGMA busy_timeout=10000')
     conn.execute('PRAGMA foreign_keys=ON')
     # Durability: only change synchronous when explicitly requested.
-    sync_env = (os.environ.get('AUGUST_SQLITE_SYNC') or '').strip().upper()
+    sync_env = (os.environ.get('HARNESS_SQLITE_SYNC') or '').strip().upper()
     if sync_env in ('NORMAL', 'FULL', 'OFF'):
         conn.execute(f'PRAGMA synchronous={sync_env}')
-    cache_raw = (os.environ.get('AUGUST_SQLITE_CACHE_KB') or '').strip()
+    cache_raw = (os.environ.get('HARNESS_SQLITE_CACHE_KB') or '').strip()
     if cache_raw:
         try:
             cache_kb = int(cache_raw)
@@ -116,7 +116,7 @@ def apply_conn_pragmas(conn: sqlite3.Connection) -> None:
             cache_kb = 0
         if cache_kb != 0:
             conn.execute(f'PRAGMA cache_size={-abs(cache_kb)}')
-    mmap_raw = (os.environ.get('AUGUST_SQLITE_MMAP_MB') or '').strip()
+    mmap_raw = (os.environ.get('HARNESS_SQLITE_MMAP_MB') or '').strip()
     if mmap_raw:
         try:
             mmap_mb = int(mmap_raw)

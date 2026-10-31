@@ -71,7 +71,7 @@ Three cases, not one:
 |---|---|
 | no token presented | `401 local_token_missing` — the message names the `X-August-Local-Token` header |
 | wrong token | `401 local_token_invalid` |
-| no `AUGUST_LOCAL_API_TOKEN` configured at all | `503 local_token_unconfigured` — **fail closed**; the network gets nothing, and the startup log says so loudly |
+| no `HARNESS_LOCAL_API_TOKEN` configured at all | `503 local_token_unconfigured` — **fail closed**; the network gets nothing, and the startup log says so loudly |
 
 With LAN access **off**, none of this applies: the gate is a no-op, and
 "no token configured means no gate" still holds by construction (Docker, a
@@ -157,7 +157,7 @@ the sockets a local model must not read.
 
 The HTTP half of the terminal (`/api/terminal/sessions`, `/buffer`, `/input`,
 `/command`, `/approve`) was already behind the token, and the interactive
-terminal's environment is scrubbed of `AUGUST_*` credentials, so a shell
+terminal's environment is scrubbed of `HARNESS_*` credentials, so a shell
 cannot print the token for a model to read back.
 
 ## The phone can chat

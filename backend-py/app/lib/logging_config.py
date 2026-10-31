@@ -8,9 +8,9 @@ Usage:
     setup_logging()
 
 Environment:
-    AUGUST_LOG_LEVELS: comma-separated module:level overrides.
+    HARNESS_LOG_LEVELS: comma-separated module:level overrides.
         Example: "providers:DEBUG,adapters:WARNING,sandbox:ERROR"
-    AUGUST_LOG_FORMAT: "json" (default) or "text" for human-readable.
+    HARNESS_LOG_FORMAT: "json" (default) or "text" for human-readable.
 """
 
 from __future__ import annotations
@@ -64,8 +64,8 @@ class TextFormatter(logging.Formatter):
 
 
 def _parse_level_overrides() -> dict[str, int]:
-    """Parse AUGUST_LOG_LEVELS env var into {module: level} dict."""
-    raw = os.environ.get('AUGUST_LOG_LEVELS', '')
+    """Parse HARNESS_LOG_LEVELS env var into {module: level} dict."""
+    raw = os.environ.get('HARNESS_LOG_LEVELS', '')
     overrides: dict[str, int] = {}
     if not raw.strip():
         return overrides
@@ -92,7 +92,7 @@ def setup_logging() -> None:
         root.removeHandler(handler)
 
     # Choose formatter
-    log_format = os.environ.get('AUGUST_LOG_FORMAT', 'json').lower()
+    log_format = os.environ.get('HARNESS_LOG_FORMAT', 'json').lower()
     formatter: logging.Formatter
     if log_format == 'text':
         formatter = TextFormatter()

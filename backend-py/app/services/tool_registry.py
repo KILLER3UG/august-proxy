@@ -539,7 +539,7 @@ async def host_agent_available() -> bool:
     """True when host agent URL is set and health responds, or local desktop is usable."""
     import os
 
-    url = os.environ.get('AUGUST_HOST_AGENT_URL', '').strip()
+    url = os.environ.get('HARNESS_HOST_AGENT_URL', '').strip()
     if url:
         try:
             from app.services.host_agent import getHostInfo
@@ -568,7 +568,7 @@ def listTools(*, include_host_agent: bool | None = None) -> list[dict[str, objec
     if show_host is None:
         import os
 
-        url = os.environ.get('AUGUST_HOST_AGENT_URL', '').strip()
+        url = os.environ.get('HARNESS_HOST_AGENT_URL', '').strip()
         # When URL is set but we can't async-check here, hide until proven up
         # (callers that need async should pass include_host_agent after await).
         if url:
@@ -644,11 +644,11 @@ async def dispatch(name: str, args: dict[str, object]) -> str:
     if is_host_agent_tool(name):
         import os
 
-        if os.environ.get('AUGUST_HOST_AGENT_URL', '').strip():
+        if os.environ.get('HARNESS_HOST_AGENT_URL', '').strip():
             if not await host_agent_available():
                 return (
                     f'[UNAVAILABLE] Tool "{name}" requires the host agent, '
-                    'which is disconnected. Set AUGUST_HOST_AGENT_URL to a healthy '
+                    'which is disconnected. Set HARNESS_HOST_AGENT_URL to a healthy '
                     'agent or clear it to use local desktop automation.'
                 )
     if name == 'run_command' and isDaemonContext():

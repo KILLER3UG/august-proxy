@@ -2,7 +2,7 @@
 
 Pricing resolves in a fixed order, and the answer reports how sure it is:
 
-1. ``AUGUST_PRICE_IN_PER_M`` / ``AUGUST_PRICE_OUT_PER_M`` — flat override.
+1. ``HARNESS_PRICE_IN_PER_M`` / ``HARNESS_PRICE_OUT_PER_M`` — flat override.
 2. The model's own configured ``priceInPerM`` / ``priceOutPerM`` (Model
    settings → edit model). Exact: somebody typed this number.
 3. The model's ``free`` flag → $0. Exact. A self-hosted model costs the
@@ -206,8 +206,8 @@ def price_for_model(model_id: str) -> ModelPrice:
     """
     model_id = str(model_id or '').strip()
     try:
-        env_in = os.environ.get('AUGUST_PRICE_IN_PER_M')
-        env_out = os.environ.get('AUGUST_PRICE_OUT_PER_M')
+        env_in = os.environ.get('HARNESS_PRICE_IN_PER_M')
+        env_out = os.environ.get('HARNESS_PRICE_OUT_PER_M')
         if env_in or env_out:
             in_rate = float(env_in) if env_in else _DEFAULT_IN_PER_M
             out_rate = float(env_out) if env_out else _DEFAULT_OUT_PER_M

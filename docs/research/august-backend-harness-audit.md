@@ -180,7 +180,7 @@ The disclosure *algorithm* is well-built (core/deferrable split, BM25 pre-load a
 - **Cache-stability ordering is deliberate:** bare-essential tools sort first in both builders, so a self-heal downgrade to the bare set yields a *prefix* of the full list and the Anthropic prompt-cache breakpoint on the tools array stays valid; `maxTools` truncation also cuts non-essential first (`workbench.py:1759-1767`, `1981-1984`).
 - Capability profiles (`full`/`reduced`/`bare`/`text`, `maxTools`, `maxToolResultChars`) are read from the provider config and honored by **both** tool-definition paths and by result truncation (`workbench.py:1865-1948`), matching `AGENTS.md:72-74`. The profile lookup is memoized on a 5s TTL with an explicit justification (`1865-1873`).
 - `_BARE_TOOL_ALLOW` ships memory CRUD as a set with the reason inline (`workbench.py:1843-1851`) — the `AGENTS.md:130-135` invariant, and the comment explains the failure mode (a write door with no way to read or correct).
-- `AUGUST_CORE_TOOLS` is consistent with that (`tools/model_tools.py:20-48`).
+- `HARNESS_CORE_TOOLS` is consistent with that (`tools/model_tools.py:20-48`).
 
 ### 5.2 Result truncation and spill — SOLID
 
@@ -254,7 +254,7 @@ The disclosure *algorithm* is well-built (core/deferrable split, BM25 pre-load a
 ### 7.2 Weaknesses
 
 - **Weakness (P2): the usage endpoint's per-event cost loop is unbounded.** `get_usage` fetches **all** `usage_events` rows for the session with no LIMIT (`memory_store/rest.py:576-579`), while the `events` list two dozen lines above is capped at 500 (`562`). For a session with thousands of turns this is a full scan plus one `price_for_model` call per row on every request to `/api/usage/session`. `AGENTS.md:86-87` describes this as "up to 500 events"; the cost loop has no such bound.
-- **Weakness (P2): a half-set env override is silently mixed.** Setting only `AUGUST_PRICE_IN_PER_M` makes the output rate fall back to `_DEFAULT_OUT_PER_M` (3.0/15.0) and the result is reported as `estimated=False, source='env'` (`cost_estimator.py:183-191`). A partial override is therefore presented as an exact flat price.
+- **Weakness (P2): a half-set env override is silently mixed.** Setting only `HARNESS_PRICE_IN_PER_M` makes the output rate fall back to `_DEFAULT_OUT_PER_M` (3.0/15.0) and the result is reported as `estimated=False, source='env'` (`cost_estimator.py:183-191`). A partial override is therefore presented as an exact flat price.
 - **Weakness (P2, see §1.3): retry/fallback spend is unattributed across the whole turn.**
 
 ---

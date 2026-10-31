@@ -408,7 +408,7 @@ async def createTerminalSession(params: dict[str, object] | None = None) -> dict
     explicit_args = [as_str(a) for a in as_list(params.get('args'))]
     args = explicit_args if explicit_args else _defaultShellArgs(shell)
     # The terminal keeps the user's environment, but NOT this app's own
-    # credentials: a child that inherits AUGUST_LOCAL_API_TOKEN can print it,
+    # credentials: a child that inherits HARNESS_LOCAL_API_TOKEN can print it,
     # and GET /api/terminal/buffer hands the buffer to a local caller.
     from app.lib.async_subprocess import terminal_env
 

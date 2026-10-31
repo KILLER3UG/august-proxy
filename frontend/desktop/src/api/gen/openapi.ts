@@ -2061,7 +2061,7 @@ export interface paths {
          * Putsessionexportconfig
          * @description Admin: set continuous JSON session export on/off (config-backed).
          *
-         *     Body: ``{ "enabled": true|false }``. Env ``AUGUST_SESSION_JSON_EXPORT``
+         *     Body: ``{ "enabled": true|false }``. Env ``HARNESS_SESSION_JSON_EXPORT``
          *     still overrides when set. Optional ``exportNow: true`` writes one snapshot.
          */
         put: operations["putSessionExportConfig_api_config_session_export_put"];
@@ -4127,7 +4127,7 @@ export interface paths {
         };
         /**
          * Getrecentperftraces
-         * @description Recent workbench performance traces (when ``AUGUST_PERF_TIMING=1``).
+         * @description Recent workbench performance traces (when ``HARNESS_PERF_TIMING=1``).
          *
          *     Debug/measurement only. Empty list if no traces were recorded.
          */

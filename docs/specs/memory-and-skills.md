@@ -142,7 +142,7 @@ These are product improvements, not code defects, except where noted.
 ## 7. Verification
 
 There is no test suite. The memory/skills work was verified through the real
-store, tool and prompt paths with an isolated `AUGUST_DATA_DIR` and the
+store, tool and prompt paths with an isolated `HARNESS_DATA_DIR` and the
 scripted provider, and the shipped commits record what each run measured. The
 gates that still hold the shape are `npm run check:docs`,
 `check:brain-config`, `check:naming`, `check:tool-registration`, `check:sse`

@@ -172,7 +172,7 @@ class SessionBridge:
             trace = current_trace()
             if trace is None:
                 # force stays False: spans/ring/logging remain env-gated
-                # (AUGUST_PERF_TIMING). The trace is still installed so
+                # (HARNESS_PERF_TIMING). The trace is still installed so
                 # ungated telemetry (mark_ttft / tool-args-ready) records on
                 # gateway turns without the env var.
                 trace = start_trace(

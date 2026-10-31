@@ -521,7 +521,7 @@ def _http_url_refusal(url: str, *, allow_local: bool) -> str | None:
       IP forms, and hostnames that *resolve* to private addresses).
     * **Explicit localhost opt-in** — targeting a loopback/private address is
       legitimate (a local dev server, a NAS), so it is allowed when the caller
-      opts in explicitly via the ``AUGUST_AUTOMATION_ALLOW_LOCALHOST`` env var or
+      opts in explicitly via the ``HARNESS_AUTOMATION_ALLOW_LOCALHOST`` env var or
       a per-job ``allowLocalhost`` flag. The opt-in only relaxes the *network*
       check; the http(s)-only scheme rule always holds, so ``file://`` stays
       blocked even for an opted-in localhost job.
@@ -545,7 +545,7 @@ def _http_url_refusal(url: str, *, allow_local: bool) -> str | None:
     if _is_private_url(url):
         return (
             'refused: target resolves to a private/loopback/metadata address. '
-            'Set AUGUST_AUTOMATION_ALLOW_LOCALHOST=1 (or allowLocalhost on the '
+            'Set HARNESS_AUTOMATION_ALLOW_LOCALHOST=1 (or allowLocalhost on the '
             'job) to allow local targets.'
         )
     return None
@@ -555,7 +555,7 @@ def _http_localhost_allowed(job: dict[str, object]) -> bool:
     """Explicit localhost opt-in for a job: per-job flag OR the env var."""
     if as_bool(job.get('allowLocalhost'), False):
         return True
-    return (os.environ.get('AUGUST_AUTOMATION_ALLOW_LOCALHOST') or '').strip().lower() in (
+    return (os.environ.get('HARNESS_AUTOMATION_ALLOW_LOCALHOST') or '').strip().lower() in (
         '1',
         'true',
         'yes',

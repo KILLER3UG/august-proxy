@@ -9,11 +9,11 @@ const cacheDirs = new Set([
   'node_modules', '__pycache__', '.mypy_cache', '.ruff_cache', '.pytest_cache',
   '.venv', '.tox', '.nox', '.coverage', 'htmlcov',
 ]);
-const generatedDirs = new Set(['build', 'dist', 'august_proxy.egg-info']);
+const generatedDirs = new Set(['build', 'dist', 'august_harness.egg-info']);
 
 // What a running August writes for ONE person: the memory database, provider
 // credentials, session transcripts, learned-skill counters. Staging copies
-// straight out of a working checkout, and one launch with AUGUST_DATA_DIR
+// straight out of a working checkout, and one launch with HARNESS_DATA_DIR
 // pointed into that checkout drops all of them there — at which point a release
 // would ship a developer's history (and their API keys) inside the installer,
 // so a "first download" opens with somebody else's memory and the next update

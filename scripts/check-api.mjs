@@ -35,13 +35,13 @@ const EXPORT = resolve(REPO, 'backend-py', 'scripts', 'export_openapi.py');
  * an interpreter whose site-packages carry the backend's dependencies.
  */
 function resolvePython() {
-  const override = process.env.AUGUST_PYTHON;
+  const override = process.env.HARNESS_PYTHON;
   if (override) {
     if (!existsSync(override)) {
-      console.error(`[check-api] AUGUST_PYTHON points at a missing file: ${override}`);
+      console.error(`[check-api] HARNESS_PYTHON points at a missing file: ${override}`);
       process.exit(2);
     }
-    return { cmd: override, via: 'AUGUST_PYTHON' };
+    return { cmd: override, via: 'HARNESS_PYTHON' };
   }
 
   const venvs = [
@@ -66,7 +66,7 @@ function resolvePython() {
 const py = resolvePython();
 if (!py) {
   console.error(
-    '[check-api] no usable Python found — tried AUGUST_PYTHON, ' +
+    '[check-api] no usable Python found — tried HARNESS_PYTHON, ' +
       'backend-py/.venv/{bin/python,Scripts/python.exe}, and python3/python on PATH. ' +
       'This gate needs an interpreter that can import the backend app.'
   );

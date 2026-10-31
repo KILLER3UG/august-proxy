@@ -77,7 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
             'force the recalled-facts lane for this run instead of inheriting the '
             'stored `memoryAutoInject`. This is the arm of a paired lift: run the '
             'same task and script twice, on and off, and the only thing that '
-            'differs is the memory tail. Requires an isolated AUGUST_DATA_DIR when '
+            'differs is the memory tail. Requires an isolated HARNESS_DATA_DIR when '
             'combined with --memory-corpus, and it ASSERTS the arm took effect — '
             'a run where `on` produced no recall block exits 43 rather than '
             'reporting a lift of zero.'
@@ -90,7 +90,7 @@ def build_parser() -> argparse.ArgumentParser:
             'path to a JSON array of facts to write into the store before the run: '
             '[{"key": "...", "value": "...", "kind": "lesson", "category": "general"}]. '
             'Without a corpus the two arms render identically and the comparison is '
-            'vacuous. Refused unless AUGUST_DATA_DIR is set explicitly, because '
+            'vacuous. Refused unless HARNESS_DATA_DIR is set explicitly, because '
             'otherwise this writes durable facts into the real brain database.'
         ),
     )
@@ -167,15 +167,15 @@ def main(argv: list[str] | None = None) -> int:
         print('august-bench: --max-turns must be positive', file=sys.stderr)
         return EXIT_INPUT
     # The corpus is a durable write into whatever store this process points at.
-    # `dataDir()` falls back to the live app data directory when AUGUST_DATA_DIR
+    # `dataDir()` falls back to the live app data directory when HARNESS_DATA_DIR
     # is unset, so without this gate `--memory-corpus` would seed facts into the
     # user's real brain database — the exact isolation failure AGENTS.md records
     # for the old test suite. Refuse rather than default to a safe path, because
     # a silently-chosen temp dir would also make a lift un-reproducible.
-    if opts.memory_corpus and not os.environ.get('AUGUST_DATA_DIR'):
+    if opts.memory_corpus and not os.environ.get('HARNESS_DATA_DIR'):
         print(
             'august-bench: --memory-corpus writes durable facts, so it requires an '
-            'explicit AUGUST_DATA_DIR pointing at a throwaway directory. Refusing to '
+            'explicit HARNESS_DATA_DIR pointing at a throwaway directory. Refusing to '
             'seed the live store.',
             file=sys.stderr,
         )

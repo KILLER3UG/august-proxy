@@ -30,7 +30,7 @@ The failures are concentrated in three places:
 
 ### 1.1 Startup sequence — SOLID
 
-- `main.rs:4-6` calls `august_desktop_lib::run()`; `lib.rs:35-40` claims the AUMID `com.august.proxy` **before** any window exists so WebView2 children group under the August node in Task Manager. This is the right order.
+- `main.rs:4-6` calls `august_harness_lib::run()`; `lib.rs:35-40` claims the AUMID `com.august.proxy` **before** any window exists so WebView2 children group under the August node in Task Manager. This is the right order.
 - `lib.rs:42-47` registers the five plugins; `lib.rs:48-108` is the setup closure. Order inside setup is deliberate and correct: acquire the instance lock **first** (`lib.rs:53-56`), and on refusal `exit(0)` before any managed state or window work.
 - Supervisor state is registered **even when the first spawn will fail** (`lib.rs:58-68`), so `restart_proxy` has a target. The comment at `lib.rs:58` is accurate.
 - The backend start is pushed to a worker thread (`lib.rs:82-85`) so the webview paints immediately; the main thread only does the WebView2 context-menu hardening (`lib.rs:96-105`).
@@ -50,7 +50,7 @@ The failures are concentrated in three places:
 
 ### 1.3 Port selection — SOLID
 
-- `portCandidates()` returns `8085..=8095` unless `AUGUST_PROXY_PORT` is set, in which case the override is the *only* candidate and disables the sweep (`backend.rs:111-117`, `95-99`).
+- `portCandidates()` returns `8085..=8095` unless `HARNESS_PROXY_PORT` is set, in which case the override is the *only* candidate and disables the sweep (`backend.rs:111-117`, `95-99`).
 - `ACTIVE_PROXY_PORT` is the single source of truth reported to the UI and used by the orphan sweep (`backend.rs:40`, `105-107`), and is written only on a verified health pass (`markProxyPort`, `backend.rs:1302-1303`).
 - The frontend never guesses 8085. `initBaseUrl` polls `proxy_status` up to 120 times with capped linear backoff and only then patches fetch (`api/client.ts:53-79`). The comment at `57-60` names the exact failure it prevents.
 
@@ -62,7 +62,7 @@ The failures are concentrated in three places:
 
 ### 1.5 Bundled-runtime bootstrap — SOLID
 
-- First launch / stamp mismatch copies `backend-py` + bundled skills into `{appData}/backend-runtime` and builds a venv from the portable Python with an **offline** `pip install --no-index --find-links wheels --upgrade august-proxy` (`backend.rs:607-767`). The `--upgrade` and the offline/binary-only posture are the correct calls for reusing a venv across an app update.
+- First launch / stamp mismatch copies `backend-py` + bundled skills into `{appData}/backend-runtime` and builds a venv from the portable Python with an **offline** `pip install --no-index --find-links wheels --upgrade august-harness` (`backend.rs:607-767`). The `--upgrade` and the offline/binary-only posture are the correct calls for reusing a venv across an app update.
 - **The runtime stamp is deliberately not written on pip success** — only after the first identity-checked health probe (`backend.rs:762-765`, `1312-1319`). A broken wheel set therefore cannot stamp itself healthy forever. This is a genuinely good invariant and is exactly the right defence against "UI upgraded, backend stale".
 - `runtimePayloadComplete` / `bundledPayloadComplete` (`backend.rs:310-379`) verify the whole payload, not just the stamp. A stamp alone never declares health.
 - Wipe failures degrade to a warning instead of trapping the user on a Retry gate, with a rename-aside fallback for Windows file locks (`wipeStaleTree`, `backend.rs:540-603`, and the four unit tests at `2430-2594`). The degraded message names exactly what was left behind. Good.
@@ -195,7 +195,7 @@ The failures are concentrated in three places:
 
 ### 4.3 Version sync — SOLID
 
-- All 8 sources currently agree at `0.18.11` (verified by reading each: `package.json`, `frontend/desktop/package.json`, `tauri.conf.json`, `Cargo.toml`, `Cargo.lock` `august-desktop` entry, and the three `package-lock.json` sites).
+- All 8 sources currently agree at `0.18.11` (verified by reading each: `package.json`, `frontend/desktop/package.json`, `tauri.conf.json`, `Cargo.toml`, `Cargo.lock` `august-harness` entry, and the three `package-lock.json` sites).
 - `check-version-sync.mjs` checks exactly those 8, and compares against the **majority** version rather than the first file found, so one stray file is not treated as correct (`check-version-sync.mjs:88-96`, and the rationale at `9-12`). A parse error is a hard failure, not a skip (`82-85`).
 - The release script runs the check **before and after** mutating versions (`release-desktop.mjs:272`, `310`), updates all 8 including both lockfile sites (`271-312`), and throws if the `Cargo.toml` or `Cargo.lock` regex fails to match rather than silently skipping a source (`291`, `307`).
 - **Weakness (P2): nothing runs the check in CI on a normal PR.** It is wired to `npm run check:version` and invoked by the release script, but a UI-only PR that forgets to bump would only be caught at release time — after the commit is tagged. A cheap CI job calling `scripts/check-version-sync.mjs` on changed desktop files would move it left. **Effort S, risk S.**

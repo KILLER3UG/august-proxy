@@ -72,7 +72,7 @@ _AVR_GCC_HINT = (
 
 
 def _resolve_arduino_cli() -> str | None:
-    env_exe = os.environ.get('AUGUST_ARDUINO_CLI', '').strip()
+    env_exe = os.environ.get('HARNESS_ARDUINO_CLI', '').strip()
     if env_exe and os.path.isfile(env_exe):
         return env_exe
     for name in ('arduino-cli', 'arduino-cli.exe'):
@@ -93,7 +93,7 @@ def _resolve_arduino_cli() -> str | None:
 
 
 def _resolve_avr_gcc() -> str | None:
-    env_exe = os.environ.get('AUGUST_AVR_GCC', '').strip()
+    env_exe = os.environ.get('HARNESS_AVR_GCC', '').strip()
     if env_exe and os.path.isfile(env_exe):
         return env_exe
     for name in ('avr-gcc', 'avr-gcc.exe'):
@@ -117,7 +117,7 @@ _NODE_INSTALL_HINT = (
     'No Node.js runtime found for the firmware emulator sidecar. The '
     'desktop bundle ships node (frontend/desktop/src-tauri/binaries); for '
     'backend-only dev install Node from https://nodejs.org or set '
-    'AUGUST_NODE_EXE. The emulator itself is avr8js (MIT) under '
+    'HARNESS_NODE_EXE. The emulator itself is avr8js (MIT) under '
     'backend-py/sidecar/node_modules — npm install inside backend-py/sidecar '
     'restores it.'
 )
@@ -125,7 +125,7 @@ _NODE_INSTALL_HINT = (
 
 def _resolve_node() -> str | None:
     """Node runtime for the sidecar: env override → bundled tauri binary → PATH."""
-    env_exe = os.environ.get('AUGUST_NODE_EXE', '').strip()
+    env_exe = os.environ.get('HARNESS_NODE_EXE', '').strip()
     if env_exe and os.path.isfile(env_exe):
         return env_exe
     repo_root = _SIDECAR_DIR.parent.parent
@@ -433,7 +433,7 @@ async def firmware_compile(
             gcc = _resolve_avr_gcc()
             if gcc is None:
                 return {'installed': False, 'error': _AVR_GCC_HINT}
-            mcu = os.environ.get('AUGUST_FIRMWARE_MCU', 'atmega328p')
+            mcu = os.environ.get('HARNESS_FIRMWARE_MCU', 'atmega328p')
             src_path = Path(tmpdir) / f'{base}.c'
             src_path.write_text(src_text, encoding='utf-8')
             hex_tmp = Path(tmpdir) / f'{base}.hex'
@@ -498,7 +498,7 @@ async def firmware_compile(
         return {
             'installed': True,
             'ok': True,
-            'board': fqbn if is_ino else os.environ.get('AUGUST_FIRMWARE_MCU', 'atmega328p'),
+            'board': fqbn if is_ino else os.environ.get('HARNESS_FIRMWARE_MCU', 'atmega328p'),
             'hexFile': str(out),
             'path': str(out),
             'flash': size or None,

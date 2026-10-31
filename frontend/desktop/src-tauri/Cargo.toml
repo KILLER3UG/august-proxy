@@ -1,12 +1,12 @@
 [package]
-name = "august-desktop"
+name = "august-harness"
 version = "0.18.27"
 description = "August Proxy — desktop shell"
 edition = "2021"
 rust-version = "1.77"
 
 [lib]
-name = "august_desktop_lib"
+name = "august_harness_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

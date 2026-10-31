@@ -6,7 +6,7 @@ same tools, same sandbox, same gates. What the bench adds:
 * T9 protocol — typed JSONL event stream, ``--output-schema`` final answer,
   typed exit codes (0 ok / 1 error / 42 input / 53 turn-limit);
 * budgets — max API rounds, wall-clock cap, optional cost ceiling;
-* headless stance — ``AUGUST_HEADLESS=1`` so the T5 approval axis is
+* headless stance — ``HARNESS_HEADLESS=1`` so the T5 approval axis is
   never-ask (fail-closed), guardMode=full so the real sandbox auto-approves
   without banners while still enforcing capability tiers;
 * benchmark integrity — the PRE_TOOL_USE integrity hook (no solution/ reads,
@@ -150,7 +150,7 @@ async def run_bench(opts: BenchOptions) -> int:
         opts.run_id = f'bench_{time.strftime("%Y%m%d")}_{uuid.uuid4().hex[:8]}'
 
     # ── headless stance BEFORE anything session-related runs ─────────────
-    os.environ['AUGUST_HEADLESS'] = '1'
+    os.environ['HARNESS_HEADLESS'] = '1'
 
     # Create the brain schema the same way app startup does. The bench drives the
     # loop in-process and never runs the app's lifespan, so on a throwaway data
@@ -215,7 +215,7 @@ async def run_bench(opts: BenchOptions) -> int:
             return EXIT_INPUT
         print(
             f'august-bench: seeded {seeded} fact(s) into '
-            f'{os.environ.get("AUGUST_DATA_DIR", "?")} (arm={opts.memory_state or "inherit"})',
+            f'{os.environ.get("HARNESS_DATA_DIR", "?")} (arm={opts.memory_state or "inherit"})',
             file=sys.stderr,
         )
 
@@ -440,7 +440,7 @@ def _seed_memory_corpus(path: str) -> tuple[int, str]:
 
     Keys are namespaced `bench:` so a seeded corpus is identifiable and can be
     told apart from a real learned fact. The CLI has already refused to get here
-    without an explicit `AUGUST_DATA_DIR`, which is what keeps this off the
+    without an explicit `HARNESS_DATA_DIR`, which is what keeps this off the
     user's brain database.
     """
     import json

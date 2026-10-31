@@ -3,7 +3,7 @@
 Mutating / plan / clarify / todo tools stay serial. Parallelism is only for
 tools with no side effects on disk/DB beyond read APIs.
 
-Enable: default on. Disable: ``AUGUST_P1_PARALLEL_TOOLS=0``.
+Enable: default on. Disable: ``HARNESS_P1_PARALLEL_TOOLS=0``.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ PARALLEL_SAFE_TOOLS: frozenset[str] = frozenset(
 
 
 def enabled() -> bool:
-    v = os.environ.get('AUGUST_P1_PARALLEL_TOOLS', '1').strip().lower()
+    v = os.environ.get('HARNESS_P1_PARALLEL_TOOLS', '1').strip().lower()
     return v not in ('0', 'false', 'no', 'off')
 
 

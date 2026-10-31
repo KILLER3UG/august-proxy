@@ -7,7 +7,7 @@ network" is not a property a local app should acquire by accident.
 
 The owner ruled on 2026-10-20 that LAN access is available — but **opt-in**,
 off by default, with a warning. The desktop shell owns the decision (a
-Settings switch) and **tells** the backend through ``AUGUST_LAN_BIND`` in the
+Settings switch) and **tells** the backend through ``HARNESS_LAN_BIND`` in the
 environment, exactly the way it tells the backend which port to take. The
 backend does not decide for itself and has no file of its own that could
 talk it into being reachable: one switch, one owner, one place.
@@ -39,7 +39,7 @@ log = logging.getLogger(__name__)
 
 #: The environment variable the desktop shell uses to TELL the backend that
 #: LAN access is on. Anything else — unset, empty, ``0``, ``false`` — is off.
-LAN_BIND_ENV = 'AUGUST_LAN_BIND'
+LAN_BIND_ENV = 'HARNESS_LAN_BIND'
 
 #: The spellings that mean "on". Deliberately short: this is a boolean that
 #: a shell, a compose file or an operator types, and a value nobody
@@ -57,7 +57,7 @@ _PROBE_TARGETS = (('8.8.8.8', 80), ('1.1.1.1', 80), ('192.0.2.1', 80))
 #: bound. The backend reports it verbatim, so the UI can say what is actually
 #: true instead of guessing. The shell owns the bind address; the backend is
 #: told, exactly as it is told about the LAN flag.
-BIND_HOST_ENV = 'AUGUST_BIND_HOST'
+BIND_HOST_ENV = 'HARNESS_BIND_HOST'
 
 
 def lan_enabled() -> bool:

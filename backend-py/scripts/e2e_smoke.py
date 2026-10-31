@@ -23,7 +23,7 @@ here means "the app is broken", not "a rule changed".
 (window creation, the backend supervisor, the install stamp) is not covered
 here. Do not read a green run as "the desktop app launched".
 
-**It never touches the user's data.** `AUGUST_DATA_DIR` is pointed at a
+**It never touches the user's data.** `HARNESS_DATA_DIR` is pointed at a
 throwaway temp directory unless the caller says otherwise, and the temp
 directory is removed afterwards. The app's own data directory holds
 everything a user owns — brain database, provider keys, learned skills,
@@ -114,11 +114,11 @@ def main() -> int:
         scratch = True
         atexit.register(lambda: shutil.rmtree(data_dir, ignore_errors=True))
 
-    os.environ['AUGUST_DATA_DIR'] = str(data_dir)
+    os.environ['HARNESS_DATA_DIR'] = str(data_dir)
     # The sensitive local routes need a credential to check. Configure one so
     # the gate can prove the gate works, and so a route that spawns workers
     # can never actually spawn one during a smoke run.
-    os.environ['AUGUST_LOCAL_API_TOKEN'] = SMOKE_LOCAL_TOKEN
+    os.environ['HARNESS_LOCAL_API_TOKEN'] = SMOKE_LOCAL_TOKEN
     for key in _INHERITED_SECRET_ENV:
         os.environ.pop(key, None)
 
@@ -354,7 +354,7 @@ def main() -> int:
             leaked = [
                 key
                 for key in env
-                if key.upper().startswith('AUGUST_')
+                if key.upper().startswith('HARNESS_')
                 or 'TOKEN' in key.upper()
                 or 'SECRET' in key.upper()
                 or 'API_KEY' in key.upper()

@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    august_desktop_lib::run();
+    august_harness_lib::run();
 }

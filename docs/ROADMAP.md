@@ -430,7 +430,7 @@ invisible, it was a full-strength line in both themes.
 
 The two censuses before this one read the source. This one ran the app.
 A dev server on `127.0.0.1:5173` against a backend on a throwaway
-`AUGUST_DATA_DIR`, driven by Chromium over the DevTools protocol, and
+`HARNESS_DATA_DIR`, driven by Chromium over the DevTools protocol, and
 every surface captured and compared with the Claude screenshots -- the
 chat (with a seeded transcript), Runs, Board, History, Automations,
 Learning, the Live surface, and the Settings panel.
@@ -790,7 +790,7 @@ throughout, and the picture was wrong.
   saving.
 - **The `data/` directory was never touched.** It is the user's memory
   (1.58 GB in this checkout). Nothing in this round read from it or wrote to
-  it, and the `AUGUST_DATA_DIR` overrides in the gates point at throwaway
+  it, and the `HARNESS_DATA_DIR` overrides in the gates point at throwaway
   temp directories.
 
 ## The round after that: the reference's OWN capture of the same job
@@ -974,7 +974,7 @@ Five commits, each gated on its own measurement.
 | **Circuits as fixtures** (SimulIDE `BatchTest`/`TestUnit`) | **done** — `circuit_batch_test` walks a folder of decks, runs each through the real engine and asserts the deck's own `* expect v(out) ~= 5.0 ±0.05` cards. A deck with no card is counted, never passed. Measured against the bundled ngspice: the wrong expectation fails with `got 5 (|5 - 6| <= 0.01)`. |
 | **Signals keyed to sim time** (SimulIDE's `DataChannel`) | **done** — `_signal_edges` change-samples a trace off the FULL run (before thinning), with a digital lane gated on a real swing AND most samples parked near a rail, because a ramp crosses each threshold exactly once and a 0.2 mV ripple crosses 30 %/70 % of itself forever. The first pass emitted a logic lane for both; that is the false claim the two tests exist to stop. |
 | **Merge contract / file-op ledger across compaction** (pi) | **already shipped** — `schemaSummarize` folds prior notes into Context with carried `<read-files>` tags stripped and keeps the ledger across compactions, deterministically and with no extra LLM call. Recorded so a future dive stops re-proposing it. |
-| **Parallel tool execution** (pi's dual-order batch) | **ALREADY SHIPPED — the dive was wrong to list it.** `chat_stages.run_regular_tools_stage` gathers a batch when every call is on `parallel_tools.PARALLEL_SAFE_TOOLS` (read/list/web/brain/subagent-spawn), and runs the whole batch serially if ANY call mutates or is unknown. Default ON (`AUGUST_P1_PARALLEL_TOOLS`, `0` disables). Measured through the new bench harness: two `read_file` calls reach `maxConcurrent=2`; a `read_file` + `write_file` batch is `maxConcurrent=1`; and round 2's request carries the results as `[call_a, call_b]` — source order — even though the live events arrived `[call_b, call_a]`. That is pi's dual-order rule exactly: completion order for feedback, source order for history. A duplicate prefetch written before this was checked was reverted, and the lesson is the usual one — verify absence before building. |
+| **Parallel tool execution** (pi's dual-order batch) | **ALREADY SHIPPED — the dive was wrong to list it.** `chat_stages.run_regular_tools_stage` gathers a batch when every call is on `parallel_tools.PARALLEL_SAFE_TOOLS` (read/list/web/brain/subagent-spawn), and runs the whole batch serially if ANY call mutates or is unknown. Default ON (`HARNESS_P1_PARALLEL_TOOLS`, `0` disables). Measured through the new bench harness: two `read_file` calls reach `maxConcurrent=2`; a `read_file` + `write_file` batch is `maxConcurrent=1`; and round 2's request carries the results as `[call_a, call_b]` — source order — even though the live events arrived `[call_b, call_a]`. That is pi's dual-order rule exactly: completion order for feedback, source order for history. A duplicate prefetch written before this was checked was reverted, and the lesson is the usual one — verify absence before building. |
 
 Also landed: the 3D stage now diffs the deck instead of rebuilding it (so parts
 move, leave and wires draw in — and the motion constants that were deleted for

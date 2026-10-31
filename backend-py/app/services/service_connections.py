@@ -661,8 +661,8 @@ def _google_client_id() -> str:
         or _mcp_global_env_map().get('GOOGLE_OAUTH_CLIENT_ID')
         or _mcp_global_env_map().get('GOOGLE_CLIENT_ID')
         # Optional ship-time public Desktop client (PKCE, no secret).
-        or os.environ.get('AUGUST_DEFAULT_GOOGLE_OAUTH_CLIENT_ID')
-        or _mcp_global_env_map().get('AUGUST_DEFAULT_GOOGLE_OAUTH_CLIENT_ID')
+        or os.environ.get('HARNESS_DEFAULT_GOOGLE_OAUTH_CLIENT_ID')
+        or _mcp_global_env_map().get('HARNESS_DEFAULT_GOOGLE_OAUTH_CLIENT_ID')
         or ''
     ).strip()
 
@@ -822,7 +822,7 @@ def _google_redirect_uri() -> str:
 
         port = int(getattr(settings, 'port', 8085) or 8085)
     except Exception:
-        port = int(os.environ.get('AUGUST_PROXY_PORT', '8085'))
+        port = int(os.environ.get('HARNESS_PROXY_PORT', '8085'))
     return f'http://127.0.0.1:{port}/api/service-connections/google/callback'
 
 

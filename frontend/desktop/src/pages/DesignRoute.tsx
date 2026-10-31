@@ -418,7 +418,7 @@ function ToolRowLab() {
       id: 't_cmd',
       name: 'run_command',
       args: JSON.stringify({
-        command: 'rg --files C:/Dev/august-proxy/frontend/desktop/src/components/overlays --glob "*.tsx" | head -20',
+        command: 'rg --files C:/Dev/august-harness/frontend/desktop/src/components/overlays --glob "*.tsx" | head -20',
       }),
     },
     {
@@ -457,7 +457,7 @@ function ToolRowLab() {
             {
               token: 'tkn_win',
               toolName: 'run_command',
-              args: { command: `rm -rf C:${BS}Dev${BS}august-proxy${BS}build${BS}artifacts` },
+              args: { command: `rm -rf C:${BS}Dev${BS}august-harness${BS}build${BS}artifacts` },
               preview: 'Run: rm -rf artifacts',
             },
           ],

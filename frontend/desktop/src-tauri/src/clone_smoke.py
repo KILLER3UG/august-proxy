@@ -66,8 +66,8 @@ def main() -> int:
 
     data = Path(tempfile.mkdtemp(prefix='august-apply-'))
     atexit.register(lambda: shutil.rmtree(data, ignore_errors=True))
-    os.environ['AUGUST_DATA_DIR'] = str(data)
-    os.environ['AUGUST_LOCAL_API_TOKEN'] = GATE_TOKEN
+    os.environ['HARNESS_DATA_DIR'] = str(data)
+    os.environ['HARNESS_LOCAL_API_TOKEN'] = GATE_TOKEN
     for key in _INHERITED_SECRET_ENV:
         os.environ.pop(key, None)
 
@@ -139,7 +139,7 @@ def main() -> int:
 
                 leaked = sorted(
                     key for key in terminal_env()
-                    if key.upper().startswith('AUGUST_')
+                    if key.upper().startswith('HARNESS_')
                     or any(t in key.upper() for t in ('TOKEN', 'SECRET', 'API_KEY'))
                 )
                 check('a terminal child env carries no app credential', not leaked,

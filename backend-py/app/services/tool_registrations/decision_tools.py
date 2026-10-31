@@ -16,7 +16,7 @@ One tool with a small, checkable contract:
   and a tool result that dumps a thousand tokens of deliberation into the
   context is a worse trade than a shorter list.
 
-Registered but NOT in ``AUGUST_CORE_TOOLS``: progressive disclosure can defer
+Registered but NOT in ``HARNESS_CORE_TOOLS``: progressive disclosure can defer
 it, so it costs no prompt tokens on a large tool surface.
 """
 

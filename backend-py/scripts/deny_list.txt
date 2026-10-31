@@ -92,12 +92,12 @@ model_config
 model_fields
 
 # ── 4. Environment variable names (UPPER_SNAKE_CASE) ────────────────────
-AUGUST_DATA_DIR
-AUGUST_BRAIN_SQLITE_FILE
-AUGUST_PROXY_PORT
-AUGUST_PROXY_WORKDIR
-AUGUST_PROXY_ALLOWED_ROOTS
-AUGUST_PROXY_CONTAINER_ROOT
+HARNESS_DATA_DIR
+HARNESS_BRAIN_SQLITE_FILE
+HARNESS_PROXY_PORT
+HARNESS_PROXY_WORKDIR
+HARNESS_PROXY_ALLOWED_ROOTS
+HARNESS_PROXY_CONTAINER_ROOT
 OPENAI_API_KEY
 ANTHROPIC_API_KEY
 MINIMAX_API_KEY
@@ -413,7 +413,7 @@ tauri_plugin_shell
 tauri_plugin_updater
 tauri_plugin_dialog
 windows_subsystem
-august_desktop_lib
+august_harness_lib
 august_desktop
 # Tauri framework APIs (camelCase already — kept for completeness)
 generate_handler

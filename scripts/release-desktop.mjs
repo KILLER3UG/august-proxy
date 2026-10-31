@@ -1,7 +1,7 @@
 // scripts/release-desktop.mjs
 //
 // Builds the desktop release assets. `latest.json` is the Tauri updater feed;
-// `august-desktop-manifest.json` is legacy web checksum metadata.
+// `august-harness-manifest.json` is legacy web checksum metadata.
 //
 // Usage:
 //   node scripts/release-desktop.mjs patch
@@ -27,7 +27,7 @@ const webDist = resolve(root, 'web-dist');
 const backendDir = resolve(root, 'backend');
 const nodeModules = resolve(root, 'node_modules');
 const packageJsonPath = resolve(root, 'package.json');
-const manifestPath = join(releaseDir, 'august-desktop-manifest.json');
+const manifestPath = join(releaseDir, 'august-harness-manifest.json');
 const latestPath = join(releaseDir, 'latest.json');
 const tauriBundleDir = resolve(root, 'frontend/desktop/src-tauri/target/release/bundle');
 const tauriConfPath = resolve(root, 'frontend/desktop/src-tauri/tauri.conf.json');
@@ -194,9 +194,9 @@ async function zipFolder(inputDir, outputFile, prefix = '') {
         powershellZip(`
 \$ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-\$out = \$env:AUGUST_ZIP_OUTPUT
-\$inputDir = \$env:AUGUST_ZIP_INPUT
-\$prefix = \$env:AUGUST_ZIP_PREFIX
+\$out = \$env:HARNESS_ZIP_OUTPUT
+\$inputDir = \$env:HARNESS_ZIP_INPUT
+\$prefix = \$env:HARNESS_ZIP_PREFIX
 \$zip = [System.IO.Compression.ZipFile]::Open(\$out, 'Create')
 try {
     \$compression = [System.IO.Compression.CompressionLevel]::Optimal
@@ -210,9 +210,9 @@ try {
     \$zip.Dispose()
 }
 `, {
-            AUGUST_ZIP_OUTPUT: outputFile,
-            AUGUST_ZIP_INPUT: inputDir,
-            AUGUST_ZIP_PREFIX: prefix
+            HARNESS_ZIP_OUTPUT: outputFile,
+            HARNESS_ZIP_INPUT: inputDir,
+            HARNESS_ZIP_PREFIX: prefix
         });
     } else {
         run('tar', ['-a', '-cf', outputFile, '-C', inputDir, '.']);
@@ -232,9 +232,9 @@ async function zipBackend(outputFile) {
         powershellZip(`
 \$ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-\$out = \$env:AUGUST_ZIP_OUTPUT
-\$backend = \$env:AUGUST_ZIP_BACKEND
-\$nodeModules = \$env:AUGUST_ZIP_NODE_MODULES
+\$out = \$env:HARNESS_ZIP_OUTPUT
+\$backend = \$env:HARNESS_ZIP_BACKEND
+\$nodeModules = \$env:HARNESS_ZIP_NODE_MODULES
 \$zip = [System.IO.Compression.ZipFile]::Open(\$out, 'Create')
 function Add-Directory(\$source, \$prefix) {
     \$sourceRoot = (Resolve-Path -LiteralPath \$source).Path.TrimEnd('\\','/') + '\\'
@@ -253,9 +253,9 @@ try {
     \$zip.Dispose()
 }
 `, {
-            AUGUST_ZIP_OUTPUT: outputFile,
-            AUGUST_ZIP_BACKEND: backendDir,
-            AUGUST_ZIP_NODE_MODULES: nodeModules
+            HARNESS_ZIP_OUTPUT: outputFile,
+            HARNESS_ZIP_BACKEND: backendDir,
+            HARNESS_ZIP_NODE_MODULES: nodeModules
         });
     } else {
         run('tar', ['-a', '-cf', outputFile, '-C', root, 'backend', 'node_modules']);
@@ -295,7 +295,7 @@ async function syncPackageVersions(nextVersion) {
     const cargoPath = resolve(root, 'frontend/desktop/src-tauri/Cargo.toml');
     let cargo = await readFile(cargoPath, 'utf8');
     const cargoUpdated = cargo.replace(/^version\s*=\s*"[^"]+"/m, `version = "${nextVersion}"`);
-    if (cargoUpdated === cargo) throw new Error('could not update august-desktop crate version');
+    if (cargoUpdated === cargo) throw new Error('could not update august-harness crate version');
     await writeFile(cargoPath, cargoUpdated);
 
     const lockPath = resolve(root, 'package-lock.json');
@@ -308,10 +308,10 @@ async function syncPackageVersions(nextVersion) {
     const cargoLockPath = resolve(root, 'frontend/desktop/src-tauri/Cargo.lock');
     let cargoLock = await readFile(cargoLockPath, 'utf8');
     const cargoLockUpdated = cargoLock.replace(
-        /(^name = "august-desktop"[\s\S]*?^version = ")[^"]+(")/m,
+        /(^name = "august-harness"[\s\S]*?^version = ")[^"]+(")/m,
         `$1${nextVersion}$2`,
     );
-    if (cargoLockUpdated === cargoLock) throw new Error('could not update august-desktop Cargo.lock version');
+    if (cargoLockUpdated === cargoLock) throw new Error('could not update august-harness Cargo.lock version');
     await writeFile(cargoLockPath, cargoLockUpdated);
 
     await checkVersionSources();

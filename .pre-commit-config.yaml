@@ -35,7 +35,7 @@ repos:
           (?x)(
             \.bak$
             | __pycache__
-            | august_proxy\.egg-info
+            | august_harness\.egg-info
           )
 
       # Formatter intentionally not forced yet — avoids a repo-wide reformat

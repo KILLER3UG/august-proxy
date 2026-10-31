@@ -1,6 +1,6 @@
 # August Proxy — Deep-Dive & Cleanup Review
 
-**Subject:** `C:\Dev\august-proxy` (August Harness)
+**Subject:** `C:\Dev\august-harness` (August Harness)
 **Revision reviewed:** `34fcf7240158dd3d0ef47318dd793fc6cd4161b1` ("fix(router): an unknown URL rendered a blank app, and the tree warned about it"), branch `master`
 **Date:** 2026-10-21
 **Mode:** read-only. Nothing in the repository was modified, staged, committed, or executed. No model calls, no app runs, no network egress, no dependency installs. The only file this review adds is this report - `docs/research/2026-10-21-deep-dive-and-cleanup.md`.
@@ -219,7 +219,7 @@ But `docs/ARCHITECTURE_FLOW.md:198` states the predicate "has no call site" and 
 
 Solid, and better than most systems of this kind:
 
-- **Store:** SQLite `august_brain.sqlite` (`services/memory_conn.py:21`, resolved through `lib/paths.py:14` `dataDir()`, honouring `AUGUST_DATA_DIR`).
+- **Store:** SQLite `august_brain.sqlite` (`services/memory_conn.py:21`, resolved through `lib/paths.py:14` `dataDir()`, honouring `HARNESS_DATA_DIR`).
 - **Recall:** BM25 (`services/memory_store/memory.py`) plus a boot-time index for the top-scoring memories, injected as a `<memory>` block.
 - **Provenance:** `services/message_sources.py:40` `MACHINE_SOURCES` + migration `049_message_source.sql`, so a bot-authored row can be told from a human one.
 - **Compaction:** `services/workbench/context_compressor.py:17` `DEFAULT_HEAD_COUNT = 4`, `:19` `DEFAULT_SUMMARY_MARKER = '<<compressed_summary'`, `:66` `reliefStrategy`, `:796` `compressMessages`. The rotate arm is armed only when the brain key `contextReliefRotate` is set **and** a summary note already exists (`loop/recovery.py:134`) — so the first relief never rotates, which is correct: before a note exists, the verbatim head *is* the live task.
@@ -294,7 +294,7 @@ Bot-to-bot has its own ceiling, and the reasoning is unusually careful. `bot_mod
 | `check:truncate` | TS-compiler-API AST: every `truncate` sits on an element that can truncate (`check-truncate.mjs:16-35, 53-80`) | A `truncate` on a flex item whose parent lacks `min-w-0` |
 | `check:brain-config` | Asks the backend which keys it accepts and what ranges they take; 4 assertions on `TurnLimitsSection.tsx` plus a report-only pending list (`check-brain-config.mjs:30-43`) | Keys the panel never renders |
 | `lint:ratchet` | Fails on any eslint error, or on warnings above `scripts/lint-budget.json` (`lint-ratchet.mjs:46-88`) | Rule coverage gaps. When the count is *below* budget it only prints a note — the ratchet tightens manually |
-| `e2e:smoke` | Imports the real app, runs its lifespan, asks ~10 doors a question (6 read-only, 1 config write, the closed MCP door, the local door twice — without and with the per-install token); `AUGUST_DATA_DIR` → temp dir (`backend-py/scripts/e2e_smoke.py:1-45`) | **The Tauri shell, the frontend, the update path.** Backend-only, by its own admission |
+| `e2e:smoke` | Imports the real app, runs its lifespan, asks ~10 doors a question (6 read-only, 1 config write, the closed MCP door, the local door twice — without and with the per-install token); `HARNESS_DATA_DIR` → temp dir (`backend-py/scripts/e2e_smoke.py:1-45`) | **The Tauri shell, the frontend, the update path.** Backend-only, by its own admission |
 
 **CI coverage.** `type-check.yml`: ruff, mypy, `check:naming`, `check:api`, `check:api-index`, `check:brain-config`, `e2e:smoke`, `check:version`, `check:docs`, `check:doc-links`, `check:sse`, `check:minisign`; then `check:truncate`, `build:web`, `gen:api` + `git status --porcelain`, eslint, `check:design`, `lint:ratchet`; then the mobile typecheck/parity job. `release-desktop.yml`: a clean-provenance check, 7 gates, frontend typecheck, `download:node-binaries`, `prepare-desktop-backend --release`, backend lockfile/lint/typecheck, `build:web`, `cargo fmt --check` + `cargo check --locked`, then publish.
 
@@ -339,7 +339,7 @@ Every item carries a disposition (**KEEP / UPDATE / MERGE / ARCHIVE / DELETE**) 
 |---|---|---|---|---|
 | 1 | `backend-py/tag_context.txt` — **80,039 bytes, tracked in git** | `git grep -F tag_context` → **zero hits repo-wide**. It is a dump of source excerpts with no consumer | DELETE | **SAFE** — the clearest single win; it also directly violates the repo's own "no `_*.py` / `*.txt` scratch artifacts" rule |
 | 2 | 13 tracked `backend-py/scripts/_*.py` probes | `_audit_tool_registry.py`, `_check_fts_query_hygiene.py`, `_check_phase4_indexes.py`, `_diff_memory_store_conflicts.py`, `_fix_parametrize_names.py`, `_list_api_paths.py`, `_live_db_fingerprint.py`, `_merge_memory_blob_conflicts.py`, `_pass2_drop_camel_tables.py`, `_prove_fts_column_bug.py`, `_recover_auto_mem_conflicts.py`, `_split_memory_store_package.py`, `_spotcheck_schema.py`, `_verify_fts_sync.py` | DELETE | **SAFE** — every reference is in a *document* (`docs/ARCHITECTURE.md`, `docs/REFACTOR_PROGRESS.md`, `docs/GAPS_AND_BUGS.md`, `docs/archive/…`); **5 of them are referenced by nothing at all**. `_` is literally the repo's own scratch marker |
-| 3 | `scripts/e2e_smoke.py` (root, 8,950 B) | `scripts/run-python.mjs:75` resolves the target as `resolve(root, 'backend-py/scripts', script)` → the root copy **never runs**. The live file is `backend-py/scripts/e2e_smoke.py` (13,762 B). The root copy is a stale older implementation (urllib to `127.0.0.1:18999`, requires `AUGUST_DATA_DIR` at import) | DELETE | **SAFE** |
+| 3 | `scripts/e2e_smoke.py` (root, 8,950 B) | `scripts/run-python.mjs:75` resolves the target as `resolve(root, 'backend-py/scripts', script)` → the root copy **never runs**. The live file is `backend-py/scripts/e2e_smoke.py` (13,762 B). The root copy is a stale older implementation (urllib to `127.0.0.1:18999`, requires `HARNESS_DATA_DIR` at import) | DELETE | **SAFE** |
 | 4 | `frontend/desktop/src/components/chat/DocumentBadge.tsx` | `git grep DocumentBadge` → only its own definition + a doc mention in `lib/file-kind.ts:21` | DELETE | **SAFE** |
 | 5 | `frontend/desktop/src/components/chat/ProjectRulesBadge.tsx` **+ `lib/project-rules.ts`** | `ProjectRulesBadge` appears only in itself; `lib/project-rules.ts` is imported **only** by it → transitively orphaned | DELETE | **SAFE** |
 | 6 | `backend-py/app/lib/api_envelope.py` (1,332 B) | Only references are `docs/archive/REMAINING_WORK_PLAN.md:203` and `docs/archive/BETTER_HARNESS_PLAN.md:1293,1566` — an **archived** plan for a migration that was never completed | DELETE | **SAFE** — or ARCHIVE with the plan if the envelope idea is still wanted |

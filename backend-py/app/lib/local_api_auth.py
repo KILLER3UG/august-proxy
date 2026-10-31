@@ -30,7 +30,7 @@ on itself.
 
 So those routes require a per-install token. The desktop shell generates it
 (``backend.rs::local_api_token``), hands it to the backend through
-``AUGUST_LOCAL_API_TOKEN`` in the environment, and hands it to the webview
+``HARNESS_LOCAL_API_TOKEN`` in the environment, and hands it to the webview
 through the Tauri IPC. The backend POPS the token out of ``os.environ`` at
 import, so a child process — ``run_command``, the kernel, an MCP server, the
 terminal, a circuit binary — cannot inherit it. The IPC is bound to the
@@ -38,7 +38,7 @@ webview, and another process cannot read this process's environment on
 Windows without process-access rights.
 
 A child process is the reason the pop matters: it inherits the environment.
-``run_command``, the warm kernel and MCP servers also scrub ``AUGUST_*``
+``run_command``, the warm kernel and MCP servers also scrub ``HARNESS_*``
 before spawning, and the terminal uses ``async_subprocess.terminal_env``;
 those are defense in depth for the data-dir pointers, not the token's only
 guard.
@@ -83,7 +83,7 @@ Three cases, not one:
 
 * **no token presented** → 401, and the message names the header;
 * **wrong token** → 401, and the message names the header;
-* **no ``AUGUST_LOCAL_API_TOKEN`` configured at all** → the backend has
+* **no ``HARNESS_LOCAL_API_TOKEN`` configured at all** → the backend has
   nothing to check against, so in LAN mode it must **fail closed** (503)
   rather than serve the management API to the network. The startup log says
   so loudly.
@@ -111,7 +111,7 @@ log = logging.getLogger(__name__)
 LOCAL_AUTH_HEADER = 'X-August-Local-Token'
 
 #: The environment variable the shell passes the token to the backend in.
-LOCAL_AUTH_ENV = 'AUGUST_LOCAL_API_TOKEN'
+LOCAL_AUTH_ENV = 'HARNESS_LOCAL_API_TOKEN'
 
 #: The token, moved OUT of ``os.environ`` at import.
 #:
@@ -120,7 +120,7 @@ LOCAL_AUTH_ENV = 'AUGUST_LOCAL_API_TOKEN'
 #: circuit/firmware binaries). Scrubbing each spawn is a checklist that can
 #: be forgotten; popping the token here means NO child can inherit it at all.
 #: The terminal env scrub in ``async_subprocess.terminal_env`` remains as
-#: defense in depth for the other ``AUGUST_*`` pointers (the data dir, the
+#: defense in depth for the other ``HARNESS_*`` pointers (the data dir, the
 #: bind host), which are not credentials but should not reach a shell either.
 _TOKEN_VALUE = (os.environ.pop(LOCAL_AUTH_ENV, '') or '').strip()
 

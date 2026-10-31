@@ -220,7 +220,7 @@ fieldTable: tuple[tuple[str, str, object, str], ...] = (
     # capped dict now; no feature flag ever gated it (and keeping the key in
     # allowedKeys without a field mapping made a PUT containing it KeyError).
     # Per-turn skill relevance gating (Tier-1 compact index + Tier-3
-    # <relevant_skills>). Default on; AUGUST_SKILL_RELEVANCE=0 also forces off.
+    # <relevant_skills>). Default on; HARNESS_SKILL_RELEVANCE=0 also forces off.
     ('skillRelevanceMatch', 'skill_relevance_match', True, 'bool'),
     # Search-keyword expansion (audit P2#15): ask a cheap model for 5-10
     # search keywords when a skill is WRITTEN, store them in frontmatter, and

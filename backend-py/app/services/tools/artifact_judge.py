@@ -169,7 +169,7 @@ def _artifactRouteUrl(src: Path) -> str:
 
     from app.services.browser.session_manager import artifactRoutePath
 
-    port = environ.get('AUGUST_PROXY_PORT', '8085')
+    port = environ.get('HARNESS_PROXY_PORT', '8085')
     # The same accessor the guard matches against: this URL and the carve-out
     # that permits it must not be two spellings of one path.
     return f'http://127.0.0.1:{port}{artifactRoutePath()}?path={quote(str(src))}'

@@ -45,7 +45,7 @@ def get_web_config() -> dict[str, object]:
         else:
             out[key] = as_str(user.get(key), as_str(default))
     # Env overrides (highest priority for secrets / ops).
-    env_backend = (os.environ.get('AUGUST_WEB_BACKEND') or '').strip().lower()
+    env_backend = (os.environ.get('HARNESS_WEB_BACKEND') or '').strip().lower()
     if env_backend in BACKENDS:
         out['backend'] = env_backend
     env_brave = (os.environ.get('BRAVE_SEARCH_API_KEY') or '').strip()

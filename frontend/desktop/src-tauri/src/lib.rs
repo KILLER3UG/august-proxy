@@ -1,4 +1,4 @@
-// august_desktop_lib — Tauri 2 app entry
+// august_harness_lib — Tauri 2 app entry
 //
 // Folder map:
 //   src-tauri/ ← this crate: Rust shell + Node supervisor

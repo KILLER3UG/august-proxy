@@ -57,7 +57,7 @@ git -C <base>/pi checkout 58c0b02
 git -C <base>/simulide checkout a7d9fc9
 git -C <base>/deepseek-harness checkout 687f282e
 
-AUGUST_RESEARCH_CLONES=<base> npm run research:citations
+HARNESS_RESEARCH_CLONES=<base> npm run research:citations
 ```
 
 Two limits are printed by the run itself: it checks that a cited line NUMBER

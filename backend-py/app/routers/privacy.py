@@ -124,7 +124,7 @@ async def privacyExport():
     conn = memory_store._conn()  # noqa: SLF001
     out: dict[str, object] = {
         'exportedAt': time.time(),
-        'app': 'august-proxy',
+        'app': 'august-harness',
         'facts': _select_all(conn, 'facts'),
         'timeline': _select_all(conn, 'episodic_timeline'),
         'usageByModel': _usage_by_model(conn),

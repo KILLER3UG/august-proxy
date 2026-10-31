@@ -79,7 +79,7 @@ _EXCLUDES = (
     '*.glb',
     '*.hex',
     # Brain SQLite files (P3.2 warm-kernel testing exposed this): when the
-    # data dir lives inside the workspace (AUGUST_DATA_DIR override, or a
+    # data dir lives inside the workspace (HARNESS_DATA_DIR override, or a
     # user pointing the workspace at the data root), `git add -A` would
     # try to index the live WAL database — the -shm file is locked by the
     # open connection, so the add fails with "Permission denied" and the

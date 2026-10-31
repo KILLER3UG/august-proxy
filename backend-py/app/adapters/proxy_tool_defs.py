@@ -16,7 +16,7 @@ from app.models import ToolDefinition
 # model could be talked into running one by anything in its context. The typed
 # workbench tools (``run_command`` et al.) are unaffected; this only governs the
 # names the proxy adds on the client's behalf.
-PROXY_SHELL_ENV_VAR = 'AUGUST_PROXY_SHELL'
+PROXY_SHELL_ENV_VAR = 'HARNESS_PROXY_SHELL'
 _PROXY_SHELL_TRUE = ('1', 'true', 'yes', 'on')
 
 
@@ -60,7 +60,7 @@ def sanitize_tool_schema(schema: object) -> dict[str, object]:
 def get_managed_anthropic_web_tool_definitions() -> list[dict[str, object]]:
     """Return Anthropic-format tool definitions for managed web/bash tools.
 
-    ``mcp__workspace__bash`` is included only when ``AUGUST_PROXY_SHELL`` opts
+    ``mcp__workspace__bash`` is included only when ``HARNESS_PROXY_SHELL`` opts
     the proxy into shell injection — see :func:`proxy_shell_tools_enabled`.
     A client that declares the tool itself is unaffected (it is passed through
     as its own tool, not injected here).
@@ -201,7 +201,7 @@ def dedupe_and_canonicalize_anthropic_tools(tools: list[dict[str, object]]) -> l
                 seenNames.add(ctName)
                 sanitized.append(ct)
     # The managed shell tool is appended here only under the explicit
-    # AUGUST_PROXY_SHELL opt-in; `get_managed_anthropic_web_tool_definitions()`
+    # HARNESS_PROXY_SHELL opt-in; `get_managed_anthropic_web_tool_definitions()`
     # already filters it, and this guard keeps it that way if that list is
     # ever refactored. A client-declared `mcp__workspace__bash` stays in
     # `sanitized` above untouched.
@@ -358,7 +358,7 @@ def get_proxy_openai_tool_definitions() -> list[dict[str, object]]:
                         'name': 'spawn_subagents',
                         'description': (
                             'Dispatch named workstream workers (DAG via dependsOn). '
-                            'Enabled because AUGUST_PROXY_ORCHESTRATOR is set.'
+                            'Enabled because HARNESS_PROXY_ORCHESTRATOR is set.'
                         ),
                         'parameters': {
                             'type': 'object',

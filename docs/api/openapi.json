@@ -8346,7 +8346,7 @@
         "summary": "Getsessionexportconfig"
       },
       "put": {
-        "description": "Admin: set continuous JSON session export on/off (config-backed).\n\nBody: ``{ \"enabled\": true|false }``. Env ``AUGUST_SESSION_JSON_EXPORT``\nstill overrides when set. Optional ``exportNow: true`` writes one snapshot.",
+        "description": "Admin: set continuous JSON session export on/off (config-backed).\n\nBody: ``{ \"enabled\": true|false }``. Env ``HARNESS_SESSION_JSON_EXPORT``\nstill overrides when set. Optional ``exportNow: true`` writes one snapshot.",
         "operationId": "putSessionExportConfig_api_config_session_export_put",
         "requestBody": {
           "content": {
@@ -12325,7 +12325,7 @@
     },
     "/api/perf/recent": {
       "get": {
-        "description": "Recent workbench performance traces (when ``AUGUST_PERF_TIMING=1``).\n\nDebug/measurement only. Empty list if no traces were recorded.",
+        "description": "Recent workbench performance traces (when ``HARNESS_PERF_TIMING=1``).\n\nDebug/measurement only. Empty list if no traces were recorded.",
         "operationId": "getRecentPerfTraces_api_perf_recent_get",
         "parameters": [
           {

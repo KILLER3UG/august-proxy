@@ -17,7 +17,7 @@ synchronous open/write on the shared asyncio loop before anything else —
 including the next model round-trip — could proceed. The ring buffer and
 subscriber fan-out stay synchronous and immediate; only the disk write moves
 off-thread. ``flush()`` drains pending writes (tests, graceful shutdown).
-Set ``AUGUST_EVENT_LOG_SYNC=1`` to force the old inline behavior when
+Set ``HARNESS_EVENT_LOG_SYNC=1`` to force the old inline behavior when
 debugging. A side benefit of the single writer: ``_trim`` no longer races
 concurrent appends from other threads.
 """
@@ -71,7 +71,7 @@ _SAFE_NAME_RE = re.compile(r'[^A-Za-z0-9_.-]')
 
 
 def _syncPersistEnabled() -> bool:
-    v = os.environ.get('AUGUST_EVENT_LOG_SYNC', '').strip().lower()
+    v = os.environ.get('HARNESS_EVENT_LOG_SYNC', '').strip().lower()
     return v in ('1', 'true', 'yes', 'on')
 
 

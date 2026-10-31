@@ -204,7 +204,7 @@ function AccountAction({ item }: { item: IntegrationItem }) {
   if (!provider) return null;
 
   // Sign-in is always primary when a Client ID is already configured
-  // (user env, MCP env, or AUGUST_DEFAULT_GOOGLE_OAUTH_CLIENT_ID).
+  // (user env, MCP env, or HARNESS_DEFAULT_GOOGLE_OAUTH_CLIENT_ID).
   // Only show the paste form when we know there is no client id.
   const hasClientId =
     provider === 'google' && Boolean(conn?.hasClientId || conn?.pkceReady);

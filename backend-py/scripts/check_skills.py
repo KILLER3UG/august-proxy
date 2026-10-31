@@ -46,7 +46,7 @@ def main() -> int:
     # the bundled root, but importing the service reads the configured data dir
     # for the agent root, so point it at a throwaway directory first.
     data_dir = Path(tempfile.mkdtemp(prefix='august-check-skills-'))
-    os.environ['AUGUST_DATA_DIR'] = str(data_dir)
+    os.environ['HARNESS_DATA_DIR'] = str(data_dir)
     atexit.register(lambda: shutil.rmtree(data_dir, ignore_errors=True))
 
     from app.services import skill_service

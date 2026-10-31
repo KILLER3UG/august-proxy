@@ -304,7 +304,7 @@ class QuotaObservationStore:
 
 
 def _observation_ttl() -> float:
-    raw = os.environ.get('AUGUST_QUOTA_OBSERVATION_TTL_S', '')
+    raw = os.environ.get('HARNESS_QUOTA_OBSERVATION_TTL_S', '')
     try:
         value = float(raw)
     except ValueError:

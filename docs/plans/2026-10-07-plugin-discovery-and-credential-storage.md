@@ -1,4 +1,4 @@
-# Plugin auto-discovery + credential storage for august-proxy
+# Plugin auto-discovery + credential storage for august-harness
 
 **Date:** 2026-10-07
 **Status:** Proposed
@@ -112,7 +112,7 @@ Consequences today:
 - `_write_workspace_mcp_credentials` (`service_connections.py:1073`) writes a second
   plaintext copy into `~/.google_workspace_mcp/credentials/`.
 
-So "store it safely" is **not currently possible** in august-proxy without adding a
+So "store it safely" is **not currently possible** in august-harness without adding a
 real secret store. That is a prerequisite, not a detail.
 
 ---

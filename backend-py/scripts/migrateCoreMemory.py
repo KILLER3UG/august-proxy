@@ -20,7 +20,7 @@ from pathlib import Path
 
 def _db_path() -> Path:
     """Resolve brain DB path (mirrors memory_store._db_path)."""
-    envPath = __import__('os').environ.get('AUGUST_BRAIN_SQLITE_FILE')
+    envPath = __import__('os').environ.get('HARNESS_BRAIN_SQLITE_FILE')
     if envPath:
         return Path(envPath)
     from app.lib.paths import dataPath

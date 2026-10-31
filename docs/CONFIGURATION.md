@@ -249,7 +249,7 @@ only what you want: any single key is enough, and the rungs still escalate in
 order when several are set.
 
 The two guardrails that keep this file and the UI honest —
-`AUGUST_STRICT_BEST_EFFORT` and `npm run check:design` — are documented in
+`HARNESS_STRICT_BEST_EFFORT` and `npm run check:design` — are documented in
 [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md#design-conventions-enforced-by-npm-run-checkdesign).
 
 ### Memory review and consolidation
@@ -327,13 +327,13 @@ Session `agent_mode` is `chat` | `agent` | `code` | `orchestrator` (persisted
 via workbench). Orchestrator mode uses Plan → Dispatch, named workstreams,
 and harness jobs (`/api/subagents/workstreams*`, `/api/harness/*`, MCP
 `harness_*` tools). The per-session verifier hard-gate
-(`verifierEnforced` / composer shield) and the `AUGUST_VERIFIER_REVIEWER`
+(`verifierEnforced` / composer shield) and the `HARNESS_VERIFIER_REVIEWER`
 critic were **removed** (2026-08-24) — answers are never withheld.
 
 ### Skill relevance knobs
 
 - `skillRelevanceMatch` (**default `true`**) gates the per-turn
-  `Relevant skills:` BM25 pass; `AUGUST_SKILL_RELEVANCE=0` forces it off.
+  `Relevant skills:` BM25 pass; `HARNESS_SKILL_RELEVANCE=0` forces it off.
 - `skillKeywordExpansion` (**default `false`**) asks a cheap review model for
   5-10 search keywords when a skill is **written** (a `POST /api/skills` create,
   a `PATCH` that changes the body, or an approved harness skill proposal), stores
@@ -367,7 +367,7 @@ Optional continuous backup of sessions to `workbench-sessions.json`.
 }
 ```
 
-Env override: `AUGUST_SESSION_JSON_EXPORT=1`. Status: `GET/PUT /api/config/session-export`.
+Env override: `HARNESS_SESSION_JSON_EXPORT=1`. Status: `GET/PUT /api/config/session-export`.
 
 ### Live speech (`/api/config/live`)
 
@@ -598,7 +598,7 @@ wire protocol automatically).
 **Per-model price (`priceInPerM` / `priceOutPerM`):** USD per **1,000,000**
 tokens, set in **Settings → Model settings** → pencil-edit a model row →
 *Price in / out ($/1M)*. Resolution order is env override
-(`AUGUST_PRICE_IN_PER_M` / `AUGUST_PRICE_OUT_PER_M`) → the model's own price →
+(`HARNESS_PRICE_IN_PER_M` / `HARNESS_PRICE_OUT_PER_M`) → the model's own price →
 its **Free** flag → August's built-in family table → a last-resort default.
 **0 is a price, not an absence**: a local or free-tier host should be set to
 `0` (or ticked **Free**) so its spend reads `$0` instead of being estimated at
@@ -652,35 +652,35 @@ process env.
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
-| `AUGUST_PROXY_PORT` | `8085` | Server listen port |
-| `AUGUST_DATA_DIR` | `<repo>/data` | Config / DB / logs root |
-| `AUGUST_BRAIN_SQLITE_FILE` | under data dir | Override brain DB path |
-| `AUGUST_SUMMARIZING_COMPACTOR` | enabled | Set `0` to disable context compression |
-| `AUGUST_SESSION_JSON_EXPORT` | unset | `1` enables JSON session backup |
-| `AUGUST_PERF_TIMING` | unset | Perf ring buffer + logging |
-| `AUGUST_STRICT_BEST_EFFORT` | unset | `1` makes `best_effort(site)` blocks **re-raise** instead of logging. Production swallows a named, logged failure; under this flag the same failure fails the test, so what a swallow would have hidden surfaces in CI. Set in test runs |
-| `AUGUST_P1_TOOL_CACHE` | on | `0` disables tool def cache |
-| `AUGUST_P1_PROMPT_CACHE` | removed | never read in code (Part 25 Phase 7.2) — the segment/skills cache has no env kill-switch |
-| `AUGUST_P1_PARALLEL_TOOLS` | on | `0` forces serial tools |
-| `AUGUST_SQLITE_CACHE_KB` | unset | Opt-in SQLite page cache |
-| `AUGUST_SQLITE_MMAP_MB` | unset | Opt-in mmap |
-| `AUGUST_SQLITE_SYNC` | unset | Opt-in `NORMAL`/`FULL`/`OFF` |
-| `AUGUST_HOST_AGENT_URL` | unset | External host-agent URL |
-| `AUGUST_AUTO_ROUTE` | removed | was: force evidence-driven auto-routing on — never wired into the turn loop (removed Part 25 Phase 4) |
-| `AUGUST_VERIFIER_REVIEWER` | removed | was: one-shot reviewer critique for the verifier gate (feature removed 2026-08-24) |
-| `AUGUST_ANTHROPIC_PERSISTENT_CACHE` | unset | `1` swaps the Anthropic `cache_control: {type:"ephemeral"}` markers for the 1h-TTL variant so long sessions hold hits across longer gaps between turns. Off by default — 1h cache writes are billed at a premium upstream |
-| `AUGUST_NGSPICE_EXE` | auto | Explicit ngspice executable for the circuit workbench. A value you set yourself that points at a real file always wins. Otherwise: bundled copy → PATH → `C:\ngspice\bin` → PATH-style install dirs. The desktop installer bundles ngspice 45.2 win64 at `src-tauri/resources/ngspice/`, staged by `prepare-desktop-backend.mjs` from the project's own archive and verified against a pinned SHA-256 before it is accepted; that tree is gitignored, so a checkout that never ran the staging step has no engine and falls through to PATH. `circuit_env` reports what was actually found |
-| `AUGUST_QUARTUS_SH` | auto | Explicit `quartus_sh` path for `fpga_compile` (defaults to PATH + `C:\intelFPGA*\<ver>\quartus\bin64` discovery) |
-| `AUGUST_KICAD_CLI` | auto | Explicit `kicad-cli` path for `kicad_checks` / `kicad_render` (defaults to PATH + `C:\Program Files\KiCad\<ver>\bin`) |
-| `AUGUST_ARDUINO_CLI` | auto | Explicit arduino-cli path for `firmware_compile` |
-| `AUGUST_AVR_GCC` | auto | Explicit avr-gcc path for plain-C `firmware_compile` |
-| `AUGUST_NODE_EXE` | auto | Explicit Node runtime for the avr8js/wavedrom sidecar (defaults to the bundled Tauri node binary, then PATH) |
-| `AUGUST_CONTAINER_SANDBOX` | unset | `1` routes `run_command` through a Docker container (workspace bind-mounted at `/workspace`, `--network none` unless the session allows network, memory/CPU caps) instead of host-process policy. Opt-in: needs Docker Desktop running; falls back to the host backend when the daemon is unreachable or the session has no workspace to mount, and Settings says so explicitly |
-| `AUGUST_SANDBOX_IMAGE` | `python:3.12-slim` | Container image for the container backend — must carry a POSIX shell |
-| `AUGUST_SANDBOX_MEMORY` | `2g` | Container memory cap (`--memory`) |
-| `AUGUST_SANDBOX_CPUS` | `2` | Container CPU cap (`--cpus`) |
-| `AUGUST_SANDBOX_APPCONTAINER` | unset | Windows-only. `1` opts in to the AppContainer tier. The tier activates **only** when the host actually accepts a `PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES` attribute list — see the note below. Most hosts (including Windows 11 26200) do not, so the effective tier stays `soft` |
-| `AUGUST_WARM_KERNEL_OFF` | unset | `1` disables the persistent code-mode interpreter (also disabled automatically whenever a strong backend is active) |
+| `HARNESS_PROXY_PORT` | `8085` | Server listen port |
+| `HARNESS_DATA_DIR` | `<repo>/data` | Config / DB / logs root |
+| `HARNESS_BRAIN_SQLITE_FILE` | under data dir | Override brain DB path |
+| `HARNESS_SUMMARIZING_COMPACTOR` | enabled | Set `0` to disable context compression |
+| `HARNESS_SESSION_JSON_EXPORT` | unset | `1` enables JSON session backup |
+| `HARNESS_PERF_TIMING` | unset | Perf ring buffer + logging |
+| `HARNESS_STRICT_BEST_EFFORT` | unset | `1` makes `best_effort(site)` blocks **re-raise** instead of logging. Production swallows a named, logged failure; under this flag the same failure fails the test, so what a swallow would have hidden surfaces in CI. Set in test runs |
+| `HARNESS_P1_TOOL_CACHE` | on | `0` disables tool def cache |
+| `HARNESS_P1_PROMPT_CACHE` | removed | never read in code (Part 25 Phase 7.2) — the segment/skills cache has no env kill-switch |
+| `HARNESS_P1_PARALLEL_TOOLS` | on | `0` forces serial tools |
+| `HARNESS_SQLITE_CACHE_KB` | unset | Opt-in SQLite page cache |
+| `HARNESS_SQLITE_MMAP_MB` | unset | Opt-in mmap |
+| `HARNESS_SQLITE_SYNC` | unset | Opt-in `NORMAL`/`FULL`/`OFF` |
+| `HARNESS_HOST_AGENT_URL` | unset | External host-agent URL |
+| `HARNESS_AUTO_ROUTE` | removed | was: force evidence-driven auto-routing on — never wired into the turn loop (removed Part 25 Phase 4) |
+| `HARNESS_VERIFIER_REVIEWER` | removed | was: one-shot reviewer critique for the verifier gate (feature removed 2026-08-24) |
+| `HARNESS_ANTHROPIC_PERSISTENT_CACHE` | unset | `1` swaps the Anthropic `cache_control: {type:"ephemeral"}` markers for the 1h-TTL variant so long sessions hold hits across longer gaps between turns. Off by default — 1h cache writes are billed at a premium upstream |
+| `HARNESS_NGSPICE_EXE` | auto | Explicit ngspice executable for the circuit workbench. A value you set yourself that points at a real file always wins. Otherwise: bundled copy → PATH → `C:\ngspice\bin` → PATH-style install dirs. The desktop installer bundles ngspice 45.2 win64 at `src-tauri/resources/ngspice/`, staged by `prepare-desktop-backend.mjs` from the project's own archive and verified against a pinned SHA-256 before it is accepted; that tree is gitignored, so a checkout that never ran the staging step has no engine and falls through to PATH. `circuit_env` reports what was actually found |
+| `HARNESS_QUARTUS_SH` | auto | Explicit `quartus_sh` path for `fpga_compile` (defaults to PATH + `C:\intelFPGA*\<ver>\quartus\bin64` discovery) |
+| `HARNESS_KICAD_CLI` | auto | Explicit `kicad-cli` path for `kicad_checks` / `kicad_render` (defaults to PATH + `C:\Program Files\KiCad\<ver>\bin`) |
+| `HARNESS_ARDUINO_CLI` | auto | Explicit arduino-cli path for `firmware_compile` |
+| `HARNESS_AVR_GCC` | auto | Explicit avr-gcc path for plain-C `firmware_compile` |
+| `HARNESS_NODE_EXE` | auto | Explicit Node runtime for the avr8js/wavedrom sidecar (defaults to the bundled Tauri node binary, then PATH) |
+| `HARNESS_CONTAINER_SANDBOX` | unset | `1` routes `run_command` through a Docker container (workspace bind-mounted at `/workspace`, `--network none` unless the session allows network, memory/CPU caps) instead of host-process policy. Opt-in: needs Docker Desktop running; falls back to the host backend when the daemon is unreachable or the session has no workspace to mount, and Settings says so explicitly |
+| `HARNESS_SANDBOX_IMAGE` | `python:3.12-slim` | Container image for the container backend — must carry a POSIX shell |
+| `HARNESS_SANDBOX_MEMORY` | `2g` | Container memory cap (`--memory`) |
+| `HARNESS_SANDBOX_CPUS` | `2` | Container CPU cap (`--cpus`) |
+| `HARNESS_SANDBOX_APPCONTAINER` | unset | Windows-only. `1` opts in to the AppContainer tier. The tier activates **only** when the host actually accepts a `PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES` attribute list — see the note below. Most hosts (including Windows 11 26200) do not, so the effective tier stays `soft` |
+| `HARNESS_WARM_KERNEL_OFF` | unset | `1` disables the persistent code-mode interpreter (also disabled automatically whenever a strong backend is active) |
 
 ### Sandbox enforcement tiers and the egress filter
 
@@ -739,12 +739,12 @@ talk to dev servers it spawned.
 
 ### Desktop app: sandbox opt-ins
 
-The Tauri shell forwards `AUGUST_CONTAINER_SANDBOX`, `AUGUST_SANDBOX_*`,
-`AUGUST_SANDBOX_APPCONTAINER` and `AUGUST_WARM_KERNEL_OFF` from the desktop
+The Tauri shell forwards `HARNESS_CONTAINER_SANDBOX`, `HARNESS_SANDBOX_*`,
+`HARNESS_SANDBOX_APPCONTAINER` and `HARNESS_WARM_KERNEL_OFF` from the desktop
 process into the bundled backend (`src-tauri/src/backend.rs`,
 `applySandboxEnv`), on both the Python and Node spawn paths. Without this the
 variables were read by the backend but never reached it, so a desktop user
-setting `AUGUST_CONTAINER_SANDBOX=1` silently got soft enforcement.
+setting `HARNESS_CONTAINER_SANDBOX=1` silently got soft enforcement.
 Forwarded values are logged at launch and the resulting state is shown in
 Settings → Tool reach.
 
@@ -780,14 +780,14 @@ served back:
   rate (`wins`/`total`/`winRate`/`avgTokens`), surfaced in the composer's arena
   launcher.
 
-There is **no automatic turn rerouting**: the earlier `AUGUST_AUTO_ROUTE` /
+There is **no automatic turn rerouting**: the earlier `HARNESS_AUTO_ROUTE` /
 `autoRoute` "switch the model for you" design was never wired into the loop and
 has been removed (Part 25 Phase 4). The `autoRouteMinSamples` brain-config key
 remains (read by the harness self-improvement pass); the `autoRoute`,
 `autoRouteMinWinRate`, and `autoRouteWinGap` keys are inert and slated for
 removal with the dead-code purge.
 
-### Anthropic prompt-cache 1h TTL (`AUGUST_ANTHROPIC_PERSISTENT_CACHE`)
+### Anthropic prompt-cache 1h TTL (`HARNESS_ANTHROPIC_PERSISTENT_CACHE`)
 
 By default the Anthropic adapter marks the last system block, the last tool
 definition, and the last content block of the final user message with
@@ -798,7 +798,7 @@ definition, and the last content block of the final user message with
 Ephemeral breakpoints live ~5 minutes and are refreshed on each hit, which
 is plenty for normal sessions but loses hits across longer gaps (a user
 steps away for 10 minutes, comes back, the prefix has expired and the next
-turn pays full input-token cost). Setting `AUGUST_ANTHROPIC_PERSISTENT_CACHE=1`
+turn pays full input-token cost). Setting `HARNESS_ANTHROPIC_PERSISTENT_CACHE=1`
 swaps the markers for `cache_control: { type: "ephemeral", ttl: "1h" }` so
 the prefix stays warm for an hour. The composer's ContextRing surfaces a
 "Below goal — enable the 1h persistent cache" hint when the running
@@ -816,10 +816,10 @@ can run with the default while a long-running prod instance flips it on.
 
 | Variable | Platform |
 |----------|----------|
-| `AUGUST_TELEGRAM_BOT_TOKEN` | Telegram |
-| `AUGUST_DISCORD_BOT_TOKEN` | Discord |
-| `AUGUST_SLACK_BOT_TOKEN` | Slack bot token |
-| `AUGUST_SLACK_APP_TOKEN` | Slack app-level (Socket Mode) |
+| `HARNESS_TELEGRAM_BOT_TOKEN` | Telegram |
+| `HARNESS_DISCORD_BOT_TOKEN` | Discord |
+| `HARNESS_SLACK_BOT_TOKEN` | Slack bot token |
+| `HARNESS_SLACK_APP_TOKEN` | Slack app-level (Socket Mode) |
 
 ### Google OAuth (service connections)
 
@@ -829,7 +829,7 @@ can run with the default while a long-running prod instance flips it on.
 | `GOOGLE_OAUTH_CLIENT_SECRET` | Optional for confidential clients |
 | `GOOGLE_OAUTH_REDIRECT_URI` | Must match Google console (default loopback callback) |
 | `OAUTHLIB_INSECURE_TRANSPORT` | `1` for local http:// redirects |
-| `AUGUST_DEFAULT_GOOGLE_OAUTH_CLIENT_ID` | Optional ship-time public Desktop client id |
+| `HARNESS_DEFAULT_GOOGLE_OAUTH_CLIENT_ID` | Optional ship-time public Desktop client id |
 
 ---
 
@@ -852,7 +852,7 @@ For model resolution, aliases take precedence over raw model ids
 ## Runtime paths
 
 `app.lib.paths.dataPath(*parts)` resolves under `settings.dataDir`
-(`AUGUST_DATA_DIR`):
+(`HARNESS_DATA_DIR`):
 
 | Path | Contents |
 |------|----------|
@@ -914,7 +914,7 @@ New workspaces inherit the Docker image toolchain (or host `scripts/ensure-toolc
 
 **Guaranteed CLIs:** `uv` (Python), `pnpm` + `npm`/`node` (JS), `ripgrep` (`rg`), `fd` (`fd-find`), `jq`. Verified by `scripts/ensure-toolchain.sh` and baked into `Dockerfile` (`apt: ripgrep fd-find jq` + `npm i -g pnpm`).
 
-**Run manually:** `bash scripts/ensure-toolchain.sh` (host) or `docker exec august-proxy bash /app/scripts/ensure-toolchain.sh`.
+**Run manually:** `bash scripts/ensure-toolchain.sh` (host) or `docker exec august-harness bash /app/scripts/ensure-toolchain.sh`.
 
 ---
 

@@ -169,15 +169,15 @@ _PREAMBLE = '''\
 # August code-mode tool API (workspace-bound)
 import os as _os
 # Scrub secrets before the model's code runs: the child python can read
-# os.environ, so API keys / AUGUST_* config must not be visible to it.
+# os.environ, so API keys / HARNESS_* config must not be visible to it.
 # Case-insensitive + credential-shaped names (mirrors async_subprocess).
 import re as _os_re
 for _k in list(_os.environ):
-    # Same shape as app.lib.async_subprocess._CREDENTIAL_ENV_RE: AUGUST_*
-    # prefix OR credential-suffixed (case-insensitive). The old bare `AUGUST_`
-    # branch only matched the exact literal, so AUGUST_BRAIN_SQLITE_FILE /
-    # AUGUST_DATA_DIR leaked — fixed with the prefix wildcard (P3.2 audit).
-    if _os_re.match(r'^(?:AUGUST_\w*.*|.*(?:API[_-]?KEY|_KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH(?:[_-]|$)).*)$', _k, _os_re.IGNORECASE):
+    # Same shape as app.lib.async_subprocess._CREDENTIAL_ENV_RE: HARNESS_*
+    # prefix OR credential-suffixed (case-insensitive). The old bare `HARNESS_`
+    # branch only matched the exact literal, so HARNESS_BRAIN_SQLITE_FILE /
+    # HARNESS_DATA_DIR leaked — fixed with the prefix wildcard (P3.2 audit).
+    if _os_re.match(r'^(?:HARNESS_\w*.*|.*(?:API[_-]?KEY|_KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH(?:[_-]|$)).*)$', _k, _os_re.IGNORECASE):
         _os.environ.pop(_k, None)
 import subprocess
 from pathlib import Path
@@ -444,7 +444,7 @@ _POLICY_NAMES = tuple(__POLICY_NAMES__)
 _AGENT_STATE_DIRS = tuple(__AGENT_STATE_DIRS__)
 _AGENT_STATE_FILES = tuple(__AGENT_STATE_FILES__)
 _BRAIN_PREFIXES = tuple(__BRAIN_PREFIXES__)
-_AUGUST_SECRETS = tuple(__AUGUST_SECRETS__)
+_HARNESS_SECRETS = tuple(__HARNESS_SECRETS__)
 _ENUM_CMDS = frozenset(__ENUM_CMDS__)
 _REC_SEARCH = frozenset(__REC_SEARCH__)
 _REC_LONG = frozenset(__REC_LONG__)
@@ -676,7 +676,7 @@ def _hardline_store_reason(token):
         _member = _hardline_ssh_member_reason(_canon)
         if _member:
             return _member
-        if _canon in _AUGUST_SECRETS:
+        if _canon in _HARNESS_SECRETS:
             return "August's own credential store"
     return None
 
@@ -876,7 +876,7 @@ def build_runner_source(
         .replace('__AGENT_STATE_DIRS__', repr(sorted(_hardline._AGENT_STATE_DIRS)))
         .replace('__AGENT_STATE_FILES__', repr(sorted(_hardline._AGENT_STATE_FILES)))
         .replace('__BRAIN_PREFIXES__', repr(sorted(_hardline._brain_db_prefixes())))
-        .replace('__AUGUST_SECRETS__', repr(sorted(_hardline._august_secret_files())))
+        .replace('__HARNESS_SECRETS__', repr(sorted(_hardline._august_secret_files())))
         .replace('__ENUM_CMDS__', repr(sorted(_hardline._ENUMERATING_COMMANDS)))
         .replace('__REC_SEARCH__', repr(sorted(_hardline._RECURSIVE_SEARCH_COMMANDS)))
         .replace('__REC_LONG__', repr(sorted(_hardline._RECURSIVE_LONG)))

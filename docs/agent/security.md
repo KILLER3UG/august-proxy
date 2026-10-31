@@ -201,7 +201,7 @@ learning pipeline is held to.
 command), `<workspace>/.aug/kernel/**` (`run_command` is exempted to EXECUTE that
 venv's interpreter, so a module dropped into its `site-packages` runs on the next
 cell), `<dataDir>/memory/**` (the human-readable memory view) and the brain
-database itself (from `AUGUST_BRAIN_SQLITE_FILE` **or** the data-dir default —
+database itself (from `HARNESS_BRAIN_SQLITE_FILE` **or** the data-dir default —
 naming only the default protects a file that may not exist). The door is fed
 `_store_match_form`, not `_canonical`: its comparisons are lower-cased, so the
 raw spelling left every data-directory rule inert on Windows. Reads stay

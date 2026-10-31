@@ -25,13 +25,13 @@ from app.version import backend_version
 
 
 def _cors_extra_origins() -> list[str]:
-    """Operator-added origins (`AUGUST_CORS_ORIGINS`) — always full trust.
+    """Operator-added origins (`HARNESS_CORS_ORIGINS`) — always full trust.
 
     This is the escape hatch: listing an origin here opts it into the whole
     management API even when it is otherwise scoped (see the Surfer embed in
     `app.lib.local_api_guard.SCOPED_ORIGIN_RULES`).
     """
-    extra = os.environ.get('AUGUST_CORS_ORIGINS', '')
+    extra = os.environ.get('HARNESS_CORS_ORIGINS', '')
     return [o.strip() for o in extra.split(',') if o.strip()]
 
 
@@ -80,10 +80,10 @@ logger = logging.getLogger(__name__)
 
 
 def _docs_enabled() -> bool:
-    """FastAPI /docs exposure: off unless AUGUST_ENABLE_DOCS=1."""
+    """FastAPI /docs exposure: off unless HARNESS_ENABLE_DOCS=1."""
     import os
 
-    return os.environ.get('AUGUST_ENABLE_DOCS') == '1'
+    return os.environ.get('HARNESS_ENABLE_DOCS') == '1'
 
 # Enforce the supported Python floor. The project targets 3.12+ (see
 # requires-python in pyproject.toml and the CI pin); PEP 695 type aliases and
@@ -335,10 +335,10 @@ async def lifespan(app: FastAPI):
     # recorded pre-edit bytes. INTERIM placement — Stage 3 moved the DECISION
     # out-of-tree (the shell runs the same sweep from the embedded recovery
     # script before spawning); this in-tree sweep remains the second layer.
-    # Suppressed on an apply boot (AUGUST_APPLY_BOOT=1): the shell gated the
+    # Suppressed on an apply boot (HARNESS_APPLY_BOOT=1): the shell gated the
     # edits and is committing them after health — undoing them here would
     # destroy exactly what the user just approved.
-    if os.environ.get('AUGUST_APPLY_BOOT', '').strip() != '1':
+    if os.environ.get('HARNESS_APPLY_BOOT', '').strip() != '1':
         try:
             from app.services.clone_journal import restore_pending
 
@@ -473,7 +473,7 @@ app = FastAPI(
     version=backend_version(),
     lifespan=lifespan,
     # /docs + /openapi.json enumerate the full API surface to any local
-    # caller — off by default; re-enable with AUGUST_ENABLE_DOCS=1 when
+    # caller — off by default; re-enable with HARNESS_ENABLE_DOCS=1 when
     # developing (audit finding).
     docs_url='/docs' if _docs_enabled() else None,
     openapi_url='/openapi.json' if _docs_enabled() else None,

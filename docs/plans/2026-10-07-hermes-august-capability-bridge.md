@@ -1,4 +1,4 @@
-# Sharing capabilities between Hermes and august-proxy
+# Sharing capabilities between Hermes and august-harness
 
 **Date:** 2026-10-07
 **Answers three questions:**

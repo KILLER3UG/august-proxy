@@ -11,7 +11,7 @@ const path = require('node:path');
 const appRoot = path.resolve(__dirname, '..');
 const repoRoot = path.resolve(appRoot, '..', '..');
 const desktopSrc = path.join(repoRoot, 'frontend', 'desktop', 'src');
-const baseUrl = (process.env.AUGUST_AUDIT_BASE_URL || 'http://127.0.0.1:8085').replace(/\/+$/, '');
+const baseUrl = (process.env.HARNESS_AUDIT_BASE_URL || 'http://127.0.0.1:8085').replace(/\/+$/, '');
 
 const failures = [];
 const passes = [];

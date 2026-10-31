@@ -2087,8 +2087,8 @@
     <div class="sidebar-scroll">
       <button class="workspace-card">
         <span class="ws-copy">
-          <span class="ws-name">august-proxy</span>
-          <span class="ws-path">~/Dev/august-proxy</span>
+          <span class="ws-name">august-harness</span>
+          <span class="ws-path">~/Dev/august-harness</span>
         </span>
         <svg class="icon-sm"><use href="#i-chev"/></svg>
       </button>
@@ -2145,7 +2145,7 @@
       </div>
       <div class="project-head">
         <svg class="icon-sm"><use href="#i-folder"/></svg>
-        <span>august-proxy</span>
+        <span>august-harness</span>
         <svg class="icon-sm chev"><use href="#i-chev"/></svg>
       </div>
       <button class="thread project-thread">
@@ -2209,7 +2209,7 @@
     <header class="titlebar">
       <div class="titlebar-left">
         <div class="crumbs">
-          <span class="crumb-muted">august-proxy</span>
+          <span class="crumb-muted">august-harness</span>
           <span class="crumb-slash">/</span>
           <strong id="pageTitle">Chart AI</strong>
         </div>
@@ -2509,7 +2509,7 @@
           <div class="composer-inner">
             <div class="composer">
               <div class="composer-top">
-                <span class="context-chip"><svg class="icon-sm"><use href="#i-folder"/></svg> august-proxy</span>
+                <span class="context-chip"><svg class="icon-sm"><use href="#i-folder"/></svg> august-harness</span>
                 <span class="context-chip"><svg class="icon-sm"><use href="#i-chart"/></svg> data mode</span>
               </div>
               <textarea id="composerInput" rows="1" placeholder="Ask August to build, analyze, or visualize…"></textarea>
@@ -2691,7 +2691,7 @@
             <div class="launch-composer">
               <div class="composer">
                 <div class="composer-top">
-                  <span class="context-chip"><svg class="icon-sm"><use href="#i-folder"/></svg> august-proxy</span>
+                  <span class="context-chip"><svg class="icon-sm"><use href="#i-folder"/></svg> august-harness</span>
                 </div>
                 <textarea id="launchInput" rows="2" placeholder="Describe what you want to make…"></textarea>
                 <div class="composer-tools">
@@ -2925,7 +2925,7 @@
                 <div class="settings-card">
                   <div class="settings-profile-row">
                     <div class="settings-avatar">RB</div>
-                    <div class="settings-profile-copy"><strong>Robert</strong><span>Local account · august-proxy</span></div>
+                    <div class="settings-profile-copy"><strong>Robert</strong><span>Local account · august-harness</span></div>
                     <button class="settings-action">Edit profile</button>
                   </div>
                 </div>
@@ -3142,7 +3142,7 @@
               <div class="settings-group">
                 <div class="settings-group-title">Workspace</div>
                 <div class="settings-card">
-                  <div class="setting-row"><div class="setting-copy"><strong>august-proxy</strong><span>~/Dev/august-proxy · local</span></div><button class="settings-action">Switch</button></div>
+                  <div class="setting-row"><div class="setting-copy"><strong>august-harness</strong><span>~/Dev/august-harness · local</span></div><button class="settings-action">Switch</button></div>
                   <div class="setting-row"><div class="setting-copy"><strong>Plan</strong><span>Pro workspace · renews May 1</span></div><button class="settings-action">Manage plan</button></div>
                 </div>
               </div>
@@ -3492,7 +3492,7 @@
       <div class="stats">
         <div class="stat"><span>Active</span><strong>1,284</strong><small>facts + notes + rules</small></div>
         <div class="stat"><span>Global</span><strong>312</strong><small>across every project</small></div>
-        <div class="stat"><span>Project</span><strong>972</strong><small>august-proxy + brand-site</small></div>
+        <div class="stat"><span>Project</span><strong>972</strong><small>august-harness + brand-site</small></div>
         <div class="stat"><span>Retired</span><strong>86</strong><small>kept for audit</small></div>
       </div>
 
@@ -3505,7 +3505,7 @@
         <select class="select" id="memoryScope">
           <option value="all">All scopes</option>
           <option value="Global">Global</option>
-          <option value="august-proxy">august-proxy</option>
+          <option value="august-harness">august-harness</option>
           <option value="brand-site">brand-site</option>
         </select>
         <select class="select" id="memorySort">
@@ -3614,16 +3614,16 @@
   (function () {
     const memory = [
       { id: 1, text: 'Prefers concise answers with the conclusion first.', key: 'pref.answer_style', type: 'Fact', scope: 'Global', source: 'Manual', used: 142, last: '2m', confidence: '0.96', created: 'Apr 12' },
-      { id: 2, text: 'Project uses Tauri 2 + React 19; do not introduce a second router.', key: 'project.stack', type: 'Fact', scope: 'august-proxy', source: 'Agent', used: 87, last: '18m', confidence: '0.94', created: 'Apr 08' },
-      { id: 3, text: 'Run npm run check -w frontend/desktop before proposing a UI change.', key: 'project.verify_ui', type: 'Rule', scope: 'august-proxy', source: 'Manual', used: 63, last: '1h', confidence: '0.99', created: 'Mar 30' },
+      { id: 2, text: 'Project uses Tauri 2 + React 19; do not introduce a second router.', key: 'project.stack', type: 'Fact', scope: 'august-harness', source: 'Agent', used: 87, last: '18m', confidence: '0.94', created: 'Apr 08' },
+      { id: 3, text: 'Run npm run check -w frontend/desktop before proposing a UI change.', key: 'project.verify_ui', type: 'Rule', scope: 'august-harness', source: 'Manual', used: 63, last: '1h', confidence: '0.99', created: 'Mar 30' },
       { id: 4, text: 'The owner dislikes emoji in product copy.', key: 'pref.no_emoji', type: 'Rule', scope: 'Global', source: 'Manual', used: 201, last: '2h', confidence: '0.99', created: 'Feb 14' },
       { id: 5, text: 'Brand site uses a warm paper palette, not blue-grey.', key: 'brand.palette', type: 'Note', scope: 'brand-site', source: 'Agent', used: 34, last: '3h', confidence: '0.82', created: 'Apr 02' },
       { id: 6, text: "Charts should use the app's blue accent, not lime.", key: 'design.chart_accent', type: 'Fact', scope: 'Global', source: 'Manual', used: 58, last: '5h', confidence: '0.97', created: 'Apr 19' },
-      { id: 7, text: 'The desktop app is the product; web-dist is packaging output.', key: 'project.product_surface', type: 'Fact', scope: 'august-proxy', source: 'Agent', used: 76, last: '7h', confidence: '0.93', created: 'Mar 21' },
+      { id: 7, text: 'The desktop app is the product; web-dist is packaging output.', key: 'project.product_surface', type: 'Fact', scope: 'august-harness', source: 'Agent', used: 76, last: '7h', confidence: '0.93', created: 'Mar 21' },
       { id: 8, text: 'Do not call the monthly usage figure a budget until it is enforced.', key: 'copy.budget', type: 'Rule', scope: 'Global', source: 'Manual', used: 19, last: '1d', confidence: '0.98', created: 'Apr 21' },
       { id: 9, text: 'Prefers sentence case in navigation labels.', key: 'pref.nav_case', type: 'Fact', scope: 'Global', source: 'Agent', used: 44, last: '1d', confidence: '0.88', created: 'Apr 03' },
       { id: 10, text: 'Brand site launch is targeted for early May.', key: 'brand.launch', type: 'Note', scope: 'brand-site', source: 'Manual', used: 12, last: '2d', confidence: '0.74', created: 'Apr 11' },
-      { id: 11, text: 'This repo uses npm workspaces, not pnpm.', key: 'project.package_manager', type: 'Fact', scope: 'august-proxy', source: 'Agent', used: 91, last: '3d', confidence: '0.95', created: 'Mar 18' },
+      { id: 11, text: 'This repo uses npm workspaces, not pnpm.', key: 'project.package_manager', type: 'Fact', scope: 'august-harness', source: 'Agent', used: 91, last: '3d', confidence: '0.95', created: 'Mar 18' },
       { id: 12, text: 'The owner wants old-vs-new comparisons for design reviews.', key: 'pref.compare_design', type: 'Fact', scope: 'Global', source: 'Manual', used: 27, last: '4d', confidence: '0.9', created: 'Apr 22' },
     ];
 
@@ -3637,7 +3637,7 @@
       { id: 7, name: 'tutor', desc: 'Teach the user, not just answer the question.', version: '1.1.0', source: 'Bundled', scope: 'Global', enabled: false, update: false, used: '1w', author: 'August', permissions: 'None', body: 'Explain the reasoning, check understanding, and adapt the depth to the learner.' },
       { id: 8, name: 'pdf-tools', desc: 'Extract tables and text from PDFs.', version: '2.0.0', source: 'Installed', scope: 'Global', enabled: true, update: true, used: '1w', author: 'community', permissions: 'Filesystem · OCR', body: 'Extract text and tables, preserve page references, and flag low-confidence OCR.' },
       { id: 9, name: 'github-review', desc: 'Review a pull request with inline findings.', version: '0.6.0', source: 'Marketplace', scope: 'Global', enabled: true, update: false, used: '2w', author: 'community', permissions: 'GitHub · Read', body: 'Read the diff, map findings to lines, and separate blockers from suggestions.' },
-      { id: 10, name: 'frontend-audit', desc: 'Audit a UI for layout and accessibility defects.', version: '1.8.0', source: 'Project', scope: 'august-proxy', enabled: true, update: false, used: '2w', author: 'r.bober', permissions: 'Filesystem · Browser', body: 'Check focus order, contrast, truncation, and responsive behavior against the running app.' },
+      { id: 10, name: 'frontend-audit', desc: 'Audit a UI for layout and accessibility defects.', version: '1.8.0', source: 'Project', scope: 'august-harness', enabled: true, update: false, used: '2w', author: 'r.bober', permissions: 'Filesystem · Browser', body: 'Check focus order, contrast, truncation, and responsive behavior against the running app.' },
       { id: 11, name: 'linear-sync', desc: 'Sync work items with a Linear project.', version: '0.4.2', source: 'Installed', scope: 'Global', enabled: false, update: false, used: '3w', author: 'community', permissions: 'Linear · Read/write', body: 'Create and update issues from a workstream, preserving labels and parent links.' },
       { id: 12, name: 'brand-voice', desc: 'Keep copy in the brand voice.', version: '1.0.1', source: 'Project', scope: 'brand-site', enabled: true, update: false, used: '3w', author: 'r.bober', permissions: 'Filesystem', body: 'Use plain, warm language; avoid hype, emoji, and exclamation marks.' },
     ];
@@ -3701,7 +3701,7 @@
         for (const group of groups) {
           const head = document.createElement('div');
           head.className = 'group-head';
-          head.innerHTML = `<strong>${group}</strong><span>${group === 'Global' ? '312' : group === 'august-proxy' ? '874' : '98'} facts</span>`;
+          head.innerHTML = `<strong>${group}</strong><span>${group === 'Global' ? '312' : group === 'august-harness' ? '874' : '98'} facts</span>`;
           memoryRows.appendChild(head);
           for (const item of rows.filter((row) => row.scope === group)) {
             const row = document.createElement('div');
@@ -4228,7 +4228,7 @@
               <svg class="icon-sm tool-chev"><use href="#i-chev"/></svg>
             </button>
             <div class="tool-body">
-              <div class="tool-meta"><span>path: ~/Dev/august-proxy/usage.csv</span><span>1,284 rows</span><span>CSV</span></div>
+              <div class="tool-meta"><span>path: ~/Dev/august-harness/usage.csv</span><span>1,284 rows</span><span>CSV</span></div>
               <pre class="tool-output">date,model,tokens
 2026-04-01,deepseek,<span class="hl">182400</span>
 2026-04-01,qwen3.8,<span class="hl">68420</span>

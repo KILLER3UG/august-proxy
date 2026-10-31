@@ -54,7 +54,7 @@ against the working tree. The pattern: **`AGENTS.md`, `CONFIGURATION.md` and
 | Item | Resolution |
 |------|------------|
 | `ARCHITECTURE.md` memory-subsystem table named 15 modules | **14 did not exist.** Rewritten against the real `services/memory_store/` package (`brain`, `consolidation`, `fact_retrieval`, `kv`, `messages`, `rest`, `sessions`, `transcript_blocks`, `wire`) + `memory_conn` / `memory_schema` |
-| `ARCHITECTURE.md` "Brain write classes": `db_writer.enqueue_write(must_succeed=…)`, `brain_write_facade` | **No such module, symbol or kwarg anywhere.** Replaced with what exists: direct `memory_store` txn + `deferred_writes.defer_commit(conn, window_s=2.0)` coalescing + `best_effort(site)`. `AUGUST_DB_WRITER_LOW_DROP_S` was also dead in `DEVELOPER_GUIDE.md` |
+| `ARCHITECTURE.md` "Brain write classes": `db_writer.enqueue_write(must_succeed=…)`, `brain_write_facade` | **No such module, symbol or kwarg anywhere.** Replaced with what exists: direct `memory_store` txn + `deferred_writes.defer_commit(conn, window_s=2.0)` coalescing + `best_effort(site)`. `HARNESS_DB_WRITER_LOW_DROP_S` was also dead in `DEVELOPER_GUIDE.md` |
 | "`Vector / graph` SQLite tables" | **There is no vector store and no graph store** — `fact_retrieval.py`, `tools/retrieval.py` and `text_similarity.py` each state it. Recall is BM25/FTS. `august_graph_memory.json` is read by nothing |
 | `/api/memory/*` (incl. `/review` + `/review/apply`) documented as live | **Router deleted.** Was repeated in FOUR live docs (`ARCHITECTURE`, `CONFIGURATION`, `TROUBLESHOOTING`, plus `README`'s "Review what I remember" chip). All replaced with the real surface: `remember`/`list_facts`/`forget` tools, `/api/brain/consolidation/*`, `/api/august/memory/proposals[/{id}/decide]` |
 | `POST /api/curator/{pin,unpin,archive,restore}` + `GET /api/curator/usage` | **None exist.** Curation lifecycle is a `SKILL.md` **frontmatter flag**, not an endpoint and not a `.archive/` move. Fixed in `API_REFERENCE` and `TROUBLESHOOTING` |
@@ -82,10 +82,10 @@ against the working tree. The pattern: **`AGENTS.md`, `CONFIGURATION.md` and
 - Per-model **pricing** (`priceInPerM` / `priceOutPerM`), **bot mode**
   (`services/bot_mode/`) and the **circuit workbench** have effectively no
   user-facing doc outside `AGENTS.md` and one env-var line.
-- ~20 env vars are read by code but documented nowhere (`AUGUST_CORS_ORIGINS`,
-  `AUGUST_TOOL_TIMEOUT_S`, `AUGUST_{CONNECT,TTFB}_TIMEOUT_S`,
-  `AUGUST_ANTHROPIC_CACHE`, `AUGUST_QUOTA_OBSERVATION_TTL_S`, the
-  `cognitive_config` group, `AUGUST_{GHDL,MODELSIM,FIRMWARE_MCU}`, …).
+- ~20 env vars are read by code but documented nowhere (`HARNESS_CORS_ORIGINS`,
+  `HARNESS_TOOL_TIMEOUT_S`, `HARNESS_{CONNECT,TTFB}_TIMEOUT_S`,
+  `HARNESS_ANTHROPIC_CACHE`, `HARNESS_QUOTA_OBSERVATION_TTL_S`, the
+  `cognitive_config` group, `HARNESS_{GHDL,MODELSIM,FIRMWARE_MCU}`, …).
   `.env.example` shares only 2 of ~30 runtime vars with `CONFIGURATION.md`.
 - `memoryAutoInject` — default OFF, the gate `AGENTS.md` calls load-bearing — is
   absent from `CONFIGURATION.md`'s key list.
@@ -106,7 +106,7 @@ against the working tree. The pattern: **`AGENTS.md`, `CONFIGURATION.md` and
 | Item | Resolution |
 |------|------------|
 | `/api/live/*` returned stub data (fake session id, `Processing: …`, empty STT, null TTS) | `live.py` fully implemented — `liveSession` creates real workbench sessions; `liveTurn` calls the workbench engine; STT/TTS delegate to `live_speech` (501 only when unconfigured) |
-| CORS `allow_origins=['*']` + credentials | `main.py` `_cors_allow_origins()` returns explicit localhost/tauri allowlist + `AUGUST_CORS_ORIGINS` |
+| CORS `allow_origins=['*']` + credentials | `main.py` `_cors_allow_origins()` returns explicit localhost/tauri allowlist + `HARNESS_CORS_ORIGINS` |
 | Deprecated `datetime.utcnow()` | Replaced with `datetime.now(timezone.utc)` across workbench / scheduler / sessions / agent_registry |
 | `record_mutation` / `create_pending_mutation` dead code; `mutationCount` always 0 | Now called; `mutationCount` increments per approved mutation |
 | `routers/cron.py` in-memory dict | Now durable via `services/scheduler` (`scheduled-jobs.json`) |

@@ -4,7 +4,7 @@
 set -euo pipefail
 
 INSTALL_DIR="${INSTALL_DIR:-/opt/august}"
-REPO_DIR="${AUGUST_REPO_DIR:-$(cd "$(dirname "$0")/../../.." && pwd)}"
+REPO_DIR="${HARNESS_REPO_DIR:-$(cd "$(dirname "$0")/../../.." && pwd)}"
 
 echo "[august-bench/harbor] installing into $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"

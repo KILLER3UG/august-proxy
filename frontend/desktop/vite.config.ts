@@ -64,12 +64,12 @@ export default defineConfig({
     },
 	    proxy: {
 	      '/api': {
-	        target: process.env.AUGUST_PROXY_URL || 'http://127.0.0.1:8085',
+	        target: process.env.HARNESS_PROXY_URL || 'http://127.0.0.1:8085',
 	        ws: true,
 	        changeOrigin: true,
 	      },
 	      '/v1': {
-	        target: process.env.AUGUST_PROXY_URL || 'http://127.0.0.1:8085',
+	        target: process.env.HARNESS_PROXY_URL || 'http://127.0.0.1:8085',
 	        changeOrigin: true,
 	      },
 	    },

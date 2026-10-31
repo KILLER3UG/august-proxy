@@ -302,7 +302,7 @@ export function modelPriceLabel(model: ModelItem): string {
 export function priceSourceNote(model: ModelItem): string {
   switch (model.priceSource) {
     case 'env':
-      return 'Rate from AUGUST_PRICE_IN_PER_M / AUGUST_PRICE_OUT_PER_M';
+      return 'Rate from HARNESS_PRICE_IN_PER_M / HARNESS_PRICE_OUT_PER_M';
     case 'model':
       return 'Rate set on this model in Model settings';
     case 'free':

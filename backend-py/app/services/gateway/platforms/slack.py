@@ -1,7 +1,7 @@
 """Slack adapter for the gateway (Socket Mode).
 
-Reads the bot token from the ``AUGUST_SLACK_BOT_TOKEN`` env var and the
-app-level token from ``AUGUST_SLACK_APP_TOKEN`` (required for Socket Mode).
+Reads the bot token from the ``HARNESS_SLACK_BOT_TOKEN`` env var and the
+app-level token from ``HARNESS_SLACK_APP_TOKEN`` (required for Socket Mode).
 
 Configuration lives in ``data/config.json`` under
 ``gateway.platforms.slack``:
@@ -44,18 +44,18 @@ class SlackAdapter(BasePlatformAdapter):
 
     def __init__(self, config: dict[str, object] | None = None, bridge=None):
         super().__init__(config, bridge)
-        self._botToken: str = os.environ.get('AUGUST_SLACK_BOT_TOKEN', '')
-        self._appToken: str = os.environ.get('AUGUST_SLACK_APP_TOKEN', '')
+        self._botToken: str = os.environ.get('HARNESS_SLACK_BOT_TOKEN', '')
+        self._appToken: str = os.environ.get('HARNESS_SLACK_APP_TOKEN', '')
         self._client: Any = None
         self._socketClient: Any = None
         self._listenerTask: asyncio.Task | None = None
 
     async def connect(self) -> bool:
         if not self._botToken:
-            log.error('slack: AUGUST_SLACK_BOT_TOKEN not set')
+            log.error('slack: HARNESS_SLACK_BOT_TOKEN not set')
             return False
         if not self._appToken:
-            log.error('slack: AUGUST_SLACK_APP_TOKEN not set (required for Socket Mode)')
+            log.error('slack: HARNESS_SLACK_APP_TOKEN not set (required for Socket Mode)')
             return False
         try:
             from slack_sdk import WebClient

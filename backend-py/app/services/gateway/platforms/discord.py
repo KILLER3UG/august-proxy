@@ -1,6 +1,6 @@
 """Discord adapter for the gateway (bot gateway).
 
-Reads the bot token from the ``AUGUST_DISCORD_BOT_TOKEN`` env var.
+Reads the bot token from the ``HARNESS_DISCORD_BOT_TOKEN`` env var.
 
 Configuration lives in ``data/config.json`` under
 ``gateway.platforms.discord``:
@@ -43,14 +43,14 @@ class DiscordAdapter(BasePlatformAdapter):
 
     def __init__(self, config: dict[str, object] | None = None, bridge=None):
         super().__init__(config, bridge)
-        self._token: str = os.environ.get('AUGUST_DISCORD_BOT_TOKEN', '')
+        self._token: str = os.environ.get('HARNESS_DISCORD_BOT_TOKEN', '')
         self._client: discord.Client | None = None
         self._ready = asyncio.Event()
         self._listenerTask: asyncio.Task | None = None
 
     async def connect(self) -> bool:
         if not self._token:
-            log.error('discord: AUGUST_DISCORD_BOT_TOKEN not set')
+            log.error('discord: HARNESS_DISCORD_BOT_TOKEN not set')
             return False
         try:
             import discord

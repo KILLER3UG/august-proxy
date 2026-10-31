@@ -23,7 +23,7 @@ DEFAULT_TAIL_COUNT = 6
 COMPACT_HEAD_RATIO = 0.10
 DEFAULT_SUMMARY_MARKER = '<<compressed_summary'
 DEFAULT_MAX_SUMMARY_CHARS = 2000
-FEATURE_FLAG = 'AUGUST_SUMMARIZING_COMPACTOR'
+FEATURE_FLAG = 'HARNESS_SUMMARIZING_COMPACTOR'
 
 # ── Prune-then-compact ──
 # Tier (a) projection prune: protect the newest PROTECTED_TOOL_TOKENS of tool
@@ -129,7 +129,7 @@ def reliefHeadCount(relief: str) -> int:
 def isFeatureEnabled() -> bool:
     """Check if the summarizing compactor feature flag is set.
 
-    Enabled by default — the env var AUGUST_SUMMARIZING_COMPACTOR
+    Enabled by default — the env var HARNESS_SUMMARIZING_COMPACTOR
     can be set to "0" to disable."""
     val = os.environ.get(FEATURE_FLAG)
     if val is not None:

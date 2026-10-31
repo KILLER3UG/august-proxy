@@ -39,7 +39,7 @@ if (versionValues.length > 1) throw new Error('multiple --version selectors');
 const versionValue = versionValues[0]?.split('=')[1];
 if (versionValues[0] && !versionValue) throw new Error('--version requires a value using --version=<version>');
 const explicitVersion = versionValue
-    || process.env.AUGUST_NODE_VERSION
+    || process.env.HARNESS_NODE_VERSION
     || 'v22.20.0';
 const NODE_SHA256 = {
     'v22.20.0': {

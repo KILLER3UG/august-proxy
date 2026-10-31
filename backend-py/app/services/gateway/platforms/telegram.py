@@ -1,6 +1,6 @@
 """Telegram adapter for the gateway (webhook mode).
 
-Reads the bot token from the ``AUGUST_TELEGRAM_BOT_TOKEN`` env var (secret,
+Reads the bot token from the ``HARNESS_TELEGRAM_BOT_TOKEN`` env var (secret,
 never in config).  Configuration lives in ``data/config.json`` under
 ``gateway.platforms.telegram``:
 
@@ -47,7 +47,7 @@ class TelegramAdapter(BasePlatformAdapter):
     def __init__(self, config: dict[str, object] | None = None, bridge=None):
         import httpx
         super().__init__(config, bridge)
-        self._token: str = os.environ.get('AUGUST_TELEGRAM_BOT_TOKEN', '')
+        self._token: str = os.environ.get('HARNESS_TELEGRAM_BOT_TOKEN', '')
         self._client: httpx.AsyncClient | None = None
         self._pollTask: asyncio.Task | None = None
         # Set when webhook mode registers a secret with Telegram; the webhook
@@ -71,7 +71,7 @@ class TelegramAdapter(BasePlatformAdapter):
     async def connect(self) -> bool:
         import httpx
         if not self._token:
-            log.error('telegram: AUGUST_TELEGRAM_BOT_TOKEN not set')
+            log.error('telegram: HARNESS_TELEGRAM_BOT_TOKEN not set')
             return False
 
         # Close a previous client before replacing it. This used to assign a

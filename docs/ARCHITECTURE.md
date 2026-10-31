@@ -139,7 +139,7 @@ and emits SSE events.
 - **Source of truth:** SQLite `sessions` / workbench blob + `messages` tables in
   `data/august_brain.sqlite` via `memory_store.save_workbench_session_sot`.
 - **JSON export is optional** (`auxiliary.session_json_export` or
-  `AUGUST_SESSION_JSON_EXPORT=1`). When enabled, a backup is written to
+  `HARNESS_SESSION_JSON_EXPORT=1`). When enabled, a backup is written to
   `data/workbench-sessions.json`. Older installs one-shot migrate JSON → SQLite.
 - In-memory cache keeps the **last 50** sessions by `updatedAt`.
 - CRUD and chat APIs live under `/api/workbench/*` (also singular `/session`
@@ -344,7 +344,7 @@ HTTP: all brain/memory routes are served by
 removed along with `routers/memory.py`.
 
 Model-managed memory is a **tool set, not an API**: `remember`, `list_facts` and
-`forget` are core tools (in `AUGUST_CORE_TOOLS` and `_BARE_TOOL_ALLOW`), so they
+`forget` are core tools (in `HARNESS_CORE_TOOLS` and `_BARE_TOOL_ALLOW`), so they
 survive progressive disclosure and a downgraded model can still correct what it
 remembers. Sub-agents read and recall but never write; the parent turn is the
 only model-facing memory write door (internal/UI routes also call
@@ -380,7 +380,7 @@ staged through `POST /api/brain/backups/restore` and applied at the next launch.
 | Proxy managed tools | `tool_registry` via `proxy_tools` | Real dispatch only |
 | Live speech | Browser Web Speech by default; optional server STT/TTS | Unconfigured → honest 501 |
 | MCP | `mcp-servers.json` at boot | stdio + SSE + streamable HTTP |
-| Host / desktop | Local desktop automation or `AUGUST_HOST_AGENT_URL` | Health under monitoring / desktop-automation |
+| Host / desktop | Local desktop automation or `HARNESS_HOST_AGENT_URL` | Health under monitoring / desktop-automation |
 
 ### Brain writes
 
@@ -392,7 +392,7 @@ defines `enqueue_write`, `must_succeed`, or a low/high priority class).
 |---------|-----------|
 | SoT writes | Direct `memory_store` transaction on the thread-local connection |
 | Commit coalescing | [`deferred_writes.py`](../backend-py/app/services/deferred_writes.py): `defer_commit(conn, window_s=2.0)` holds the commit up to `_MAX_HOLD_S = 10` and `flush_thread_pending()` drains it. Per-thread, loop-thread aware |
-| Deliberate failures | [`best_effort.py`](../backend-py/app/services/best_effort.py): `with best_effort('some.site'):` names every intentional swallow so it is greppable, logs with `exc_info`, and **re-raises** under `AUGUST_STRICT_BEST_EFFORT=1`. Not a queue — a context manager |
+| Deliberate failures | [`best_effort.py`](../backend-py/app/services/best_effort.py): `with best_effort('some.site'):` names every intentional swallow so it is greppable, logs with `exc_info`, and **re-raises** under `HARNESS_STRICT_BEST_EFFORT=1`. Not a queue — a context manager |
 | Reads | Direct, on WAL, never through the commit window |
 
 ---
@@ -598,7 +598,7 @@ stays **camelCase** via `memory_store` wire helpers.
 > store and nothing reads it). Memory and sessions live in the brain SQLite.
 
 Paths resolve through [`app/lib/paths.py`](../backend-py/app/lib/paths.py)
-(`dataPath`, respects `AUGUST_DATA_DIR`).
+(`dataPath`, respects `HARNESS_DATA_DIR`).
 
 ### SQLite — single-writer async queue
 
@@ -628,22 +628,22 @@ Use [`app/atomic_write.py::write_json_atomic`](../backend-py/app/atomic_write.py
 | `backend-py/scripts/p0_explain_plans.py` | EXPLAIN QUERY PLAN pack |
 
 **Nothing may touch the live brain.** Every script that opens the brain
-database points `AUGUST_DATA_DIR` at a throwaway directory first —
+database points `HARNESS_DATA_DIR` at a throwaway directory first —
 `backend-py/scripts/e2e_smoke.py` does this, and so does every gate that
 probes the backend. The fixture that used to enforce it (`tests/conftest.py`,
-an **autouse** `isolatedData` with a temp `AUGUST_DATA_DIR` + brain SQLite)
+an **autouse** `isolatedData` with a temp `HARNESS_DATA_DIR` + brain SQLite)
 went with the suite on 2026-10-17, so the rule is now a rule every caller has
 to remember rather than one the framework enforces. **If you write a script
-that opens the brain, point `AUGUST_DATA_DIR` at a temp directory.** The real
+that opens the brain, point `HARNESS_DATA_DIR` at a temp directory.** The real
 data directory holds everything a user owns.
 
 ### Runtime kill switches / measurement flags
 
 | Env / flag | Effect |
 |---|---|
-| `AUGUST_PERF_TIMING=1` | Backend workbench span/TTFT logging + ring buffer |
-| `AUGUST_P1_TOOL_CACHE=0` | Disable tool-definition list cache |
-| `AUGUST_P1_PROMPT_CACHE=0` | (removed — never read; Part 25 Phase 7.2) |
-| `AUGUST_P1_PARALLEL_TOOLS=0` | Force serial tool execution |
-| `AUGUST_SESSION_JSON_EXPORT=1` | Enable continuous JSON session backup |
+| `HARNESS_PERF_TIMING=1` | Backend workbench span/TTFT logging + ring buffer |
+| `HARNESS_P1_TOOL_CACHE=0` | Disable tool-definition list cache |
+| `HARNESS_P1_PROMPT_CACHE=0` | (removed — never read; Part 25 Phase 7.2) |
+| `HARNESS_P1_PARALLEL_TOOLS=0` | Force serial tool execution |
+| `HARNESS_SESSION_JSON_EXPORT=1` | Enable continuous JSON session backup |
 | `localStorage.august_stream_perf=1` | Frontend stream TTFT/flush marks |

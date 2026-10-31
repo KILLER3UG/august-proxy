@@ -246,7 +246,7 @@ _AGENT_STATE_FILES = ('kanban.json',)
 # default alone would miss a deployment that moved the file, and naming the env
 # alone would miss one that did not.
 _DEFAULT_BRAIN_FILE = 'august_brain.sqlite'
-_BRAIN_FILE_ENV = 'AUGUST_BRAIN_SQLITE_FILE'
+_BRAIN_FILE_ENV = 'HARNESS_BRAIN_SQLITE_FILE'
 
 
 def _brain_db_prefixes() -> tuple[str, ...]:
@@ -343,7 +343,7 @@ def _agent_state_reason(match_form: str) -> str | None:
             return 'agent skill layer (.aug/skills)'
         if parts[i] == 'kernel' and parts[i - 1] == '.aug':
             return 'agent kernel state (.aug/kernel)'
-    # Before the data-directory branch: `AUGUST_BRAIN_SQLITE_FILE` can move the
+    # Before the data-directory branch: `HARNESS_BRAIN_SQLITE_FILE` can move the
     # memory anywhere on disk, and a rule that only looked inside the data
     # directory would then protect a file that no longer exists.
     for prefix in _brain_db_prefixes():

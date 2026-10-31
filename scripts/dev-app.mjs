@@ -13,7 +13,7 @@ import { existsSync } from 'node:fs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const port = process.env.AUGUST_PROXY_PORT || '8085';
+const port = process.env.HARNESS_PROXY_PORT || '8085';
 
 // ── Detect Python (preferred) or fall back to Node.js ──────────────
 
@@ -115,7 +115,7 @@ if (python) {
                 command: python,
                 args: ['-m', 'uvicorn', 'app.main:app', '--port', port, '--host', '127.0.0.1', '--app-dir', backendDir],
                 cwd: root,
-                env: { AUGUST_PROXY_PORT: port }
+                env: { HARNESS_PROXY_PORT: port }
             },
             { name: 'frontend', command: npm, args: ['run', 'dev:web'] }
         ];
@@ -132,7 +132,7 @@ if (!python) {
             name: 'backend',
             command: npm,
             args: ['run', 'start'],
-            env: { AUGUST_PROXY_PORT: port }
+            env: { HARNESS_PROXY_PORT: port }
         },
         { name: 'frontend', command: npm, args: ['run', 'dev:web'] }
     ];

@@ -16,7 +16,7 @@ precedent — it is TypeScript for a different product with a different store. W
 |---|---|---|
 | the self-improvement harness (propose → human decides) | `harness_introspect`, `harness_propose`; rails, mode, outcome, playbook, promote services; `routers/harness.py` is the human door | `tool_registrations/harness_tools.py`, `services/harness_*.py` |
 | memory of record | `facts` table, shape added in `056` (aliases, subject_type, tag, version, derived_from) | `migrations/056_fact_record_shape.sql` |
-| tool surface | one registry, groups under `tool_registrations/`, `register_all()`, `AUGUST_CORE_TOOLS` for progressive disclosure | `services/tool_registry.py:457`, `services/tools/model_tools.py` |
+| tool surface | one registry, groups under `tool_registrations/`, `register_all()`, `HARNESS_CORE_TOOLS` for progressive disclosure | `services/tool_registry.py:457`, `services/tools/model_tools.py` |
 | per-turn record | `turn_outcomes` (reason, rounds, counters; NULL = unrecorded) | `workbench/turn_close.py` |
 | seat prompt | segments built and cached once | `workbench/prompt_segments_cache.py` |
 | outputs | `artifact_tools` = generated FILES bound to the session workspace (deck/chart/video/circuit) — not a manifest | `tool_registrations/artifact_tools.py` |
@@ -74,7 +74,7 @@ Everything below the panel is landed and pushed to `origin/master` — commits `
 tables), `771f64b1` (store), `09133489` (four tools + policy), `a6be56e1` (enforcement),
 `4724abf9` (prompt block), `92a80c9e` (turn lifecycle), `03ccdbc4` (API + regenerated spec/client).
 Gates on each: ruff 0, mypy 0 over 356 files, `e2e:smoke` 20/20 on a fresh scratch data dir, and
-six probes totalling **106 checks, 0 failed**, every one on a temp `AUGUST_DATA_DIR`.
+six probes totalling **106 checks, 0 failed**, every one on a temp `HARNESS_DATA_DIR`.
 
 ### What the panel still needs (measured, so the next pass starts here)
 

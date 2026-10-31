@@ -391,9 +391,9 @@ class BaseProviderClient:
         # the full request timeout. The TTFB watchdog bounds the pre-first-
         # token window on streaming requests (0 disables it).
         self.connectTimeout = (
-            connectTimeout if connectTimeout is not None else _envFloat('AUGUST_CONNECT_TIMEOUT_S', _CONNECT_TIMEOUT_DEFAULT_S)
+            connectTimeout if connectTimeout is not None else _envFloat('HARNESS_CONNECT_TIMEOUT_S', _CONNECT_TIMEOUT_DEFAULT_S)
         )
-        self.ttfbTimeoutS = ttfbTimeout if ttfbTimeout is not None else _envFloat('AUGUST_TTFB_TIMEOUT_S', _TTFB_DEFAULT_S)
+        self.ttfbTimeoutS = ttfbTimeout if ttfbTimeout is not None else _envFloat('HARNESS_TTFB_TIMEOUT_S', _TTFB_DEFAULT_S)
         self._client: httpx.AsyncClient | None = None
 
     @property
@@ -427,7 +427,7 @@ class BaseProviderClient:
         the app does reach one of the two `self.client` calls below. The auth
         header is left alone: that is where a key legitimately belongs.
 
-        `AUGUST_MESSAGE_ONLY_KEYS` has the same shape of problem, and the same
+        `HARNESS_MESSAGE_ONLY_KEYS` has the same shape of problem, and the same
         one answer. Only the `/v1` dump functions strip those keys, but the
         workbench reaches a provider through `workbench/providers.py` →
         `translateMessagesToAnthropic` (and `adapters/anthropic.py` appends the
@@ -761,7 +761,7 @@ class BaseProviderClient:
                                 except asyncio.TimeoutError:
                                     raise _FirstByteTimeout(
                                         f'no first byte from upstream within {self.ttfbTimeoutS:g}s '
-                                        '(AUGUST_TTFB_TIMEOUT_S)'
+                                        '(HARNESS_TTFB_TIMEOUT_S)'
                                     ) from None
                             else:
                                 item = await queue.get()

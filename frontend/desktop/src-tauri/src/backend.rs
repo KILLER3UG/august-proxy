@@ -30,13 +30,13 @@ const RELEASE_REPOSITORY: &str = "KILLER3UG/august-proxy";
 static VERIFIED_INSTALLER: Mutex<Option<(PathBuf, String)>> = Mutex::new(None);
 
 /// Last port of the spawn fallback range (8085..=8095 inclusive). Tried in
-/// order when `AUGUST_PROXY_PORT` is not set: if the backend cannot bind (the
+/// order when `HARNESS_PROXY_PORT` is not set: if the backend cannot bind (the
 /// port is held by a foreign process) or never answers identity-checked
 /// health, the next port is tried.
 const PROXY_PORT_RANGE_END: u16 = DEFAULT_PROXY_PORT + 10;
 
 /// The port the proxy is actually healthy on. Only consulted when
-/// `AUGUST_PROXY_PORT` is unset; updated when a fallback port wins.
+/// `HARNESS_PROXY_PORT` is unset; updated when a fallback port wins.
 static ACTIVE_PROXY_PORT: AtomicU16 = AtomicU16::new(DEFAULT_PROXY_PORT);
 
 /// When true, the watchdog must not respawn the backend (update/install in progress).
@@ -144,10 +144,10 @@ fn setSetupPhase(app: &AppHandle, phase: &str, detail: Option<String>) {
     );
 }
 
-/// `AUGUST_PROXY_PORT` env override — when set it is the ONLY port tried
+/// `HARNESS_PROXY_PORT` env override — when set it is the ONLY port tried
 /// (no fallback range) and every surface reports it.
 fn envPortOverride() -> Option<u16> {
-    std::env::var("AUGUST_PROXY_PORT")
+    std::env::var("HARNESS_PROXY_PORT")
         .ok()
         .and_then(|value| value.parse::<u16>().ok())
 }
@@ -257,7 +257,7 @@ fn runtimeStampPath(app: &AppHandle) -> PathBuf {
 const CLONE_DIR_LEAF: &str = "clone";
 const SELF_EDIT_SWITCH: &str = "self-edit.enabled";
 const UPSTREAM_FETCH_URL: &str = "https://github.com/KILLER3UG/august-proxy.git";
-const CLONE_PUSH_LOCK_URL: &str = "https://push-locked.invalid/august-proxy.git";
+const CLONE_PUSH_LOCK_URL: &str = "https://push-locked.invalid/august-harness.git";
 
 fn selfEditEnabled(app: &AppHandle) -> bool {
     appDataRoot(app).join(SELF_EDIT_SWITCH).is_file()
@@ -668,7 +668,7 @@ fn copyDirRecursiveAt(
             // every dependency's compiled entry point under sidecar/node_modules
             // (avr8js, jimp, …), which the runtime then cannot import.
             let rootOnlyArtifact = depth == 0
-                && (name == "build" || name == "dist" || name == "august_proxy.egg-info");
+                && (name == "build" || name == "dist" || name == "august_harness.egg-info");
             if name == "__pycache__"
                 || name == ".venv"
                 || name == ".mypy_cache"
@@ -1020,7 +1020,7 @@ fn bootstrapBundledBackend(app: &AppHandle) -> Result<(), String> {
             // dies at import, and the supervisor reports "not healthy after
             // spawn" exactly after updates.
             "--upgrade",
-            "august-proxy",
+            "august-harness",
         ],
         &runtime_backend,
         &bootstrap_log,
@@ -1261,7 +1261,7 @@ fn resolvePythonBackend(app: &AppHandle) -> Option<PathBuf> {
     ];
 
     // Walk up from the executable so release/dev builds find a repo checkout
-    // (e.g. …/src-tauri/target/release/august-desktop.exe → …/august-proxy/backend-py).
+    // (e.g. …/src-tauri/target/release/august-harness.exe → …/august-harness/backend-py).
     if let Ok(exe) = env::current_exe() {
         let mut dir = exe.parent().map(|p| p.to_path_buf());
         for _ in 0..10 {
@@ -1293,7 +1293,7 @@ fn existingAbsolutePath(value: &str) -> Option<PathBuf> {
 }
 
 fn resolveNode(app: &AppHandle) -> Option<PathBuf> {
-    if let Ok(path) = env::var("AUGUST_DESKTOP_NODE") {
+    if let Ok(path) = env::var("HARNESS_DESKTOP_NODE") {
         if let Some(path) = existingAbsolutePath(&path) {
             return Some(path);
         }
@@ -1320,7 +1320,7 @@ fn resolveNode(app: &AppHandle) -> Option<PathBuf> {
 }
 
 fn resolveNodeBackend(app: &AppHandle) -> Option<PathBuf> {
-    if let Ok(path) = env::var("AUGUST_PROXY_BACKEND") {
+    if let Ok(path) = env::var("HARNESS_PROXY_BACKEND") {
         let path = PathBuf::from(path);
         if path.exists() {
             return Some(path);
@@ -1364,13 +1364,13 @@ fn appDataRoot(app: &AppHandle) -> PathBuf {
     // release build ignores the variable entirely, because an env-controlled
     // data root is a way to make the app read and write somewhere else.
     #[cfg(debug_assertions)]
-    if let Some(dir) = env::var_os("AUGUST_DESKTOP_APP_DATA") {
+    if let Some(dir) = env::var_os("HARNESS_DESKTOP_APP_DATA") {
         let path = PathBuf::from(dir);
         if path.is_absolute() {
             log::warn!("[dev] app data root overridden → {}", path.display());
             return path;
         }
-        log::error!("[dev] AUGUST_DESKTOP_APP_DATA must be an absolute path — ignored");
+        log::error!("[dev] HARNESS_DESKTOP_APP_DATA must be an absolute path — ignored");
     }
     app.path()
         .app_data_dir()
@@ -1391,7 +1391,7 @@ fn appDataDir(app: &AppHandle) -> PathBuf {
 //
 // The switch is a two-line file the shell reads at SPAWN time, because a
 // bind address cannot change in a running process. The backend is TOLD
-// (AUGUST_LAN_BIND in the environment) rather than asked: the shell owns
+// (HARNESS_LAN_BIND in the environment) rather than asked: the shell owns
 // the decision, and a backend that could also decide for itself would be a
 // second place the two could disagree — in the permissive direction.
 
@@ -1590,7 +1590,7 @@ function Test-AugustBackend($p) {{
       $p.CommandLine -match '[\\/]August([\\/]|$)' -or
       $p.CommandLine -match 'com\.august\.proxy' -or
       $p.CommandLine -match 'uvicorn.*app\.main' -or
-      $p.CommandLine -match 'AUGUST_PROXY'
+      $p.CommandLine -match 'HARNESS_PROXY'
     ))
   ))
 }}
@@ -1675,7 +1675,7 @@ fn applyNoWindow(cmd: &mut Command) {
 /// Sandbox opt-in variables forwarded from the desktop process to the
 /// bundled backend.
 ///
-/// `AUGUST_CONTAINER_SANDBOX` was previously backend-only: it was read by
+/// `HARNESS_CONTAINER_SANDBOX` was previously backend-only: it was read by
 /// `app/services/sandbox/backends/container.py`, but the Tauri spawn built
 /// the child environment from scratch, so a user who set the variable could
 /// never reach the tier from the desktop app. The backend inherits the parent
@@ -1684,15 +1684,15 @@ fn applyNoWindow(cmd: &mut Command) {
 /// honest record of whether the strong tier is in play.
 ///
 /// These are opt-in switches only; no credential ever travels this list. The
-/// backend's own `noninteractive_env()` still scrubs `AUGUST_*` from anything
+/// backend's own `noninteractive_env()` still scrubs `HARNESS_*` from anything
 /// the model can reach.
 const SANDBOX_ENV_KEYS: [&str; 6] = [
-    "AUGUST_CONTAINER_SANDBOX",
-    "AUGUST_SANDBOX_IMAGE",
-    "AUGUST_SANDBOX_MEMORY",
-    "AUGUST_SANDBOX_CPUS",
-    "AUGUST_SANDBOX_APPCONTAINER",
-    "AUGUST_WARM_KERNEL_OFF",
+    "HARNESS_CONTAINER_SANDBOX",
+    "HARNESS_SANDBOX_IMAGE",
+    "HARNESS_SANDBOX_MEMORY",
+    "HARNESS_SANDBOX_CPUS",
+    "HARNESS_SANDBOX_APPCONTAINER",
+    "HARNESS_WARM_KERNEL_OFF",
 ];
 
 /// Forward the sandbox opt-in variables to the backend child.
@@ -1958,7 +1958,7 @@ fn ensureRunningLocked(app: &AppHandle) -> bool {
                 let logPath = logDir.join("backend.log");
 
                 // Stage-4: the clone gates (unattended writes) and the
-                // obligation journal key off AUGUST_CLONE_ROOT; empty means
+                // obligation journal key off HARNESS_CLONE_ROOT; empty means
                 // "no self-edit" and every gate is dormant.
                 let cloneRootEnv = if selfEditEnabled(app) {
                     selfEditCloneRoot(app).to_string_lossy().into_owned()
@@ -2034,32 +2034,32 @@ fn ensureRunningLocked(app: &AppHandle) -> bool {
                         .arg("--host")
                         .arg(lanBindHost(lan))
                         .current_dir(&backendPyRoot)
-                        .env("AUGUST_PROXY_PORT", port.to_string())
-                        .env("AUGUST_PROXY_ROOT", &repoRoot)
-                        .env("AUGUST_DATA_DIR", &dataDir)
-                        .env("AUGUST_CLONE_ROOT", &cloneRootEnv)
+                        .env("HARNESS_PROXY_PORT", port.to_string())
+                        .env("HARNESS_PROXY_ROOT", &repoRoot)
+                        .env("HARNESS_DATA_DIR", &dataDir)
+                        .env("HARNESS_CLONE_ROOT", &cloneRootEnv)
                         // Stage 5: on a gated apply boot the in-tree journal
                         // sweep stands down — the shell commits the markers
                         // itself once health confirms, and the watchdog's
                         // own respawns never carry this flag.
                         .env(
-                            "AUGUST_APPLY_BOOT",
+                            "HARNESS_APPLY_BOOT",
                             if APPLY_BOOT.load(Ordering::SeqCst) { "1" } else { "0" },
                         )
-                        .env("AUGUST_PROXY_DESKTOP", "1")
+                        .env("HARNESS_PROXY_DESKTOP", "1")
                         // The backend is TOLD that LAN access is on rather
                         // than asked: it widens the token's scope to the
                         // whole management API and adds this machine's LAN
                         // addresses to the trusted-origin allowlist.
-                        .env("AUGUST_LAN_BIND", if lan { "1" } else { "0" })
+                        .env("HARNESS_LAN_BIND", if lan { "1" } else { "0" })
                         // The host we actually bound, so `/api/health` can
                         // report the truth instead of guessing.
-                        .env("AUGUST_BIND_HOST", lanBindHost(lan))
+                        .env("HARNESS_BIND_HOST", lanBindHost(lan))
                         // The token that authenticates the shell to the
                         // backend's sensitive local routes. In-memory only:
                         // it is never written to the data directory, where a
                         // model with run_command could read it.
-                        .env("AUGUST_LOCAL_API_TOKEN", local_api_token_value())
+                        .env("HARNESS_LOCAL_API_TOKEN", local_api_token_value())
                         .env("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")
                         .stdout(Stdio::from(logFile.try_clone().unwrap_or_else(|_| {
                             File::create(devNullPath()).expect("failed to open null")
@@ -2077,24 +2077,24 @@ fn ensureRunningLocked(app: &AppHandle) -> bool {
                     // The AppData backend has no checkout-relative binaries tree.
                     // Hand the firmware sidecar our bundled Node path so a clean
                     // install does not require Node on PATH. Preserve valid overrides.
-                    let sidecarNode = env::var("AUGUST_NODE_EXE")
+                    let sidecarNode = env::var("HARNESS_NODE_EXE")
                         .ok()
                         .and_then(|path| existingAbsolutePath(&path))
                         .or_else(|| resolveNode(app));
                     if let Some(node) = sidecarNode {
-                        cmd.env("AUGUST_NODE_EXE", node);
+                        cmd.env("HARNESS_NODE_EXE", node);
                     }
                     // Bundled ngspice (resources/ngspice) so circuit_simulate
                     // works on a clean machine. circuit_tools._resolve_ngspice_sync
-                    // reads AUGUST_NGSPICE_EXE first, so an explicit user override
+                    // reads HARNESS_NGSPICE_EXE first, so an explicit user override
                     // still wins; we only fill it in when unset/invalid.
-                    if env::var("AUGUST_NGSPICE_EXE")
+                    if env::var("HARNESS_NGSPICE_EXE")
                         .ok()
                         .and_then(|path| existingAbsolutePath(&path))
                         .is_none()
                     {
                         if let Some(ng) = resolveResource(app, "ngspice/bin/ngspice_con.exe") {
-                            cmd.env("AUGUST_NGSPICE_EXE", &ng);
+                            cmd.env("HARNESS_NGSPICE_EXE", &ng);
                             log::info!(
                                 "[backend] circuit engine: bundled ngspice at {}",
                                 ng.display()
@@ -2216,11 +2216,11 @@ fn ensureRunningLocked(app: &AppHandle) -> bool {
         let mut cmd = Command::new(&node);
         cmd.arg(&entry)
             .current_dir(&projectRoot)
-            .env("AUGUST_PROXY_PORT", port.to_string())
-            .env("AUGUST_PROXY_ROOT", &projectRoot)
-            .env("AUGUST_DATA_DIR", &dataDir)
-            .env("AUGUST_PROXY_DESKTOP", "1")
-            .env("AUGUST_LOCAL_API_TOKEN", local_api_token_value())
+            .env("HARNESS_PROXY_PORT", port.to_string())
+            .env("HARNESS_PROXY_ROOT", &projectRoot)
+            .env("HARNESS_DATA_DIR", &dataDir)
+            .env("HARNESS_PROXY_DESKTOP", "1")
+            .env("HARNESS_LOCAL_API_TOKEN", local_api_token_value())
             .stdout(Stdio::from(logFile.try_clone().unwrap_or_else(|_| {
                 File::create(devNullPath()).expect("failed to open null")
             })))
@@ -2355,7 +2355,7 @@ pub async fn proxy_status() -> String {
 // register_all() entry exists or may exist for it.
 
 /// Set while the spawn is a gated apply boot; the backend's in-tree journal
-/// sweep sees AUGUST_APPLY_BOOT=1 and stands down (the shell commits the
+/// sweep sees HARNESS_APPLY_BOOT=1 and stands down (the shell commits the
 /// markers itself once health confirms). Cleared on every other path so
 /// watchdog respawns always keep their sweep.
 static APPLY_BOOT: AtomicBool = AtomicBool::new(false);
@@ -2509,7 +2509,7 @@ fn run_python_wait(
     // fails — a shell-supplied root is what makes that check mean something; the
     // harness must not be allowed to invent the bound it is judged against.
     if let Some(root) = clone_root {
-        cmd.env("AUGUST_CLONE_ROOT", root);
+        cmd.env("HARNESS_CLONE_ROOT", root);
     }
     if stdin.is_some() {
         cmd.stdin(Stdio::piped());
@@ -2874,7 +2874,7 @@ fn restart_to_apply_locked(app: &AppHandle) -> Result<ApplyResult, String> {
             disclaimer,
         });
     }
-    // Gates passed: apply boot. The spawn env carries AUGUST_APPLY_BOOT=1 so
+    // Gates passed: apply boot. The spawn env carries HARNESS_APPLY_BOOT=1 so
     // the in-tree sweep stands down; the boot sweep stands down on the same
     // flag (see `ApplyBootGuard`); commit happens AFTER health confirms.
     APPLY_BOOT.store(true, Ordering::SeqCst);
@@ -3085,7 +3085,7 @@ pub fn schedule_post_update_relaunch() -> Result<String, String> {
                }}).Count \
              }}; \
              function Start-AugustIfIdle {{ \
-               if ((Test-Path -LiteralPath $exe) -and -not (Get-Process -Name 'August','august-desktop' -ErrorAction SilentlyContinue)) {{ \
+               if ((Test-Path -LiteralPath $exe) -and -not (Get-Process -Name 'August','august-harness' -ErrorAction SilentlyContinue)) {{ \
                  Start-Process -FilePath $exe \
                }} \
              }}; \
@@ -3250,7 +3250,7 @@ pub async fn download_release_installer(app: AppHandle, version: String) -> Resu
 
         let client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(900))
-            .user_agent("august-desktop-updater")
+            .user_agent("august-harness-updater")
             .build()
             .map_err(|e| e.to_string())?;
         let mut resp = client
@@ -3675,7 +3675,7 @@ pub fn backend_last_error(app: AppHandle) -> Option<String> {
 }
 
 /// Version stamp lives in the app-data `data` dir (same parent used for
-/// `AUGUST_DATA_DIR`), so it tracks the Tauri package version rather than
+/// `HARNESS_DATA_DIR`), so it tracks the Tauri package version rather than
 /// the repo's `data/backend-version.txt` (a dev-only convenience copy).
 fn versionStampPath(app: &AppHandle) -> Option<PathBuf> {
     app.path()
@@ -3805,7 +3805,7 @@ mod instance_lock_tests {
     #[test]
     fn recognises_both_the_packaged_and_dev_image_names() {
         assert!(isAugustRow(&row("August.exe", 20528), 20528));
-        assert!(isAugustRow(&row("august-desktop.exe", 20528), 20528));
+        assert!(isAugustRow(&row("august-harness.exe", 20528), 20528));
     }
 
     #[test]
@@ -3859,9 +3859,9 @@ mod copy_payload_tests {
         let src = scratch("src");
         let dst = scratch("dst");
         // The package's own setuptools output at the payload root.
-        touch(&src, "dist/august_proxy.pth");
+        touch(&src, "dist/august_harness.pth");
         touch(&src, "build/lib/x.py");
-        touch(&src, "august_proxy.egg-info/PKG-INFO");
+        touch(&src, "august_harness.egg-info/PKG-INFO");
         // Dependency entry points live in dist/ one level deeper.
         touch(&src, "sidecar/node_modules/avr8js/dist/cjs/index.js");
         touch(&src, "sidecar/node_modules/jimp/dist/index.js");
@@ -3872,7 +3872,7 @@ mod copy_payload_tests {
         assert!(!dst.join("dist").exists(), "root dist must be skipped");
         assert!(!dst.join("build").exists(), "root build must be skipped");
         assert!(
-            !dst.join("august_proxy.egg-info").exists(),
+            !dst.join("august_harness.egg-info").exists(),
             "root egg-info must be skipped"
         );
         assert!(
@@ -4136,12 +4136,12 @@ mod sandbox_env_tests {
 
     #[test]
     fn container_opt_in_reaches_the_backend_child() {
-        // The regression this guards: AUGUST_CONTAINER_SANDBOX was read by the
+        // The regression this guards: HARNESS_CONTAINER_SANDBOX was read by the
         // backend but never forwarded, so a desktop user setting it got soft
         // enforcement with no indication anything was wrong.
-        withVars(vec![("AUGUST_CONTAINER_SANDBOX", "1")], |forwarded| {
+        withVars(vec![("HARNESS_CONTAINER_SANDBOX", "1")], |forwarded| {
             assert!(
-                forwarded.iter().any(|e| e == "AUGUST_CONTAINER_SANDBOX=1"),
+                forwarded.iter().any(|e| e == "HARNESS_CONTAINER_SANDBOX=1"),
                 "container opt-in must be forwarded, got {forwarded:?}"
             );
         });
@@ -4151,11 +4151,11 @@ mod sandbox_env_tests {
     fn blank_values_are_not_forwarded() {
         // An empty/whitespace value is indistinguishable from unset for the
         // backend's truthy check; forwarding it would only muddy the launch log.
-        withVars(vec![("AUGUST_SANDBOX_CPUS", "   ")], |forwarded| {
+        withVars(vec![("HARNESS_SANDBOX_CPUS", "   ")], |forwarded| {
             assert!(
                 !forwarded
                     .iter()
-                    .any(|e| e.starts_with("AUGUST_SANDBOX_CPUS")),
+                    .any(|e| e.starts_with("HARNESS_SANDBOX_CPUS")),
                 "blank values must not be forwarded, got {forwarded:?}"
             );
         });
@@ -4163,9 +4163,9 @@ mod sandbox_env_tests {
 
     #[test]
     fn values_are_trimmed() {
-        withVars(vec![("AUGUST_SANDBOX_MEMORY", " 4g ")], |forwarded| {
+        withVars(vec![("HARNESS_SANDBOX_MEMORY", " 4g ")], |forwarded| {
             assert!(
-                forwarded.iter().any(|e| e == "AUGUST_SANDBOX_MEMORY=4g"),
+                forwarded.iter().any(|e| e == "HARNESS_SANDBOX_MEMORY=4g"),
                 "values must be trimmed, got {forwarded:?}"
             );
         });
@@ -4178,9 +4178,9 @@ mod sandbox_env_tests {
         for key in SANDBOX_ENV_KEYS {
             let upper = key.to_ascii_uppercase();
             assert!(
-                upper.starts_with("AUGUST_SANDBOX_")
-                    || upper == "AUGUST_CONTAINER_SANDBOX"
-                    || upper == "AUGUST_WARM_KERNEL_OFF",
+                upper.starts_with("HARNESS_SANDBOX_")
+                    || upper == "HARNESS_CONTAINER_SANDBOX"
+                    || upper == "HARNESS_WARM_KERNEL_OFF",
                 "unexpected key on the sandbox env allowlist: {key}"
             );
             for bad in ["KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"] {

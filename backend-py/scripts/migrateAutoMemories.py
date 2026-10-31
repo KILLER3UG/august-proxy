@@ -23,7 +23,7 @@ from typing import Any
 
 
 def _db_path() -> Path:
-    envPath = __import__('os').environ.get('AUGUST_BRAIN_SQLITE_FILE')
+    envPath = __import__('os').environ.get('HARNESS_BRAIN_SQLITE_FILE')
     if envPath:
         return Path(envPath)
     from app.lib.paths import dataPath

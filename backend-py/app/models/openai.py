@@ -61,7 +61,7 @@ class ChatMessage(ExtraAllowBaseModel):
 # `_endpoint` is the internal Responses-routing marker (`handleChatCompletions`).
 # NOTE: `user` and `metadata` are legitimate OpenAI fields (abuse tracking,
 # project IDs) and must NOT be stripped — only August-internal routing keys.
-_AUGUST_ONLY_OPENAI_KEYS = frozenset({'session_id', 'sessionId', '_endpoint'})
+_HARNESS_ONLY_OPENAI_KEYS = frozenset({'session_id', 'sessionId', '_endpoint'})
 
 
 def dump_openai_upstream_body(
@@ -72,7 +72,7 @@ def dump_openai_upstream_body(
         dumped: dict[str, object] = body.model_dump(exclude_none=True)  # type: ignore[assignment]
     else:
         dumped = cast('dict[str, object]', strip_none_deep(dict(body)))
-    for key in _AUGUST_ONLY_OPENAI_KEYS:
+    for key in _HARNESS_ONLY_OPENAI_KEYS:
         dumped.pop(key, None)
     if 'messages' in dumped:
         dumped['messages'] = strip_august_message_keys(dumped['messages'])

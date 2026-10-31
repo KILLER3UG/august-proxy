@@ -234,7 +234,7 @@ _REMINDER_FOOTER = (
 _CODE_RUN_TIMEOUT_S = 60
 # Tool dispatch cap: a hung MCP server or registry handler must not hold a
 # turn (and a sub-agent semaphore slot) forever. Env-overridable. Guarded so a
-# non-numeric AUGUST_TOOL_TIMEOUT_S falls back to the default instead of
+# non-numeric HARNESS_TOOL_TIMEOUT_S falls back to the default instead of
 # raising at module import and taking down the whole workbench.
 
 # Clean rounds on the bare surface before the full tool set is restored
@@ -1199,7 +1199,7 @@ def buildSystemPrompt(
     # Conditional policy blocks: only when the matching tools are offered.
     # `<clarify_policy>` names `submit_clarify`, which is registered
     # (system_tools.py:498) but in NEITHER `_BARE_TOOL_ALLOW` NOR
-    # `AUGUST_CORE_TOOLS` — so on a bare or reduced surface it was an
+    # `HARNESS_CORE_TOOLS` — so on a bare or reduced surface it was an
     # instruction for a tool that surface cannot call, and the model reading a
     # bare "unknown tool" for something the prompt just declared concludes the
     # deployment is broken. Same rule the memory blocks already follow.
@@ -2408,7 +2408,7 @@ async def _runFencedCodeBlock(session: WorkbenchSession, text: str, toolRound: i
         # interpreter per session executing the SAME runner source the cold
         # path would spawn (guards inside the child; parent preflight runs
         # per cell so a mid-conversation sandbox change is honored). The cold
-        # spawn remains the fallback (opt out via AUGUST_WARM_KERNEL_OFF=1).
+        # spawn remains the fallback (opt out via HARNESS_WARM_KERNEL_OFF=1).
         # T13's sequential guarantee covers the WARM path too — the session
         # lock is taken BEFORE the kernel branch (it used to wrap only the
         # cold spawn; concurrent warm cells could interleave stdin writes).
@@ -2425,7 +2425,7 @@ async def _runFencedCodeBlock(session: WorkbenchSession, text: str, toolRound: i
             try:
                 from app.services.workbench import kernel as _kernel_mod
 
-                warmOff = (os.environ.get('AUGUST_WARM_KERNEL_OFF', '').strip().lower()) in (
+                warmOff = (os.environ.get('HARNESS_WARM_KERNEL_OFF', '').strip().lower()) in (
                     '1',
                     'true',
                     'yes',
@@ -2527,7 +2527,7 @@ async def sendWorkbenchMessageStream(
     if not sessionId:
         # Empty ids would funnel every bad caller onto one shared lock.
         raise ValueError('sendWorkbenchMessageStream: sessionId is required')
-    # Perf tracing: spans/ring/logging need AUGUST_PERF_TIMING=1 (or a
+    # Perf tracing: spans/ring/logging need HARNESS_PERF_TIMING=1 (or a
     # forced outer trace); TTFT + tool-args-ready always record (persisted
     # turn telemetry).
     from app.lib.perf_timing import clear_current, current_trace, start_trace
@@ -2674,16 +2674,16 @@ def _recordPreLoopExit(
 def _coreToolNames() -> set[str]:
     """The always-offered tool set — plus ``record_decision`` when asked for.
 
-    ``record_decision`` is deliberately NOT in ``AUGUST_CORE_TOOLS``: it is the
+    ``record_decision`` is deliberately NOT in ``HARNESS_CORE_TOOLS``: it is the
     counterfactual half of the decision ledger, and a tool definition costs
     prompt bytes on every turn. Promoting it into the core set is opt-in via
     ``decisionJournal`` (default off), because that changes what a provider
     sees and therefore the prefix cache — the same reason the memory tail's
     ``memoryAutoInject`` default exists.
     """
-    from app.services.tools.model_tools import AUGUST_CORE_TOOLS
+    from app.services.tools.model_tools import HARNESS_CORE_TOOLS
 
-    names = set(AUGUST_CORE_TOOLS)
+    names = set(HARNESS_CORE_TOOLS)
     try:
         from app.services.brain_config_service import getRuntimeConfig
 
@@ -2793,7 +2793,7 @@ async def _sendWorkbenchMessageStreamImpl(
         # gallery all key off this. Without it the row restores as the raw
         # prompt surface — "📄 fixture.pdf" plus the extracted text in a code
         # block — and the gallery reports nothing while the chat holds files.
-        # Stripped before the wire (message_sources.AUGUST_MESSAGE_ONLY_KEYS).
+        # Stripped before the wire (message_sources.HARNESS_MESSAGE_ONLY_KEYS).
         userRow['attachments'] = list(attachments)
     session.messages.append(userRow)
     session.messageCount += 1
@@ -3678,7 +3678,7 @@ async def _sendWorkbenchMessageStreamImpl(
                 # _tailFrom is the pre-tail content length — the boundary the
                 # persist path trims at (save_workbench_session_sot). Both
                 # marker keys are stripped from upstream bodies (see
-                # AUGUST_MESSAGE_ONLY_KEYS in message_sources.py).
+                # HARNESS_MESSAGE_ONLY_KEYS in message_sources.py).
                 _patched['_tailPatched'] = True
                 _patched['_tailFrom'] = len(_userText)
                 currentMessages[_lastUserIdx] = _patched
@@ -6456,7 +6456,7 @@ async def _sendWorkbenchMessageStreamImpl(
 # Managed-tool dispatch lives in loop/exec.py (P1#11 split, HIGH RISK): the
 # `_executeTool` dispatcher and its immediate private helpers moved VERBATIM,
 # together with the two exec-only support symbols it reads (the
-# AUGUST_TOOL_TIMEOUT_S constant and the baseline-snapshot join). Re-exported
+# HARNESS_TOOL_TIMEOUT_S constant and the baseline-snapshot join). Re-exported
 # under the original names so the loop body, the grant API below and the
 # tests that monkeypatch `wb._executeTool` keep resolving them here.
 from app.services.workbench.loop.exec import (  # noqa: E402
@@ -6655,7 +6655,7 @@ def _approval_never_ask(
         return True
     if session is not None and bool(getattr(session, 'headless', False)):
         return True
-    if os.environ.get('AUGUST_HEADLESS', '').strip().lower() in ('1', 'true', 'yes'):
+    if os.environ.get('HARNESS_HEADLESS', '').strip().lower() in ('1', 'true', 'yes'):
         return True
     try:
         from app.services.tool_registry import isDaemonContext

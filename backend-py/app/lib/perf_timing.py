@@ -1,6 +1,6 @@
 """Workbench performance timing helpers — measurement only, no behaviour change.
 
-Spans/ring/logging enable with env ``AUGUST_PERF_TIMING=1`` (or force=True in
+Spans/ring/logging enable with env ``HARNESS_PERF_TIMING=1`` (or force=True in
 tests). TTFT and the tool-args-ready mark always record — they feed persisted
 turn telemetry. Traces accumulate spans (prompt_build, llm_wait, tool_exec,
 sse_emit proxy, persist) and TTFT (time from trace start to first content
@@ -29,7 +29,7 @@ _current: ContextVar[PerfTrace | None] = ContextVar('perf_trace', default=None)
 
 
 def _env_enabled() -> bool:
-    v = os.environ.get('AUGUST_PERF_TIMING', '').strip().lower()
+    v = os.environ.get('HARNESS_PERF_TIMING', '').strip().lower()
     return v in ('1', 'true', 'yes', 'on')
 
 

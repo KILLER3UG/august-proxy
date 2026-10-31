@@ -42,7 +42,7 @@ the write door on purpose, because workspace memory is the separate
 ## Model-managed memory (CRUD is a set)
 
 `remember` (write/update by key), `list_facts` (enumerate keys) and `forget`
-(retire/delete) are all **core** tools: they are in `AUGUST_CORE_TOOLS` so
+(retire/delete) are all **core** tools: they are in `HARNESS_CORE_TOOLS` so
 progressive disclosure can never hide the key lookup that `remember`'s own
 instructions depend on, and in `_BARE_TOOL_ALLOW` so a weak/downgraded model can
 still correct what it remembers instead of only accumulating.

@@ -102,7 +102,7 @@ export function buildPairingUrl(baseUrl: string, token: string): string {
 /**
  * The script the WebView runs BEFORE the page loads.
  *
- * It publishes the token as `window.__AUGUST_LOCAL_TOKEN__`, which is one
+ * It publishes the token as `window.__HARNESS_LOCAL_TOKEN__`, which is one
  * of the two sources the web client reads
  * (frontend/desktop/src/api/client.ts → `hostGlobalToken`). The token
  * therefore never appears in the WebView's URL at all: not in the address
@@ -115,5 +115,5 @@ export function buildPairingUrl(baseUrl: string, token: string): string {
  */
 export function tokenBootstrapScript(token: string | null): string {
   if (!token) return '';
-  return `window.__AUGUST_LOCAL_TOKEN__ = ${JSON.stringify(token)};`;
+  return `window.__HARNESS_LOCAL_TOKEN__ = ${JSON.stringify(token)};`;
 }

@@ -86,7 +86,7 @@ def planner_block_message(tool_name: str) -> str:
 
 
 def proxy_orchestrator_enabled() -> bool:
-    return os.environ.get('AUGUST_PROXY_ORCHESTRATOR', '').strip().lower() in ('1', 'true', 'yes')
+    return os.environ.get('HARNESS_PROXY_ORCHESTRATOR', '').strip().lower() in ('1', 'true', 'yes')
 
 
 def is_mutating_tool(name: str, args: dict[str, object] | None = None) -> bool:

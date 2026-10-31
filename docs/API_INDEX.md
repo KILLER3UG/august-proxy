@@ -477,7 +477,7 @@ Regenerate: `npm run gen:api-index` · Verify: `npm run check:api-index`
 | `GET` | `/api/observability/overview` | Observability Overview |
 | `GET` | `/api/observations` | List Observations |
 | `GET` | `/api/observations/{obs_id}.png` | Observation Png |
-| `GET` | `/api/perf/recent` | Recent workbench performance traces (when ``AUGUST_PERF_TIMING=1``). |
+| `GET` | `/api/perf/recent` | Recent workbench performance traces (when ``HARNESS_PERF_TIMING=1``). |
 | `POST` | `/api/preview/approve` | body: JSON |
 | `GET` | `/api/preview/session/{sessionId}` | Get Session |
 | `DELETE` | `/api/preview/session/{sessionId}` | Stop Session |

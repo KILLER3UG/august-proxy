@@ -573,7 +573,7 @@ async def _mcp_initialize(proc: asyncio.subprocess.Process, server_id: str = '')
         {
             'protocolVersion': _PROTOCOL_VERSION,
             'capabilities': {},
-            'clientInfo': {'name': 'august-proxy', 'version': '1.0.0'},
+            'clientInfo': {'name': 'august-harness', 'version': '1.0.0'},
         },
         msg_id=0,
         timeout=20.0,
@@ -605,7 +605,7 @@ def _child_env(server: dict[str, object]) -> dict[str, str]:
     """Build the environment for an MCP stdio child process.
 
     Scrubbed by default: starts from the vetted ``noninteractive_env`` (which
-    drops credential-shaped vars AND every ``AUGUST_*`` pointer — the child must
+    drops credential-shaped vars AND every ``HARNESS_*`` pointer — the child must
     not learn where the brain DB lives or inherit API keys — and forces
     non-interactive, non-paging behaviour), then layers ONLY the per-server
     configured env on top. Previously this handed the child the parent's entire
@@ -1171,7 +1171,7 @@ async def _ensure_remote_session_locked(serverId: str) -> dict[str, object]:
         'params': {
             'protocolVersion': _PROTOCOL_VERSION,
             'capabilities': {},
-            'clientInfo': {'name': 'august-proxy', 'version': '1.0.0'},
+            'clientInfo': {'name': 'august-harness', 'version': '1.0.0'},
         },
     }
     session_id: str | None = None

@@ -20,7 +20,7 @@ KNOWN_CLAUDE_PUBLIC_MODEL_ALIASES = {
     'claude-opus-4-6',
     'claude-sonnet-4-6',
 }
-AUGUST_REMINDER = (
+HARNESS_REMINDER = (
     'You are being routed through a multi-model AI gateway. '
     'Use only the tools provided in this request; do not assume any other '
     'tool suite is available.'
@@ -157,7 +157,7 @@ def build_anthropic_system_blocks(system: JsonValue) -> list[dict[str, object]]:
     blocks = normalize_system_blocks(system)
     text = system_blocks_to_text(blocks)
     if should_inject_august_reminder(text):
-        blocks.append({'type': 'text', 'text': AUGUST_REMINDER})
+        blocks.append({'type': 'text', 'text': HARNESS_REMINDER})
     return blocks
 
 

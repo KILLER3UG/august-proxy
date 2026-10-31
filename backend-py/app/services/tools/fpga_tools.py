@@ -27,7 +27,7 @@ _QUARTUS_INSTALL_HINT = (
     'quartus_sh is not installed. Install Intel Quartus Prime (Lite '
     'edition is free: https://www.intel.com/content/www/us/en/software/'
     'programmable/quartus-prime/ — pick the Cyclone IV E device support '
-    'component), or point AUGUST_QUARTUS_SH at an existing quartus_sh.exe.'
+    'component), or point HARNESS_QUARTUS_SH at an existing quartus_sh.exe.'
 )
 
 # Device → family table for the default class-assignment part and friends.
@@ -83,7 +83,7 @@ def resolve_quartus_sh() -> str | None:
     global _quartus_cache
     if _quartus_cache:
         return _quartus_cache
-    env_exe = os.environ.get('AUGUST_QUARTUS_SH', '').strip()
+    env_exe = os.environ.get('HARNESS_QUARTUS_SH', '').strip()
     if env_exe and os.path.isfile(env_exe):
         _quartus_cache = env_exe
         return env_exe

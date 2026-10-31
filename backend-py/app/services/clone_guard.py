@@ -1,7 +1,7 @@
 """Clone-root guard: the self-edit clone is not writable by unattended runs.
 
 Stage 2 of the self-edit loop. The clone (Stage 4 bootstraps it; the shell
-points ``AUGUST_CLONE_ROOT`` or ``selfEdit.cloneRoot`` at it) is the only
+points ``HARNESS_CLONE_ROOT`` or ``selfEdit.cloneRoot`` at it) is the only
 tree the model is ever allowed to edit as source, and an edit there only
 becomes real when a human clicks "Restart to apply". An unattended run —
 automation, recurring task, daemon, bot — has no human: an edit it makes
@@ -40,7 +40,7 @@ import stat
 from pathlib import Path
 
 #: Set by the turn dispatch beside ``currentSessionId``: True while the
-#: running session is unattended (headless flag, ``AUGUST_HEADLESS``, or a
+#: running session is unattended (headless flag, ``HARNESS_HEADLESS``, or a
 #: daemon context — the same predicate the never-ask stance uses). Subagent
 #: dispatch sets it for its own tasks so workers inherit the parent's stance.
 currentUnattended: contextvars.ContextVar[bool] = contextvars.ContextVar(
@@ -52,14 +52,14 @@ def is_unattended_session(session: object) -> bool:
     """The never-ask stance's signals, without the per-session policy.
 
     ``session.headless`` is what automation runs and gateway bridges stamp at
-    creation; ``AUGUST_HEADLESS`` and the daemon context are the process-wide
+    creation; ``HARNESS_HEADLESS`` and the daemon context are the process-wide
     forms. The approval policy's ``never_ask`` is deliberately NOT consulted
     here: a attended session configured never-to-ask still has a human who
     can click "Restart to apply".
     """
     if bool(getattr(session, 'headless', False)):
         return True
-    if os.environ.get('AUGUST_HEADLESS', '').strip().lower() in ('1', 'true', 'yes'):
+    if os.environ.get('HARNESS_HEADLESS', '').strip().lower() in ('1', 'true', 'yes'):
         return True
     try:
         from app.services.tool_registry import isDaemonContext
@@ -74,11 +74,11 @@ def is_unattended_session(session: object) -> bool:
 def clone_root() -> Path | None:
     """The configured self-edit clone root, or None when none is configured.
 
-    ``AUGUST_CLONE_ROOT`` (set by the desktop shell, Stage 4) wins over the
+    ``HARNESS_CLONE_ROOT`` (set by the desktop shell, Stage 4) wins over the
     ``selfEdit.cloneRoot`` config key so a dev session can point the gates at
     a scratch checkout without touching the user's config.
     """
-    raw = (os.environ.get('AUGUST_CLONE_ROOT') or '').strip()
+    raw = (os.environ.get('HARNESS_CLONE_ROOT') or '').strip()
     if not raw:
         try:
             from app.services.config_service import getConfig
@@ -115,7 +115,7 @@ def running_from_clone() -> bool:
     The runtime pin (Stage 4): the shell resolves the backend entry the same
     way every boot, and with the self-edit switch on that entry is the clone
     — so "Restart to apply" is real only while this returns True. Read from
-    ``AUGUST_PROXY_ROOT`` (set by the shell at spawn since long before Stage
+    ``HARNESS_PROXY_ROOT`` (set by the shell at spawn since long before Stage
     4; until Stage 4 nothing in backend-py read it).
     """
     try:

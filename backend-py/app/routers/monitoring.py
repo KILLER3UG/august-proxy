@@ -54,7 +54,7 @@ router = APIRouter(prefix='/api')
 
 @router.get('/perf/recent')
 async def getRecentPerfTraces(limit: int = Query(default=20, ge=1, le=64)):
-    """Recent workbench performance traces (when ``AUGUST_PERF_TIMING=1``).
+    """Recent workbench performance traces (when ``HARNESS_PERF_TIMING=1``).
 
     Debug/measurement only. Empty list if no traces were recorded.
     """

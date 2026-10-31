@@ -559,12 +559,12 @@ def is_session_json_export_enabled() -> bool:
     """Whether continuous JSON backup export is on (env overrides config).
 
     SoT remains SQLite either way. Enable via:
-      * env ``AUGUST_SESSION_JSON_EXPORT=1`` (highest priority when set)
+      * env ``HARNESS_SESSION_JSON_EXPORT=1`` (highest priority when set)
       * config ``auxiliary.session_json_export.enabled``
     """
     import os
 
-    env = os.environ.get('AUGUST_SESSION_JSON_EXPORT')
+    env = os.environ.get('HARNESS_SESSION_JSON_EXPORT')
     if env is not None and str(env).strip() != '':
         return str(env).strip().lower() in ('1', 'true', 'yes', 'on')
     try:
@@ -602,7 +602,7 @@ def get_session_json_export_status() -> dict[str, object]:
     """Public status for admin UI / API."""
     import os
 
-    env_raw = os.environ.get('AUGUST_SESSION_JSON_EXPORT')
+    env_raw = os.environ.get('HARNESS_SESSION_JSON_EXPORT')
     env_overrides = env_raw is not None and str(env_raw).strip() != ''
     enabled = is_session_json_export_enabled()
     path = _sessions_path()
@@ -835,7 +835,7 @@ def save_sessions(*, immediate: bool = False, dirty: 'str | Iterable[str] | None
     (safe default for callers that mutate several rows or can't name one).
 
     JSON export is **off by default**. Enable via admin config
-    ``auxiliary.session_json_export.enabled`` or env ``AUGUST_SESSION_JSON_EXPORT=1``.
+    ``auxiliary.session_json_export.enabled`` or env ``HARNESS_SESSION_JSON_EXPORT=1``.
     JSON is never the SoT.
     """
     # Surface tests that bypass the autouse isolatedData fixture.

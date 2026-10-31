@@ -78,7 +78,7 @@ rendered code-mode child source, the Anthropic and OpenAI tool builders return
 the same ordered name list, and `buildSystemPrompt` for one session is
 byte-identical across rebuilds — the prefix-cache claim, computed). It never
 touches the user's data directory — that holds their brain database and their
-keys — and it points `AUGUST_DATA_DIR` at a temp directory that is removed
+keys — and it points `HARNESS_DATA_DIR` at a temp directory that is removed
 afterwards.
 
 Three gates exist because the defect they catch is INVISIBLE to every other

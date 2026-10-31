@@ -5,7 +5,7 @@ also holds its final disclosed and filtered array, keyed by the session's tool
 SET, model profile and gates. The per-turn BM25 query chooses membership on the
 first build but is deliberately not part of the key: including it made the
 "session" cache a per-turn cache and let the provider's tool-array prefix move
-mid-session. Disable with ``AUGUST_P1_TOOL_CACHE=0`` to rebuild both layers on
+mid-session. Disable with ``HARNESS_P1_TOOL_CACHE=0`` to rebuild both layers on
 every call (useful for A/B latency measurements).
 """
 
@@ -59,7 +59,7 @@ def store_session_cached(
 
 
 def enabled() -> bool:
-    v = os.environ.get('AUGUST_P1_TOOL_CACHE', '1').strip().lower()
+    v = os.environ.get('HARNESS_P1_TOOL_CACHE', '1').strip().lower()
     return v not in ('0', 'false', 'no', 'off')
 
 

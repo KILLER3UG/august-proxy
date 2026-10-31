@@ -39,7 +39,7 @@ export const LOCAL_TOKEN_URL_PARAM = 'august-token';
  */
 function hostGlobalToken(): string | null {
   if (typeof window === 'undefined') return null;
-  const value = (window as Window & { __AUGUST_LOCAL_TOKEN__?: string }).__AUGUST_LOCAL_TOKEN__;
+  const value = (window as Window & { __HARNESS_LOCAL_TOKEN__?: string }).__HARNESS_LOCAL_TOKEN__;
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
@@ -177,7 +177,7 @@ function localToken(): Promise<string | null> {
  *
  * Exported for the phone-pairing surface, which is the ONE place that
  * shows the token to a human. Outside Tauri it is the token the host page
- * supplied (URL fragment, query string, or `window.__AUGUST_LOCAL_TOKEN__`);
+ * supplied (URL fragment, query string, or `window.__HARNESS_LOCAL_TOKEN__`);
  * inside Tauri it is the shell's, over the IPC.
  */
 export function getLocalToken(): Promise<string | null> {

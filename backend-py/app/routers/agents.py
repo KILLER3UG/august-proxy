@@ -396,7 +396,7 @@ async def _run_api_agent_job(
     """Background runner for POST /api/agents/jobs — real workbench sub-agent."""
     import os
 
-    timeout_s = float(os.environ.get('AUGUST_AGENT_JOB_TIMEOUT', '180') or '180')
+    timeout_s = float(os.environ.get('HARNESS_AGENT_JOB_TIMEOUT', '180') or '180')
     status = 'failed'
     result_text = ''
     error_text = ''

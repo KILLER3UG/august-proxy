@@ -11,13 +11,13 @@ const ROOT = path.resolve(
   'docs/research',
 );
 /* Clone roots are MACHINE STATE, not part of the repo: they live under a temp
- * directory and will vanish. Override the base with AUGUST_RESEARCH_CLONES
+ * directory and will vanish. Override the base with HARNESS_RESEARCH_CLONES
  * (the directory that holds pi/ simulide/ deepseek-harness/), otherwise the
  * historical default is used. The three repo URLs and the exact commits are in
  * docs/research/STATUS.md — a verifier that cannot say how to recreate what it
  * verifies is one nobody can re-run. */
 const CLONE_BASE =
-  process.env.AUGUST_RESEARCH_CLONES || 'C:/Users/rober/AppData/Local/Temp/harness-research';
+  process.env.HARNESS_RESEARCH_CLONES || 'C:/Users/rober/AppData/Local/Temp/harness-research';
 const EXPECTED_COMMITS = { pi: '58c0b02', simulide: 'a7d9fc9', 'deepseek-harness': '687f282e' };
 const CLONE_URLS = {
   pi: 'https://github.com/earendil-works/pi',
@@ -44,7 +44,7 @@ if (!existsSync(clone) || !existsSync(path.join(clone, '.git'))) {
 ` +
       `    git -C "${clone}" checkout ${EXPECTED_COMMITS[repo]}
 ` +
-      `  (or point AUGUST_RESEARCH_CLONES at a directory that holds ${repo}/).`,
+      `  (or point HARNESS_RESEARCH_CLONES at a directory that holds ${repo}/).`,
   );
   process.exit(2);
 }

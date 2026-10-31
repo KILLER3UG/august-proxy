@@ -11,7 +11,7 @@
 set -euo pipefail
 
 INSTALL_DIR="${INSTALL_DIR:-/opt/august}"
-REPO_DIR="${AUGUST_REPO_DIR:-$(cd "$(dirname "$0")/../../.." && pwd)}"
+REPO_DIR="${HARNESS_REPO_DIR:-$(cd "$(dirname "$0")/../../.." && pwd)}"
 ALLOWLIST_FILE="${PIER_ALLOWLIST_FILE:-$INSTALL_DIR/network-allowlist.txt}"
 
 echo "[august-bench/pier] installing into $INSTALL_DIR (air-gapped)"

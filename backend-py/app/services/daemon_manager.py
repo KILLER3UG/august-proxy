@@ -65,7 +65,7 @@ class DaemonResult:
 class DaemonManager:
     """Manages daemon lifecycle for all sessions.
 
-    Every daemon carries a time-to-live (``AUGUST_DAEMON_TTL_S``, default
+    Every daemon carries a time-to-live (``HARNESS_DAEMON_TTL_S``, default
     3600s) — a background reaper kills expired ones, so a daemon the model
     spawned and forgot cannot leak forever. Kill it explicitly and restart
     with a larger TTL env when something must outlive an hour.
@@ -81,7 +81,7 @@ class DaemonManager:
     @staticmethod
     def _ttl_seconds() -> float:
         try:
-            return max(60.0, float(os.environ.get('AUGUST_DAEMON_TTL_S', '3600')))
+            return max(60.0, float(os.environ.get('HARNESS_DAEMON_TTL_S', '3600')))
         except (TypeError, ValueError):
             return 3600.0
 

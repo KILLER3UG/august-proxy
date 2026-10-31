@@ -97,7 +97,7 @@ the function body was never decomposed.
   enforces by audit.
 - **Parallel tool execution** is shipped: a batch is gathered when every call is
   on `parallel_tools.PARALLEL_SAFE_TOOLS` and run serially otherwise; default
-  ON via `AUGUST_P1_PARALLEL_TOOLS`. **REAL** (the 2026-10-21 report had this
+  ON via `HARNESS_P1_PARALLEL_TOOLS`. **REAL** (the 2026-10-21 report had this
   wrong in both directions; it was corrected in `1f67fb0e`).
 
 ## 3. Subagent spawn and UI
@@ -318,7 +318,7 @@ What exists instead — **one SQLite file with seven surfaces**:
   A plausible divergence.
 - **There is NO automatic turn rerouting.** `routing_evidence` is written by the
   Arena/Debate verdict endpoint and read back for ranking; the old
-  `AUGUST_AUTO_ROUTE` / `routingSuggestion`-SSE claims were never wired and
+  `HARNESS_AUTO_ROUTE` / `routingSuggestion`-SSE claims were never wired and
   have been removed. **A doc claim that was corrected — do not propose it back.**
 
 ## 8. Sandbox

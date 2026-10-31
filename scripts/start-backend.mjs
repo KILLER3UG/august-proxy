@@ -5,7 +5,7 @@
 //
 // Usage:
 //   npm run start
-//   AUGUST_PROXY_PORT=8086 npm run start
+//   HARNESS_PROXY_PORT=8086 npm run start
 
 import { spawn, execFileSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const port = process.env.AUGUST_PROXY_PORT || '8085';
+const port = process.env.HARNESS_PROXY_PORT || '8085';
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 // Project policy: Python 3.12+ only (see backend-py/pyproject.toml requires-python).
@@ -125,7 +125,7 @@ async function start() {
             '--app-dir', backendDir,
         ], {
             cwd: root,
-            env: { ...process.env, AUGUST_PROXY_PORT: port },
+            env: { ...process.env, HARNESS_PROXY_PORT: port },
             stdio: 'inherit',
         });
         child.on('exit', (code) => process.exit(code ?? 1));
@@ -134,7 +134,7 @@ async function start() {
         console.log('[start] Tip: cd backend-py && uv sync --group dev  (uses .python-version 3.12)');
         const child = spawn(npm, ['run', 'start:node'], {
             cwd: root,
-            env: { ...process.env, AUGUST_PROXY_PORT: port },
+            env: { ...process.env, HARNESS_PROXY_PORT: port },
             stdio: 'inherit',
         });
         child.on('exit', (code) => process.exit(code ?? 1));

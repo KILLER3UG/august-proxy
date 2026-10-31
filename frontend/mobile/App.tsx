@@ -16,7 +16,7 @@ import WebView from 'react-native-webview';
 import { parsePairingInput, tokenBootstrapScript } from './pairing';
 
 // Follow the desktop backend's port when overridden at build time
-// (EXPO_PUBLIC_PROXY_PORT, e.g. to match AUGUST_PROXY_PORT); default 8085.
+// (EXPO_PUBLIC_PROXY_PORT, e.g. to match HARNESS_PROXY_PORT); default 8085.
 const PROXY_PORT = process.env.EXPO_PUBLIC_PROXY_PORT || '8085';
 
 const MOBILE_WEB_BOOTSTRAP = `

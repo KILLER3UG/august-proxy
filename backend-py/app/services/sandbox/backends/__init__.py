@@ -26,7 +26,7 @@ def select_backend_name() -> 'EnforcementBackend':
 
     Probes are memoized for 30s: the platform probes (bwrap lookup,
     AppContainer checks) ran on EVERY command through the hot path. The
-    container tier is checked first — it is opt-in (AUGUST_CONTAINER_SANDBOX)
+    container tier is checked first — it is opt-in (HARNESS_CONTAINER_SANDBOX)
     and strictly stronger than the host-policy tiers, so when the user
     enabled it, it wins.
     """

@@ -280,7 +280,7 @@ export async function readFileContent(
     // opened as the extracted-text dump and only the design lab's fixture could
     // exercise the pager. The two do not conflict: `content` feeds the prompt,
     // `dataUrl` feeds the viewer, and the wire strip removes the field before a
-    // provider sees it (`AUGUST_MESSAGE_ONLY_KEYS`).
+    // provider sees it (`HARNESS_MESSAGE_ONLY_KEYS`).
     const keepBytes = file.size <= INLINE_FILE_MAX_SIZE;
     try {
       const { content, truncated, thumbnailUrl } = await extractPdfText(file, onProgress);

@@ -7,7 +7,7 @@ Run once::
     cd backend-py
     python scripts/migrate_guidelines_to_skills.py
 
-Environment: set AUGUST_DATA_DIR if needed (default: <project>/data).
+Environment: set HARNESS_DATA_DIR if needed (default: <project>/data).
 """
 
 from __future__ import annotations

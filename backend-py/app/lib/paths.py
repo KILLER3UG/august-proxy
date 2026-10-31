@@ -1,5 +1,5 @@
 """
-Resolve data directory paths. Respects AUGUST_DATA_DIR env var.
+Resolve data directory paths. Respects HARNESS_DATA_DIR env var.
 """
 
 from __future__ import annotations
@@ -12,17 +12,17 @@ logger = logging.getLogger(__name__)
 
 
 def dataDir() -> Path:
-    override = os.environ.get('AUGUST_DATA_DIR')
+    override = os.environ.get('HARNESS_DATA_DIR')
     if override:
         return Path(override)
     # Pytest runs MUST be isolated (tests/conftest.py sets
-    # AUGUST_DATA_DIR autouse). Reaching the live checkout data dir from a
+    # HARNESS_DATA_DIR autouse). Reaching the live checkout data dir from a
     # test means the isolation fixture was bypassed — the July/August leaks
     # (MagicMock agent_jobs, fixture plans, s1/fp1 episodes) all entered the
     # user's stores exactly this way. Fail loudly instead of writing junk.
     if os.environ.get('PYTEST_CURRENT_TEST'):
         raise RuntimeError(
-            'pytest run without AUGUST_DATA_DIR isolation — refusing to touch '
+            'pytest run without HARNESS_DATA_DIR isolation — refusing to touch '
             'the live data dir (see tests/conftest.py isolatedData)'
         )
     return _repoDataDir()
@@ -44,9 +44,9 @@ def dataPath(*parts: str) -> Path:
 
 def _isUnderPytestBasetemp(path: Path) -> bool:
     """True when ``path`` lives under pytest's per-test ``tmp_path`` (the
-    *real* isolation target — ``AUGUST_DATA_DIR`` should be that tmp dir).
+    *real* isolation target — ``HARNESS_DATA_DIR`` should be that tmp dir).
     Used by writer-level guards to surface tests that bypass the autouse
-    fixture: even if a test set ``AUGUST_DATA_DIR`` to *something*, this
+    fixture: even if a test set ``HARNESS_DATA_DIR`` to *something*, this
     catches the case where that something is the user's real checkout."""
     basetemp = os.environ.get('PYTEST_DEBUG_TEMPROOT') or os.environ.get(
         'PYTEST_BASE_TEMP'
@@ -76,29 +76,29 @@ def assertPytestDataDirIsolated(label: str) -> None:
     dir MUST live under a pytest tmp basetemp. Logs (not raises) so a test
     that intentionally touches the live path can still proceed; the goal is
     to surface silent leaks of the form
-    ``test sets AUGUST_DATA_DIR=/Users/me/.../data by mistake``.
+    ``test sets HARNESS_DATA_DIR=/Users/me/.../data by mistake``.
     The autouse ``isolatedData`` fixture is the primary defense; this is the
     belt-and-braces check the plan called for.
     """
     if not os.environ.get('PYTEST_CURRENT_TEST'):
         return
-    data_dir = os.environ.get('AUGUST_DATA_DIR')
+    data_dir = os.environ.get('HARNESS_DATA_DIR')
     if not data_dir:
         # The hard guard in dataDir() will have raised; this is unreachable.
         return
     if not _isUnderPytestBasetemp(Path(data_dir)):
         # Warning was the original behavior, and it is what let a leak through:
-        # a test that pointed AUGUST_DATA_DIR at the user's real stores wrote
+        # a test that pointed HARNESS_DATA_DIR at the user's real stores wrote
         # anyway and the only trace was a log line no one read. Refusing that
         # specific path costs nothing — legitimate tests use tmp_path.
         if Path(data_dir).resolve() == _repoDataDir().resolve():
             raise RuntimeError(
-                f'pytest writer {label!r} resolved AUGUST_DATA_DIR to the live '
+                f'pytest writer {label!r} resolved HARNESS_DATA_DIR to the live '
                 f'store {data_dir!r} — refusing to touch the user\'s data '
                 '(see tests/conftest.py isolatedData)'
             )
         logger.warning(
-            'Part 27 E2: writer %s invoked under pytest with AUGUST_DATA_DIR=%r '
+            'Part 27 E2: writer %s invoked under pytest with HARNESS_DATA_DIR=%r '
             'that is not under the pytest basetemp — this risks writing to '
             'the user\'s live stores. (See tests/conftest.py isolatedData.)',
             label,

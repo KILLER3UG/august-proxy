@@ -29,8 +29,8 @@ from app.adapters.anthropic_sse import (
     write_anthropic_sse_data_only,
 )
 from app.adapters.anthropic_system import (
-    AUGUST_REMINDER,
     CLAUDE_PUBLIC_MODEL_ALIAS,
+    HARNESS_REMINDER,
     KNOWN_CLAUDE_PUBLIC_MODEL_ALIASES,
     append_text_to_system_blocks,
     build_anthropic_system_blocks,
@@ -86,7 +86,7 @@ sendSimulatedAnthropicStream = send_simulated_anthropic_stream
 # Re-export constants for back-compat (assignment keeps ruff from stripping imports).
 CLAUDE_PUBLIC_MODEL_ALIAS = CLAUDE_PUBLIC_MODEL_ALIAS
 KNOWN_CLAUDE_PUBLIC_MODEL_ALIASES = KNOWN_CLAUDE_PUBLIC_MODEL_ALIASES
-AUGUST_REMINDER = AUGUST_REMINDER
+HARNESS_REMINDER = HARNESS_REMINDER
 
 isClaudeFamilyModel = is_claude_family_model
 resolveClaudePublicModelAlias = resolve_claude_public_model_alias
@@ -386,17 +386,17 @@ def _budgetToEffort(budget: int) -> str:
 
 
 def _anthropicCacheControlEnabled() -> bool:
-    """Prompt caching for Anthropic upstreams (AUGUST_ANTHROPIC_CACHE=0 disables)."""
+    """Prompt caching for Anthropic upstreams (HARNESS_ANTHROPIC_CACHE=0 disables)."""
     import os
 
-    val = os.environ.get('AUGUST_ANTHROPIC_CACHE')
+    val = os.environ.get('HARNESS_ANTHROPIC_CACHE')
     if val is not None and str(val).strip() != '':
         return str(val).strip().lower() not in ('0', 'false', 'no', 'off')
     return True
 
 
 def _anthropicCacheTtlHour() -> bool:
-    """Opt-in 1h-TTL cache breakpoints (AUGUST_ANTHROPIC_PERSISTENT_CACHE=1).
+    """Opt-in 1h-TTL cache breakpoints (HARNESS_ANTHROPIC_PERSISTENT_CACHE=1).
 
     Default ephemeral breakpoints live ~5 minutes (refreshed on each hit);
     ``ttl: '1h'`` keeps the cached prefix alive an hour so long sessions
@@ -405,7 +405,7 @@ def _anthropicCacheTtlHour() -> bool:
     """
     import os
 
-    val = os.environ.get('AUGUST_ANTHROPIC_PERSISTENT_CACHE')
+    val = os.environ.get('HARNESS_ANTHROPIC_PERSISTENT_CACHE')
     if val is None:
         return False
     return str(val).strip().lower() in ('1', 'true', 'yes', 'on')

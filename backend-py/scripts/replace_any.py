@@ -121,7 +121,7 @@ def processFile(filepath: str) -> int:
 
 
 def main():
-    root = sys.argv[1] if len(sys.argv) > 1 else 'C:/Dev/august-proxy/backend-py'
+    root = sys.argv[1] if len(sys.argv) > 1 else 'C:/Dev/august-harness/backend-py'
     filesToProcess = []
     for dirpath, dirnames, filenames in os.walk(os.path.join(root, 'app')):
         dirnames[:] = [d for d in dirnames if not d.startswith('.') and d != '.venv']

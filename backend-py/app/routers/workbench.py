@@ -87,7 +87,7 @@ def _startTurnTask(
     rebuild the file card, the bubble and the Artifacts gallery: the wire text
     embeds the extracted content, so without the record a restored transcript
     shows the raw prompt surface instead. The engine strips the field before
-    anything reaches a provider (``AUGUST_MESSAGE_ONLY_KEYS``, applied at
+    anything reaches a provider (``HARNESS_MESSAGE_ONLY_KEYS``, applied at
     ``BaseProviderClient.wireBody``).
     """
     seq = event_log.event_log.append(sessionId, 'started', {'sinceSeq': 0})
@@ -1962,7 +1962,7 @@ async def workbenchDoctor():
 
     # 2) Disk free on data / cwd
     try:
-        data_root = Path(os.environ.get('AUGUST_DATA_DIR', 'data')).resolve()
+        data_root = Path(os.environ.get('HARNESS_DATA_DIR', 'data')).resolve()
         if not data_root.exists():
             data_root = Path.cwd()
         usage = shutil.disk_usage(str(data_root))
@@ -2031,7 +2031,7 @@ async def workbenchDoctor():
     # 4) Google OAuth redirect / client id configuration
     try:
         client_id = (
-            os.environ.get('AUGUST_DEFAULT_GOOGLE_OAUTH_CLIENT_ID')
+            os.environ.get('HARNESS_DEFAULT_GOOGLE_OAUTH_CLIENT_ID')
             or os.environ.get('GOOGLE_OAUTH_CLIENT_ID')
             or ''
         ).strip()
@@ -2055,7 +2055,7 @@ async def workbenchDoctor():
         if has_id:
             detail_parts.append('Client ID configured')
         else:
-            detail_parts.append('No Client ID (BYO or AUGUST_DEFAULT_GOOGLE_OAUTH_CLIENT_ID)')
+            detail_parts.append('No Client ID (BYO or HARNESS_DEFAULT_GOOGLE_OAUTH_CLIENT_ID)')
         if redirect:
             detail_parts.append(f'redirect {redirect}')
         else:

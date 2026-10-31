@@ -1,8 +1,8 @@
-# Google Workspace + Classroom capability for august-proxy
+# Google Workspace + Classroom capability for august-harness
 
 **Date:** 2026-10-07
 **Status:** Proposed — needs an architecture decision before implementation
-**Goal:** Give august-proxy the same Google Workspace reach Hermes now has, including Google Classroom.
+**Goal:** Give august-harness the same Google Workspace reach Hermes now has, including Google Classroom.
 
 ---
 
@@ -56,7 +56,7 @@ returned real data. `materials` returned `[]` legitimately (that course had none
 
 ---
 
-## 2. What august-proxy has today
+## 2. What august-harness has today
 
 ### 2.1 OAuth layer — already exists and is good
 

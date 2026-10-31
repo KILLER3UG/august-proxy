@@ -56,7 +56,7 @@ MACHINE_SOURCES: frozenset[str] = frozenset(
 # August-internal keys that ride on in-memory message dicts but must never
 # reach an upstream provider body (the dump layer strips them per message —
 # the body-level ``session_id``/``_endpoint`` strip does not cover these).
-AUGUST_MESSAGE_ONLY_KEYS: frozenset[str] = frozenset(
+HARNESS_MESSAGE_ONLY_KEYS: frozenset[str] = frozenset(
     # `attachments` joins `source` here because the user row now carries the
     # client's attachment records so a reload can rebuild the card. The wire
     # text already embeds the extracted content, so forwarding the array would
@@ -66,7 +66,7 @@ AUGUST_MESSAGE_ONLY_KEYS: frozenset[str] = frozenset(
 
 
 def strip_august_message_keys(messages: object) -> object:
-    """Drop :data:`AUGUST_MESSAGE_ONLY_KEYS` from per-message dicts.
+    """Drop :data:`HARNESS_MESSAGE_ONLY_KEYS` from per-message dicts.
 
     Used by both upstream dump paths (``dump_anthropic_upstream_body`` /
     ``dump_openai_upstream_body``): the markers ride on the loop's in-memory
@@ -77,8 +77,8 @@ def strip_august_message_keys(messages: object) -> object:
         return messages
     out: list[object] = []
     for msg in messages:
-        if isinstance(msg, dict) and not AUGUST_MESSAGE_ONLY_KEYS.isdisjoint(msg):
-            out.append({k: v for k, v in msg.items() if k not in AUGUST_MESSAGE_ONLY_KEYS})
+        if isinstance(msg, dict) and not HARNESS_MESSAGE_ONLY_KEYS.isdisjoint(msg):
+            out.append({k: v for k, v in msg.items() if k not in HARNESS_MESSAGE_ONLY_KEYS})
         else:
             out.append(msg)
     return out

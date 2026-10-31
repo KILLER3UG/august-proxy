@@ -8,7 +8,7 @@ blocks go through this helper instead:
 * every swallow names its site — ``rg 'best_effort\\[' `` finds them all;
 * the exception logs with ``exc_info=True`` (DEBUG by default), so the
   "deliberate" part is verifiable in the logs, not folklore;
-* with ``AUGUST_STRICT_BEST_EFFORT=1`` (test runs) it re-raises instead, so
+* with ``HARNESS_STRICT_BEST_EFFORT=1`` (test runs) it re-raises instead, so
   what production would have eaten surfaces as a test failure.
 
 Cancellation is deliberately not caught: ``except Exception`` misses
@@ -33,8 +33,8 @@ _TRUE_VALUES = frozenset({'1', 'true', 'yes', 'on'})
 
 
 def strict_best_effort() -> bool:
-    """True when AUGUST_STRICT_BEST_EFFORT asks swallows to re-raise."""
-    return os.environ.get('AUGUST_STRICT_BEST_EFFORT', '').strip().lower() in _TRUE_VALUES
+    """True when HARNESS_STRICT_BEST_EFFORT asks swallows to re-raise."""
+    return os.environ.get('HARNESS_STRICT_BEST_EFFORT', '').strip().lower() in _TRUE_VALUES
 
 
 @contextmanager
@@ -43,7 +43,7 @@ def best_effort(site: str, *, level: int = logging.DEBUG) -> Iterator[None]:
 
     ``with best_effort('session.title-backfill'):``
     Swallowed exceptions log as ``best_effort[<site>] swallowed`` with the
-    traceback. Under ``AUGUST_STRICT_BEST_EFFORT=1`` the exception re-raises
+    traceback. Under ``HARNESS_STRICT_BEST_EFFORT=1`` the exception re-raises
     so tests catch what the swallow would have hidden.
     """
     try:

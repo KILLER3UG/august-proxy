@@ -68,7 +68,7 @@ def resolve_kicad_cli() -> str | None:
     global _kicad_cache
     if _kicad_cache:
         return _kicad_cache
-    env_exe = os.environ.get('AUGUST_KICAD_CLI', '').strip()
+    env_exe = os.environ.get('HARNESS_KICAD_CLI', '').strip()
     if env_exe and os.path.isfile(env_exe):
         _kicad_cache = env_exe
         return env_exe

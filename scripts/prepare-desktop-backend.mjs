@@ -459,7 +459,7 @@ async function ensureNgspice() {
         '  `digital.cm` removes every XSPICE part. Both are required, and the',
         '  staging step proves they load by running a real `.ac` deck.',
         '',
-        'Set `AUGUST_NGSPICE_EXE` to keep a system install instead; it wins when',
+        'Set `HARNESS_NGSPICE_EXE` to keep a system install instead; it wins when',
         'it points at a real file. `circuit_env` reports what was found.',
         '',
       ].join('\n'),
@@ -542,7 +542,7 @@ async function buildWheels(pythonExe) {
       recursive: true,
       filter: (path) => {
         const name = path.split(/[\\/]/).at(-1);
-        return !['build', 'dist', 'august_proxy.egg-info', '.venv', '__pycache__', '.mypy_cache', '.ruff_cache', '.pytest_cache'].includes(name);
+        return !['build', 'dist', 'august_harness.egg-info', '.venv', '__pycache__', '.mypy_cache', '.ruff_cache', '.pytest_cache'].includes(name);
       },
     });
 
@@ -595,7 +595,7 @@ async function buildWheels(pythonExe) {
     ]);
 
     const wheelNames = await readdir(wheelsOut);
-    if (!wheelNames.some((name) => name.startsWith('august_proxy-') && name.endsWith('.whl'))) {
+    if (!wheelNames.some((name) => name.startsWith('august_harness-') && name.endsWith('.whl'))) {
       throw new Error('backend project wheel was not produced');
     }
     console.log(`[prepare-backend] wheels → ${wheelsOut}`);

@@ -16,13 +16,13 @@ GITHUB_API = 'https://api.github.com'
 
 
 def _repo() -> str:
-    return (os.environ.get('AUGUST_GITHUB_REPO') or DEFAULT_REPO).strip()
+    return (os.environ.get('HARNESS_GITHUB_REPO') or DEFAULT_REPO).strip()
 
 
 def _headers() -> dict[str, str]:
     headers = {
         'Accept': 'application/vnd.github+json',
-        'User-Agent': 'august-proxy-whats-new',
+        'User-Agent': 'august-harness-whats-new',
     }
     token = (
         os.environ.get('GITHUB_TOKEN')

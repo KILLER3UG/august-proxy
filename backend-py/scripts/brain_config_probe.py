@@ -22,7 +22,7 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-os.environ.setdefault('AUGUST_DATA_DIR', tempfile.mkdtemp(prefix='august-brain-probe-'))
+os.environ.setdefault('HARNESS_DATA_DIR', tempfile.mkdtemp(prefix='august-brain-probe-'))
 sys.path.insert(0, str(REPO / 'backend-py'))
 
 from app.services import brain_config_service as svc  # noqa: E402

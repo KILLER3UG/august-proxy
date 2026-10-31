@@ -90,7 +90,7 @@ SCOPED_ORIGIN_RULES: dict[str, ScopedOriginRule] = {
 _REJECT_BODY = (
     b'{"detail":"untrusted origin","code":"untrusted_origin",'
     b'"message":"Request came from an origin this August instance does not '
-    b'trust. Add it to AUGUST_CORS_ORIGINS if you are a local developer tool."}'
+    b'trust. Add it to HARNESS_CORS_ORIGINS if you are a local developer tool."}'
 )
 
 
@@ -121,7 +121,7 @@ class TrustedOriginGuard:
 
     def __init__(self, app: Any, origins_provider: Callable[[], frozenset[str]]) -> None:
         self.app = app
-        # Resolved per request: `AUGUST_CORS_ORIGINS` and the listening port
+        # Resolved per request: `HARNESS_CORS_ORIGINS` and the listening port
         # are both known to change between dev and packaged boots.
         self._origins_provider = origins_provider
 
@@ -223,7 +223,7 @@ def resolve_origins() -> frozenset[str]:
     deliberate split is the scoped origins (Surfer's embed): they stay in the
     CORS allowlist so the read-only route keeps working, but they are removed
     from full trust unless the operator *explicitly* listed them in
-    ``AUGUST_CORS_ORIGINS`` — an explicit opt-in still means full trust.
+    ``HARNESS_CORS_ORIGINS`` — an explicit opt-in still means full trust.
     """
     from app.main import _cors_allow_origins, _cors_extra_origins
 

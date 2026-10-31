@@ -21,7 +21,7 @@ you would not let run shell commands on this machine.
 
 Because a declared tool runs locally, the proxy must never *add* it on the
 client's behalf: ``mcp__workspace__bash`` is injected into the managed tool
-definitions only when ``AUGUST_PROXY_SHELL`` enables that capability
+definitions only when ``HARNESS_PROXY_SHELL`` enables that capability
 (``proxy_shell_tools_enabled``). Ordinary gateway inference is shell-free by
 default; the typed workbench shell tools are a separate surface and unaffected.
 """

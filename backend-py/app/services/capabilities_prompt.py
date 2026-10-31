@@ -637,11 +637,11 @@ _RELEVANT_SKILLS_MIN_QUERY = 8
 
 def skill_relevance_enabled() -> bool:
     """Gate for the Tier-3 relevant-skills pass: brain-config
-    ``skillRelevanceMatch`` (default on), with ``AUGUST_SKILL_RELEVANCE=0``
+    ``skillRelevanceMatch`` (default on), with ``HARNESS_SKILL_RELEVANCE=0``
     as the hard env override."""
     import os
 
-    if os.environ.get('AUGUST_SKILL_RELEVANCE', '') == '0':
+    if os.environ.get('HARNESS_SKILL_RELEVANCE', '') == '0':
         return False
     try:
         from app.services.brain_config_service import getRuntimeConfig

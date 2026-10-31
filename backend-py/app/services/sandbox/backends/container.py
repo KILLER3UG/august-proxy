@@ -7,13 +7,13 @@ bind-mounted at /workspace, no host filesystem access beyond that mount, and
 ``--network none`` unless the policy allows network.
 
 Opt-in by design: desktop users without Docker must not regress, so this
-backend activates only when ``AUGUST_CONTAINER_SANDBOX`` is truthy AND the
+backend activates only when ``HARNESS_CONTAINER_SANDBOX`` is truthy AND the
 Docker daemon answers. Selection lives in backends/__init__ (container wins
 over the platform backends when enabled — the user asked for it).
 
-Image: ``AUGUST_SANDBOX_IMAGE`` (default ``python:3.12-slim``) — it must
-carry a POSIX shell. Resource caps: ``AUGUST_SANDBOX_MEMORY`` (default 2g),
-``AUGUST_SANDBOX_CPUS`` (default 2).
+Image: ``HARNESS_SANDBOX_IMAGE`` (default ``python:3.12-slim``) — it must
+carry a POSIX shell. Resource caps: ``HARNESS_SANDBOX_MEMORY`` (default 2g),
+``HARNESS_SANDBOX_CPUS`` (default 2).
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ _probe_cache: tuple[float, bool, str] | None = None
 
 def container_enabled() -> bool:
     """Opt-in flag — the container tier never activates silently."""
-    return os.environ.get('AUGUST_CONTAINER_SANDBOX', '').strip().lower() in (
+    return os.environ.get('HARNESS_CONTAINER_SANDBOX', '').strip().lower() in (
         '1',
         'true',
         'yes',
@@ -107,9 +107,9 @@ def build_docker_argv(command: str, policy: SandboxPolicy, name: str) -> list[st
         '--workdir',
         '/workspace',
         '--memory',
-        os.environ.get('AUGUST_SANDBOX_MEMORY', '2g'),
+        os.environ.get('HARNESS_SANDBOX_MEMORY', '2g'),
         '--cpus',
-        os.environ.get('AUGUST_SANDBOX_CPUS', '2'),
+        os.environ.get('HARNESS_SANDBOX_CPUS', '2'),
         '-e',
         'TERM=dumb',
         '-e',
@@ -117,7 +117,7 @@ def build_docker_argv(command: str, policy: SandboxPolicy, name: str) -> list[st
     ]
     if not policy.network:
         argv += ['--network', 'none']
-    image = os.environ.get('AUGUST_SANDBOX_IMAGE', 'python:3.12-slim')
+    image = os.environ.get('HARNESS_SANDBOX_IMAGE', 'python:3.12-slim')
     argv += [image, 'sh', '-lc', command]
     return argv
 
