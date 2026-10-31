@@ -1,12 +1,57 @@
 # Status — the current round
 
-Last updated: 2026-10-29 · App version: **0.18.25**
+Last updated: 2026-10-31 · App version: **0.19.0**
 
 This is the committed handoff. Read it before starting work; update it at the
 end of a round. Keep it to one page: what shipped, what is next, what is
 waiting on the owner, and how to resume.
 
-## This round — the harness stops asking
+## This round — the app edits its own source, and is renamed
+
+- **The self-edit loop ships.** The model edits August's source only inside a
+  user-local clone (`{appData}/clone`), and with self-edit on that clone *is*
+  the runtime — a restart onto pre-edit source would make "apply" a lie. Every
+  clone write is journaled with its pre-edit bytes and undone at boot if it was
+  never applied; unattended runs cannot write the clone at all; the model can
+  never push to a remote in any mode
+  ([agent/security.md](agent/security.md)).
+- **The apply door is judged by a checklist the clone cannot edit.** The gate
+  harness is embedded in the shell (`include_str!`), not read from the tree
+  under test, and it exits with its own verdict. Settings → Self-edit is the
+  only way an edit becomes live, over a Tauri IPC command that is deliberately
+  not a model tool.
+- **0.18.26 shipped a door that could not open**: the smoke gate was spawned
+  without the clone root its containment check needs, so *every* apply failed on
+  `root=None`. Fixed and re-verified in the running app; **0.18.27 is the release
+  that carries that fix under the old identity**, so an installed 0.18.26 can
+  self-update onto a working apply door.
+- **An update is deferred while self-edit is on** — re-staging
+  `backend-runtime` under a clone-preferring pin would report the new version
+  and execute the clone's older HEAD. Three doors refuse and each names the way
+  out.
+- **Renamed to augustHarness**, in four stages: env prefix and code-side
+  identity, the repository and every URL that reads it, the shipped product name
+  and artifact prefix, then the bundle identifier `com.august.harness`. Case is
+  not style: human-facing `augustHarness`, toolchain-parsed `augustharness`, and
+  the skill identifier `august-harness` (a directory name the model types).
+  The old updater endpoint answers `301 → augustHarness`, verified, so installs
+  already out there keep updating through the rename.
+- **The identifier change moves the user's state exactly once, and proves it.**
+  `migrateAppDataRoot` renames the data directory before the instance lock is
+  taken, leaves a junction at the old path so anything still spelling it resolves
+  to the same bytes, and compares a (file count, bytes) fingerprint before and
+  after — a mismatch moves it back. It refuses rather than merges. Rehearsed
+  against fabricated stores both directions, never the live one.
+- `HARNESS_DESKTOP_APP_DATA` redirects the data root for **debug builds only**
+  (an absolute path, ignored with a log if relative), which is what made the
+  loop testable end to end without touching the real brain database.
+- Not yet done, and owned by nobody: writes made through `run_command` or a
+  warm kernel are still not journaled (only the file-tool door is armed); a
+  committed marker has no revert path after boot; and `remote.origin.pushurl`
+  locking does not stop `git push <explicit-url>`, so the push guarantee is a
+  pattern guard plus a lock, not either alone.
+
+## Previous round — the harness stops asking
 
 - **Learned skills apply on their own.** `skillAutonomy` ships on for
   `skill_create`/`skill_patch`, the burn-in rail no longer deadlocks a fresh
@@ -65,12 +110,17 @@ waiting on the owner, and how to resume.
 1. **Memory and skills UX.** The backlog is in the spec: make recall legible,
    show a skill's trigger/usage/history, surface why a skill is hidden, and
    finish the remaining inspection surfaces. This is the owner's priority.
-2. **Verify the update flow on a packaged NSIS install.** The matrix in
-   [`UPDATE_VERIFICATION.md`](UPDATE_VERIFICATION.md) has never been run. The
-   code path is implemented and negative-tested at the script level; the
-   packaged install is the missing proof.
+2. **Verify the update flow on a packaged NSIS install — including the rename.**
+   The matrix in [`UPDATE_VERIFICATION.md`](UPDATE_VERIFICATION.md) has never
+   been run, and `0.18.26 → 0.19.0` is the transition it was never tested for:
+   the bundle identifier, the binary name and the data root all change at once.
+   0.19.0 is bumped and green on `master` but **not tagged** — the tag publishes
+   it as the latest release, which an installed 0.18.2x would download and
+   install without asking. The owner installs the renamed build by hand first.
 3. **The mobile companion.** The decision below is unresolved, and it changes
-   the size of the work by an order of magnitude.
+   the size of the work by an order of magnitude. The Expo `package` is now
+   `com.august.harness`, which makes it a separate install on a phone rather
+   than an upgrade of the old one.
 4. **Active plans** — the Signal Desk UI port, goal environments, and
    self-modification autonomy (see [`DOCUMENTATION.md`](DOCUMENTATION.md)
    §Active plans).
@@ -100,6 +150,13 @@ npm run check -w frontend/desktop
 npm run gates:all                   # the static gate set
 npm run e2e:smoke                   # starts the real app against a throwaway data dir
 ```
+
+Two machine facts that are not in the tree. This checkout still lives at
+`C:\Dev\august-proxy` — the directory rename to `augustHarness` is blocked while
+an editor or a session holds the workspace root, and after it the backend venv
+needs `uv sync` (its editable `.pth` records the absolute path). And
+`origin` here carries a locked `pushurl`: a push needs the lock lifted by the
+owner, which is the point of it.
 
 The product goal is in [`PRODUCT.md`](PRODUCT.md); the contract is
 [`AGENTS.md`](../AGENTS.md); the area guides are [`docs/agent/`](agent/README.md).
