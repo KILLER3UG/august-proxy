@@ -7,7 +7,7 @@ platforms: [linux, macos, windows]
 metadata:
   hermes:
     tags: [tool-use, shell, edit, batch, web]
-    related_skills: [august-harness]
+    related_skills: [augustHarness]
 ---
 
 # August Tools — Usage Rules

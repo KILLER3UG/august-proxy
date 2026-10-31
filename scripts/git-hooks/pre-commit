@@ -64,7 +64,7 @@ CANDIDATES=(
   "${INSTALL_PYTHON}"
   "${VIRTUAL_ENV}/Scripts/python.exe"
   "${VIRTUAL_ENV}/bin/python"
-  "C:/Dev/august-harness/backend-py/.venv/Scripts/python.exe"
+  "C:/Dev/augustHarness/backend-py/.venv/Scripts/python.exe"
 )
 
 for py in "${CANDIDATES[@]}"; do

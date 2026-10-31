@@ -35,7 +35,7 @@ Common issues and how to resolve them.
 ```bash
 docker compose down
 docker compose up --build -d
-docker logs august-harness --tail 50
+docker logs augustHarness --tail 50
 ```
 
 Ensure `.env` exists (copy `.env.example`). Compose maps **`8085:8085`** (not

@@ -318,7 +318,7 @@ export function SessionList({
         setWhatsNewOpen(true);
         break;
       case "help":
-        void openExternal("https://github.com/KILLER3UG/august-proxy#readme");
+        void openExternal("https://github.com/KILLER3UG/augustHarness#readme");
         break;
       case "switch":
         if (accounts.length === 0) {

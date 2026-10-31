@@ -1,7 +1,7 @@
 // scripts/release-desktop.mjs
 //
 // Builds the desktop release assets. `latest.json` is the Tauri updater feed;
-// `august-harness-manifest.json` is legacy web checksum metadata.
+// `augustharness-manifest.json` is legacy web checksum metadata.
 //
 // Usage:
 //   node scripts/release-desktop.mjs patch
@@ -27,11 +27,11 @@ const webDist = resolve(root, 'web-dist');
 const backendDir = resolve(root, 'backend');
 const nodeModules = resolve(root, 'node_modules');
 const packageJsonPath = resolve(root, 'package.json');
-const manifestPath = join(releaseDir, 'august-harness-manifest.json');
+const manifestPath = join(releaseDir, 'augustharness-manifest.json');
 const latestPath = join(releaseDir, 'latest.json');
 const tauriBundleDir = resolve(root, 'frontend/desktop/src-tauri/target/release/bundle');
 const tauriConfPath = resolve(root, 'frontend/desktop/src-tauri/tauri.conf.json');
-const repository = process.env.GITHUB_REPOSITORY || 'KILLER3UG/august-proxy';
+const repository = process.env.GITHUB_REPOSITORY || 'KILLER3UG/augustHarness';
 
 const rawArgs = process.argv.slice(2);
 const knownFlags = new Set(['--publish', '--tauri', '--dry-run', '--draft']);
@@ -295,7 +295,7 @@ async function syncPackageVersions(nextVersion) {
     const cargoPath = resolve(root, 'frontend/desktop/src-tauri/Cargo.toml');
     let cargo = await readFile(cargoPath, 'utf8');
     const cargoUpdated = cargo.replace(/^version\s*=\s*"[^"]+"/m, `version = "${nextVersion}"`);
-    if (cargoUpdated === cargo) throw new Error('could not update august-harness crate version');
+    if (cargoUpdated === cargo) throw new Error('could not update augustHarness crate version');
     await writeFile(cargoPath, cargoUpdated);
 
     const lockPath = resolve(root, 'package-lock.json');
@@ -308,10 +308,10 @@ async function syncPackageVersions(nextVersion) {
     const cargoLockPath = resolve(root, 'frontend/desktop/src-tauri/Cargo.lock');
     let cargoLock = await readFile(cargoLockPath, 'utf8');
     const cargoLockUpdated = cargoLock.replace(
-        /(^name = "august-harness"[\s\S]*?^version = ")[^"]+(")/m,
+        /(^name = "augustharness"[\s\S]*?^version = ")[^"]+(")/m,
         `$1${nextVersion}$2`,
     );
-    if (cargoLockUpdated === cargoLock) throw new Error('could not update august-harness Cargo.lock version');
+    if (cargoLockUpdated === cargoLock) throw new Error('could not update augustHarness Cargo.lock version');
     await writeFile(cargoLockPath, cargoLockUpdated);
 
     await checkVersionSources();

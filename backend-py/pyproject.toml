@@ -1,5 +1,5 @@
 [project]
-name = "august-harness"
+name = "augustharness"
 version = "0.1.0"
 description = "August Proxy — AI model proxy and workbench"
 requires-python = ">=3.12"
@@ -130,7 +130,7 @@ python-preference = "managed"
 target-version = "py312"
 line-length = 120
 src = ["app", "tests"]
-extend-exclude = ["*.bak", "**/__pycache__", "august_harness.egg-info"]
+extend-exclude = ["*.bak", "**/__pycache__", "augustharness.egg-info"]
 
 [tool.ruff.lint]
 # Syntax/undefined-name safety + security (bandit) + import sorting.

@@ -1472,7 +1472,7 @@
           </button>
           <button class="setting-row">
             <svg width="15" height="15"><use href="#i-folder"/></svg>
-            <span class="setting-copy"><strong>Workspace</strong><small>august-harness · ~/Dev/august-harness</small></span>
+            <span class="setting-copy"><strong>Workspace</strong><small>augustHarness · ~/Dev/augustHarness</small></span>
             <svg width="12" height="12"><use href="#i-chev-right"/></svg>
           </button>
           <div class="setting-row">
@@ -1488,7 +1488,7 @@
     <div class="composer-dock" id="composerDock">
       <div class="composer">
         <div class="composer-top">
-          <span class="context-pill"><svg width="10" height="10"><use href="#i-folder"/></svg> august-harness</span>
+          <span class="context-pill"><svg width="10" height="10"><use href="#i-folder"/></svg> augustHarness</span>
         </div>
         <textarea id="composerInput" rows="1" placeholder="Ask August to build, analyze, or visualize…"></textarea>
         <div class="composer-tools">
@@ -1526,14 +1526,14 @@
       </div>
       <button class="drawer-workspace">
         <svg width="14" height="14"><use href="#i-folder"/></svg>
-        <span><strong>august-harness</strong><small>~/Dev/august-harness</small></span>
+        <span><strong>augustHarness</strong><small>~/Dev/augustHarness</small></span>
       </button>
       <button class="drawer-new" id="drawerNew"><svg width="14" height="14"><use href="#i-plus"/></svg> New thread</button>
       <div class="drawer-section">Pinned</div>
       <button class="drawer-thread active" data-thread><span class="dot"></span><span>Chart AI — weekly burn</span><time>2m</time></button>
       <button class="drawer-thread" data-thread><span class="dot"></span><span>Memory refactor plan</span><time>1h</time></button>
       <div class="drawer-section">Projects</div>
-      <div class="drawer-project"><svg width="12" height="12"><use href="#i-folder"/></svg> august-harness</div>
+      <div class="drawer-project"><svg width="12" height="12"><use href="#i-folder"/></svg> augustHarness</div>
       <button class="drawer-thread" data-thread><span class="dot"></span><span>Composer state audit</span><time>3h</time></button>
       <button class="drawer-thread" data-thread><span class="dot"></span><span>Usage dashboard polish</span><time>1d</time></button>
     </aside>
@@ -1844,11 +1844,11 @@
     const libraryData = {
       memory: [
         { id: 1, text: 'Prefers concise answers with the conclusion first.', key: 'pref.answer_style', type: 'Fact', scope: 'Global', source: 'Manual', used: 142, last: '2m', confidence: '0.96', created: 'Apr 12' },
-        { id: 2, text: 'Project uses Tauri 2 + React 19; do not introduce a second router.', key: 'project.stack', type: 'Fact', scope: 'august-harness', source: 'Agent', used: 87, last: '18m', confidence: '0.94', created: 'Apr 08' },
-        { id: 3, text: 'Run npm run check -w frontend/desktop before proposing a UI change.', key: 'project.verify_ui', type: 'Rule', scope: 'august-harness', source: 'Manual', used: 63, last: '1h', confidence: '0.99', created: 'Mar 30' },
+        { id: 2, text: 'Project uses Tauri 2 + React 19; do not introduce a second router.', key: 'project.stack', type: 'Fact', scope: 'augustharness', source: 'Agent', used: 87, last: '18m', confidence: '0.94', created: 'Apr 08' },
+        { id: 3, text: 'Run npm run check -w frontend/desktop before proposing a UI change.', key: 'project.verify_ui', type: 'Rule', scope: 'augustharness', source: 'Manual', used: 63, last: '1h', confidence: '0.99', created: 'Mar 30' },
         { id: 4, text: 'The owner dislikes emoji in product copy.', key: 'pref.no_emoji', type: 'Rule', scope: 'Global', source: 'Manual', used: 201, last: '2h', confidence: '0.99', created: 'Feb 14' },
         { id: 5, text: "Charts should use the app's blue accent, not lime.", key: 'design.chart_accent', type: 'Fact', scope: 'Global', source: 'Manual', used: 58, last: '5h', confidence: '0.97', created: 'Apr 19' },
-        { id: 6, text: 'The desktop app is the product; web-dist is packaging output.', key: 'project.product_surface', type: 'Fact', scope: 'august-harness', source: 'Agent', used: 76, last: '7h', confidence: '0.93', created: 'Mar 21' },
+        { id: 6, text: 'The desktop app is the product; web-dist is packaging output.', key: 'project.product_surface', type: 'Fact', scope: 'augustharness', source: 'Agent', used: 76, last: '7h', confidence: '0.93', created: 'Mar 21' },
         { id: 7, text: 'Do not call the monthly usage figure a budget until it is enforced.', key: 'copy.budget', type: 'Rule', scope: 'Global', source: 'Manual', used: 19, last: '1d', confidence: '0.98', created: 'Apr 21' },
         { id: 8, text: 'The owner wants old-vs-new comparisons for design reviews.', key: 'pref.compare_design', type: 'Fact', scope: 'Global', source: 'Manual', used: 27, last: '4d', confidence: '0.9', created: 'Apr 22' },
       ],
@@ -1882,7 +1882,7 @@
         return [
           ['Active', '1,284', 'facts + notes + rules'],
           ['Global', '312', 'across every project'],
-          ['Project', '972', 'august-harness + brand-site'],
+          ['Project', '972', 'augustHarness + brand-site'],
           ['Retired', '86', 'kept for audit'],
         ].map((row) => `<div class="library-stat"><span>${row[0]}</span><strong>${row[1]}</strong><small>${row[2]}</small></div>`).join('');
       }
@@ -1934,7 +1934,7 @@
         for (const group of groups) {
           const groupRows = rows.filter((row) => (libraryTab === 'memory' ? row.scope : row.source) === group);
           const groupCount = libraryTab === 'memory'
-            ? (group === 'Global' ? '312' : group === 'august-harness' ? '874' : '98')
+            ? (group === 'Global' ? '312' : group === 'augustharness' ? '874' : '98')
             : (group === 'Bundled' ? '12' : group === 'Installed' ? '164' : group === 'Marketplace' ? '38' : '6');
           html += `<div class="library-group-head"><strong>${group}</strong><span>${groupCount} ${libraryTab === 'memory' ? 'facts' : 'skills'}</span></div>`;
           for (const item of groupRows) {

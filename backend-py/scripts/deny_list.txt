@@ -413,8 +413,8 @@ tauri_plugin_shell
 tauri_plugin_updater
 tauri_plugin_dialog
 windows_subsystem
-august_harness_lib
-august_desktop
+augustharness_lib
+augustharness
 # Tauri framework APIs (camelCase already — kept for completeness)
 generate_handler
 generate_context

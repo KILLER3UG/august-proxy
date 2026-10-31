@@ -1,6 +1,6 @@
 # August Proxy — Deep-Dive & Cleanup Review
 
-**Subject:** `C:\Dev\august-harness` (August Harness)
+**Subject:** `C:\Dev\augustHarness` (August Harness)
 **Revision reviewed:** `34fcf7240158dd3d0ef47318dd793fc6cd4161b1` ("fix(router): an unknown URL rendered a blank app, and the tree warned about it"), branch `master`
 **Date:** 2026-10-21
 **Mode:** read-only. Nothing in the repository was modified, staged, committed, or executed. No model calls, no app runs, no network egress, no dependency installs. The only file this review adds is this report - `docs/research/2026-10-21-deep-dive-and-cleanup.md`.
@@ -229,7 +229,7 @@ Solid, and better than most systems of this kind:
 
 ## A7. Skills & extensibility
 
-Skills are a first-class surface: `skills/` ships 7 bundled skills (`anatomy`, `august-harness`, `august-tools`, `charts`, `circuit-sim`, `hdl-fpga`, `math-animation`, `tutor`); project skills live under `<workspace>/.aug/skills/` with shadowing; bot skills are private per Bot; `load_skill`/`list_skills` resolve through the session's workspace and Bot root (`tool_registrations/skill_tools.py:31-35`). The prompt advertises only relevant skills, and `harness_guide_for` (`prompt_build.py:170`) filters the tool-directed half of the guide by the surface the model was actually offered — a bare surface gets no guide, which is right.
+Skills are a first-class surface: `skills/` ships 7 bundled skills (`anatomy`, `augustHarness`, `august-tools`, `charts`, `circuit-sim`, `hdl-fpga`, `math-animation`, `tutor`); project skills live under `<workspace>/.aug/skills/` with shadowing; bot skills are private per Bot; `load_skill`/`list_skills` resolve through the session's workspace and Bot root (`tool_registrations/skill_tools.py:31-35`). The prompt advertises only relevant skills, and `harness_guide_for` (`prompt_build.py:170`) filters the tool-directed half of the guide by the surface the model was actually offered — a bare surface gets no guide, which is right.
 
 The **MCP door** is the weak point of the extensibility story, and it is Findings 2 and 3: MCP is the one extension surface with neither lifecycle hooks nor mutating classification.
 

@@ -11,7 +11,7 @@ from fastapi import APIRouter, Query
 
 router = APIRouter(prefix='/api/whats-new', tags=['whats-new'])
 
-DEFAULT_REPO = 'KILLER3UG/august-proxy'
+DEFAULT_REPO = 'KILLER3UG/augustHarness'
 GITHUB_API = 'https://api.github.com'
 
 
@@ -22,7 +22,7 @@ def _repo() -> str:
 def _headers() -> dict[str, str]:
     headers = {
         'Accept': 'application/vnd.github+json',
-        'User-Agent': 'august-harness-whats-new',
+        'User-Agent': 'augustHarness-whats-new',
     }
     token = (
         os.environ.get('GITHUB_TOKEN')

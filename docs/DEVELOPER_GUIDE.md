@@ -26,7 +26,7 @@ conventions, the test suite, and how to extend the codebase.
 ## Repository layout
 
 ```text
-august-harness/
+augustHarness/
 ├── backend-py/
 │   ├── app/
 │   │   ├── main.py              # FastAPI app + lifespan + /api/health

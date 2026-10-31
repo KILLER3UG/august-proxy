@@ -44,13 +44,13 @@ const sources = [
     },
   },
   {
-    label: 'frontend/desktop/src-tauri/Cargo.lock (august-harness)',
+    label: 'frontend/desktop/src-tauri/Cargo.lock (augustharness)',
     file: resolve(root, 'frontend/desktop/src-tauri/Cargo.lock'),
     extract: (content) => {
       const match = content.match(
-        /^name = "august-harness"[\s\S]*?^version = "([^"]+)"/m,
+        /^name = "augustharness"[\s\S]*?^version = "([^"]+)"/m,
       );
-      if (!match) throw new Error('Could not find august-harness entry in Cargo.lock');
+      if (!match) throw new Error('Could not find augustharness entry in Cargo.lock');
       return match[1];
     },
   },

@@ -573,7 +573,7 @@ async def _mcp_initialize(proc: asyncio.subprocess.Process, server_id: str = '')
         {
             'protocolVersion': _PROTOCOL_VERSION,
             'capabilities': {},
-            'clientInfo': {'name': 'august-harness', 'version': '1.0.0'},
+            'clientInfo': {'name': 'augustharness', 'version': '1.0.0'},
         },
         msg_id=0,
         timeout=20.0,
@@ -1171,7 +1171,7 @@ async def _ensure_remote_session_locked(serverId: str) -> dict[str, object]:
         'params': {
             'protocolVersion': _PROTOCOL_VERSION,
             'capabilities': {},
-            'clientInfo': {'name': 'august-harness', 'version': '1.0.0'},
+            'clientInfo': {'name': 'augustharness', 'version': '1.0.0'},
         },
     }
     session_id: str | None = None

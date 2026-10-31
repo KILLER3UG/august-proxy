@@ -82,7 +82,7 @@ export function RecurringTasksSection() {
           value={trigger}
           onChange={(e) => setTrigger(e.target.value)}
           className="w-full rounded-md border border-border bg-muted/40 px-2 py-1.5 text-xs"
-          placeholder='Trigger — e.g. "every 2 hours" or "when I open august-harness"'
+          placeholder='Trigger — e.g. "every 2 hours" or "when I open augustHarness"'
           aria-label="Reminder trigger"
           data-testid="reminder-trigger"
         />

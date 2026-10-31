@@ -914,7 +914,7 @@ New workspaces inherit the Docker image toolchain (or host `scripts/ensure-toolc
 
 **Guaranteed CLIs:** `uv` (Python), `pnpm` + `npm`/`node` (JS), `ripgrep` (`rg`), `fd` (`fd-find`), `jq`. Verified by `scripts/ensure-toolchain.sh` and baked into `Dockerfile` (`apt: ripgrep fd-find jq` + `npm i -g pnpm`).
 
-**Run manually:** `bash scripts/ensure-toolchain.sh` (host) or `docker exec august-harness bash /app/scripts/ensure-toolchain.sh`.
+**Run manually:** `bash scripts/ensure-toolchain.sh` (host) or `docker exec augustHarness bash /app/scripts/ensure-toolchain.sh`.
 
 ---
 

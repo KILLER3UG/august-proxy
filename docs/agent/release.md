@@ -8,7 +8,7 @@ All 9 sources must match (`scripts/check-version-sync.mjs` verifies):
 - `frontend/desktop/package.json`
 - `frontend/desktop/src-tauri/tauri.conf.json`
 - `frontend/desktop/src-tauri/Cargo.toml`
-- `frontend/desktop/src-tauri/Cargo.lock` (`august-harness` entry)
+- `frontend/desktop/src-tauri/Cargo.lock` (`augustharness` entry)
 - `package-lock.json` (root + `packages['frontend/desktop']`)
 - `docs/api/openapi.json` (`info.version`)
 

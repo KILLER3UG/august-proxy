@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Derive the checkout root; the old absolute C:/Dev/august-harness path made the
+// Derive the checkout root; the old absolute C:/Dev/augustHarness path made the
 // gate runnable on exactly one machine.
 const ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),

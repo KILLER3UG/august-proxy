@@ -26,7 +26,7 @@ use std::os::windows::process::CommandExt;
 
 const DEFAULT_PROXY_PORT: u16 = 8085;
 const UPDATER_PUBLIC_KEY_B64: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVFRjVGM0E1RTlDMkUzNTAKUldSUTQ4THBwZlAxWHFoMTRFVXUvNldiaC9vTGVHRFlNdGxXZkpSZk5zN3Y4ckY1VkFidlp5ZDEK";
-const RELEASE_REPOSITORY: &str = "KILLER3UG/august-proxy";
+const RELEASE_REPOSITORY: &str = "KILLER3UG/augustHarness";
 static VERIFIED_INSTALLER: Mutex<Option<(PathBuf, String)>> = Mutex::new(None);
 
 /// Last port of the spawn fallback range (8085..=8095 inclusive). Tried in
@@ -256,8 +256,8 @@ fn runtimeStampPath(app: &AppHandle) -> PathBuf {
 
 const CLONE_DIR_LEAF: &str = "clone";
 const SELF_EDIT_SWITCH: &str = "self-edit.enabled";
-const UPSTREAM_FETCH_URL: &str = "https://github.com/KILLER3UG/august-proxy.git";
-const CLONE_PUSH_LOCK_URL: &str = "https://push-locked.invalid/august-harness.git";
+const UPSTREAM_FETCH_URL: &str = "https://github.com/KILLER3UG/augustHarness.git";
+const CLONE_PUSH_LOCK_URL: &str = "https://push-locked.invalid/augustHarness.git";
 
 fn selfEditEnabled(app: &AppHandle) -> bool {
     appDataRoot(app).join(SELF_EDIT_SWITCH).is_file()
@@ -668,7 +668,7 @@ fn copyDirRecursiveAt(
             // every dependency's compiled entry point under sidecar/node_modules
             // (avr8js, jimp, …), which the runtime then cannot import.
             let rootOnlyArtifact = depth == 0
-                && (name == "build" || name == "dist" || name == "august_harness.egg-info");
+                && (name == "build" || name == "dist" || name == "augustharness.egg-info");
             if name == "__pycache__"
                 || name == ".venv"
                 || name == ".mypy_cache"
@@ -1020,7 +1020,7 @@ fn bootstrapBundledBackend(app: &AppHandle) -> Result<(), String> {
             // dies at import, and the supervisor reports "not healthy after
             // spawn" exactly after updates.
             "--upgrade",
-            "august-harness",
+            "augustharness",
         ],
         &runtime_backend,
         &bootstrap_log,
@@ -1261,7 +1261,7 @@ fn resolvePythonBackend(app: &AppHandle) -> Option<PathBuf> {
     ];
 
     // Walk up from the executable so release/dev builds find a repo checkout
-    // (e.g. …/src-tauri/target/release/august-harness.exe → …/august-harness/backend-py).
+    // (e.g. …/src-tauri/target/release/augustharness.exe → …/augustHarness/backend-py).
     if let Ok(exe) = env::current_exe() {
         let mut dir = exe.parent().map(|p| p.to_path_buf());
         for _ in 0..10 {
@@ -3085,7 +3085,7 @@ pub fn schedule_post_update_relaunch() -> Result<String, String> {
                }}).Count \
              }}; \
              function Start-AugustIfIdle {{ \
-               if ((Test-Path -LiteralPath $exe) -and -not (Get-Process -Name 'August','august-harness' -ErrorAction SilentlyContinue)) {{ \
+               if ((Test-Path -LiteralPath $exe) -and -not (Get-Process -Name 'August','augustharness' -ErrorAction SilentlyContinue)) {{ \
                  Start-Process -FilePath $exe \
                }} \
              }}; \
@@ -3250,7 +3250,7 @@ pub async fn download_release_installer(app: AppHandle, version: String) -> Resu
 
         let client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(900))
-            .user_agent("august-harness-updater")
+            .user_agent("augustHarness-updater")
             .build()
             .map_err(|e| e.to_string())?;
         let mut resp = client
@@ -3805,7 +3805,7 @@ mod instance_lock_tests {
     #[test]
     fn recognises_both_the_packaged_and_dev_image_names() {
         assert!(isAugustRow(&row("August.exe", 20528), 20528));
-        assert!(isAugustRow(&row("august-harness.exe", 20528), 20528));
+        assert!(isAugustRow(&row("augustharness.exe", 20528), 20528));
     }
 
     #[test]
@@ -3859,9 +3859,9 @@ mod copy_payload_tests {
         let src = scratch("src");
         let dst = scratch("dst");
         // The package's own setuptools output at the payload root.
-        touch(&src, "dist/august_harness.pth");
+        touch(&src, "dist/augustHarness.pth");
         touch(&src, "build/lib/x.py");
-        touch(&src, "august_harness.egg-info/PKG-INFO");
+        touch(&src, "augustharness.egg-info/PKG-INFO");
         // Dependency entry points live in dist/ one level deeper.
         touch(&src, "sidecar/node_modules/avr8js/dist/cjs/index.js");
         touch(&src, "sidecar/node_modules/jimp/dist/index.js");
@@ -3872,7 +3872,7 @@ mod copy_payload_tests {
         assert!(!dst.join("dist").exists(), "root dist must be skipped");
         assert!(!dst.join("build").exists(), "root build must be skipped");
         assert!(
-            !dst.join("august_harness.egg-info").exists(),
+            !dst.join("augustharness.egg-info").exists(),
             "root egg-info must be skipped"
         );
         assert!(

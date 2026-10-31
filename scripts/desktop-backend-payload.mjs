@@ -9,7 +9,7 @@ const cacheDirs = new Set([
   'node_modules', '__pycache__', '.mypy_cache', '.ruff_cache', '.pytest_cache',
   '.venv', '.tox', '.nox', '.coverage', 'htmlcov',
 ]);
-const generatedDirs = new Set(['build', 'dist', 'august_harness.egg-info']);
+const generatedDirs = new Set(['build', 'dist', 'augustharness.egg-info']);
 
 // What a running August writes for ONE person: the memory database, provider
 // credentials, session transcripts, learned-skill counters. Staging copies

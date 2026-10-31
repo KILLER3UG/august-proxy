@@ -177,7 +177,7 @@ async def harness_mcp(request: Request, _auth: bool = Depends(require_gateway_ke
                 {
                     'protocolVersion': '2024-11-05',
                     'capabilities': {'tools': {}},
-                    'serverInfo': {'name': 'august-harness', 'version': '1'},
+                    'serverInfo': {'name': 'augustharness', 'version': '1'},
                     'instructions': (
                         'Every request must carry "Authorization: Bearer <GATEWAY_API_KEY>". '
                         'External access must be enabled in Settings → API Access; without it '

@@ -1,4 +1,4 @@
-# Sharing capabilities between Hermes and august-harness
+# Sharing capabilities between Hermes and augustHarness
 
 **Date:** 2026-10-07
 **Answers three questions:**

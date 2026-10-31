@@ -542,7 +542,7 @@ async function buildWheels(pythonExe) {
       recursive: true,
       filter: (path) => {
         const name = path.split(/[\\/]/).at(-1);
-        return !['build', 'dist', 'august_harness.egg-info', '.venv', '__pycache__', '.mypy_cache', '.ruff_cache', '.pytest_cache'].includes(name);
+        return !['build', 'dist', 'augustharness.egg-info', '.venv', '__pycache__', '.mypy_cache', '.ruff_cache', '.pytest_cache'].includes(name);
       },
     });
 
@@ -595,7 +595,7 @@ async function buildWheels(pythonExe) {
     ]);
 
     const wheelNames = await readdir(wheelsOut);
-    if (!wheelNames.some((name) => name.startsWith('august_harness-') && name.endsWith('.whl'))) {
+    if (!wheelNames.some((name) => name.startsWith('augustharness-') && name.endsWith('.whl'))) {
       throw new Error('backend project wheel was not produced');
     }
     console.log(`[prepare-backend] wheels → ${wheelsOut}`);

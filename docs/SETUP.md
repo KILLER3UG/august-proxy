@@ -46,8 +46,8 @@ cp .env.example .env
 docker compose up --build -d
 
 # 3. Confirm it is running
-docker ps            # expect: august-harness   Up
-docker logs august-harness --tail 30
+docker ps            # expect: augustHarness   Up
+docker logs augustHarness --tail 30
 ```
 
 The API listens on **http://127.0.0.1:8085**. Compose maps host port
@@ -244,10 +244,10 @@ docker compose down
 docker compose up --build -d
 
 # Tail logs
-docker logs august-harness -f
+docker logs augustHarness -f
 
 # Shell into the container
-docker exec -it august-harness /bin/sh
+docker exec -it augustHarness /bin/sh
 ```
 
 If port `8085` is taken, change the host-side port in `docker-compose.yml`:

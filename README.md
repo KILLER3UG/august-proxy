@@ -68,7 +68,7 @@ lives in [`frontend/mobile/`](frontend/mobile).
 ## Repository layout
 
 ```text
-august-harness/
+augustHarness/
 ├── backend-py/                 # FastAPI server (Python ≥ 3.12)
 │   ├── app/
 │   │   ├── main.py             # App, lifespan, router registration
@@ -249,7 +249,7 @@ On desktop ship, **nine** sources must match (`npm run check:version`):
 - `frontend/desktop/package.json`
 - `frontend/desktop/src-tauri/tauri.conf.json`
 - `frontend/desktop/src-tauri/Cargo.toml`
-- `frontend/desktop/src-tauri/Cargo.lock` (`august-harness` entry)
+- `frontend/desktop/src-tauri/Cargo.lock` (`augustharness` entry)
 - `package-lock.json` — top-level `version`, `packages['']`, and
   `packages['frontend/desktop']` (three separate checks, one file)
 

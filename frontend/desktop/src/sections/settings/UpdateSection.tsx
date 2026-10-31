@@ -27,7 +27,7 @@ import { openExternal } from '@/lib/tauri-shell';
 import { usePreferencesStore } from '@/lib/preferences';
 import { UPDATE_FAILURE_COPY } from '@/store/app-update-install';
 
-const RELEASES_URL = 'https://github.com/KILLER3UG/august-proxy/releases';
+const RELEASES_URL = 'https://github.com/KILLER3UG/augustHarness/releases';
 
 export function UpdateSection() {
   const {

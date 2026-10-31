@@ -1,7 +1,7 @@
 services:
-  august-harness:
+  augustHarness:
     build: .
-    container_name: august-harness
+    container_name: augustHarness
     # ── API Keys ──────────────────────────────────────────────────────────────
     # Tip: move these to a .env file in this directory and Docker Compose will
     # auto-load it. That keeps secrets out of this committed file entirely.
