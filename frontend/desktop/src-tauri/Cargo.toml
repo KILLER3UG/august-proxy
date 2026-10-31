@@ -1,6 +1,6 @@
 [package]
 name = "augustharness"
-version = "0.18.27"
+version = "0.19.0"
 description = "August Harness — desktop shell"
 edition = "2021"
 rust-version = "1.77"
