@@ -28,6 +28,11 @@ Header: `<type>(<scope>): <sentence>` — for example
   it is probably two commits.
 - Reference a plan by slug, never by number. The numbered Part series is
   closed; do not mint "Part 28+".
+- No third-party attribution trailers. A `Co-authored-by:` or `Generated with:`
+  line naming an AI tool or a service account is never added, and never carried
+  over from a tool's default commit template — the commit is the owner's. GitHub
+  resolves each such email into a listed contributor on the repository, so this is
+  visibility, not etiquette.
 - Never commit generated artifacts except the ones the gates own
   (`docs/api/openapi.json`, `docs/API_INDEX.md`,
   `frontend/desktop/src/api/gen/openapi.ts`). Regenerate them with the
