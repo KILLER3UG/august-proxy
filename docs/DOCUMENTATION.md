@@ -1,4 +1,4 @@
-# August Proxy — documentation
+# August Harness — documentation
 
 This is the one index. If a document is not listed here, it is either generated
 or it was history; the history was removed on 2026-10-29 and remains in git.

@@ -30,7 +30,7 @@ pub fn run() {
     // Task Manager / taskbar identity: claim the bundle identifier as this
     // process's AppUserModelID BEFORE any window exists. The WebView2 loader
     // propagates it to the msedgewebview2 child processes, so Task Manager
-    // groups them under the "August" app node instead of surfacing a bare
+    // groups them under the "August Harness" app node instead of surfacing a bare
     // "Microsoft Edge WebView2" background entry.
     #[cfg(windows)]
     unsafe {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Live connectivity smoke checklist against a running August Proxy.
+"""Live connectivity smoke checklist against a running August Harness.
 
 Program acceptance checks (unified connectivity plan):
   1. Session SoT: SQLite blob survives without JSON (in-process)
@@ -59,7 +59,7 @@ def _http_json(method: str, url: str, body: dict | None = None, timeout: float =
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description='August Proxy live smoke checklist')
+    parser = argparse.ArgumentParser(description='August Harness live smoke checklist')
     parser.add_argument('--base', default='http://127.0.0.1:8085', help='Backend base URL')
     parser.add_argument('--skip-http', action='store_true', help='Skip HTTP probes')
     args = parser.parse_args()

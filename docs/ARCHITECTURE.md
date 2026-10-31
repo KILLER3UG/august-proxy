@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes how August Proxy is structured and how a request
+This document describes how August Harness is structured and how a request
 flows from a client through the proxy to an upstream provider and back.
 
 ---

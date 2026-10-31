@@ -3,7 +3,7 @@ Alias mapping service — consolidated, single-source-of-truth for proxy aliases
 
 What is an alias?
 =================
-In August Proxy, an *alias* is a **proxy mapping** — not just a nickname.
+In August Harness, an *alias* is a **proxy mapping** — not just a nickname.
 It lets the proxy expose a specified model name in ``/v1/models`` while
 routing requests to a completely different provider + model upstream.
 

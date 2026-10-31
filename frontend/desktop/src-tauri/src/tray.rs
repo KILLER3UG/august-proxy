@@ -14,7 +14,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
 
     TrayIconBuilder::with_id("august-tray")
         .menu(&menu)
-        .tooltip("August Proxy")
+        .tooltip("August Harness")
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => {
                 if let Some(w) = app.get_webview_window("main") {

@@ -1,4 +1,4 @@
-# August Proxy — Python/FastAPI backend with Node.js for MCP servers
+# August Harness — Python/FastAPI backend with Node.js for MCP servers
 FROM python:3.12-slim
 
 WORKDIR /app

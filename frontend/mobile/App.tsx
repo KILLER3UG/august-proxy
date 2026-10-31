@@ -245,7 +245,7 @@ ${tokenBootstrapScript(localToken)}`}
         overScrollMode="never"
         showsHorizontalScrollIndicator={false}
         showsVerticalScrollIndicator={false}
-        accessibilityLabel="August Proxy"
+        accessibilityLabel="August Harness"
         onMessage={(event) => {
           try {
             const msg = JSON.parse(event.nativeEvent.data) as { type?: string; dark?: boolean };
@@ -263,7 +263,7 @@ ${tokenBootstrapScript(localToken)}`}
         onLoadEnd={() => setIsLoading(false)}
         onError={(event) => {
           setIsLoading(false);
-          setLoadError(event.nativeEvent.description || 'Unable to load August Proxy.');
+          setLoadError(event.nativeEvent.description || 'Unable to load August Harness.');
         }}
         onHttpError={(event) => {
           if (event.nativeEvent.statusCode >= 500) {
@@ -276,7 +276,7 @@ ${tokenBootstrapScript(localToken)}`}
         <View pointerEvents="none" style={styles.loadingOverlay}>
           <View
             accessibilityRole="progressbar"
-            accessibilityLabel="Connecting to August Proxy"
+            accessibilityLabel="Connecting to August Harness"
             style={[styles.loadingPill, { backgroundColor: colors.surface, borderColor: colors.border }]}
           >
             <ActivityIndicator color={colors.text} />
@@ -303,7 +303,7 @@ ${tokenBootstrapScript(localToken)}`}
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType="url"
-              accessibilityLabel="August Proxy address"
+              accessibilityLabel="August Harness address"
               placeholder="http://192.168.1.10:8085"
               placeholderTextColor={colors.subtle}
               style={[
@@ -322,7 +322,7 @@ ${tokenBootstrapScript(localToken)}`}
               autoCapitalize="none"
               autoCorrect={false}
               secureTextEntry
-              accessibilityLabel="August Proxy local token"
+              accessibilityLabel="August Harness local token"
               placeholder="local token (optional)"
               placeholderTextColor={colors.subtle}
               style={[

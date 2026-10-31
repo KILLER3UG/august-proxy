@@ -1,4 +1,4 @@
-"""August Proxy backend doctor - diagnose common environment issues.
+"""August Harness backend doctor - diagnose common environment issues.
 
 Usage:
     cd backend-py && uv run python scripts/doctor.py
@@ -133,7 +133,7 @@ def check_app_import() -> bool:
 
 
 def main() -> int:
-    print('\nAugust Proxy - backend doctor\n')
+    print('\nAugust Harness - backend doctor\n')
     results = [
         check_python_version(),
         check_uv(),

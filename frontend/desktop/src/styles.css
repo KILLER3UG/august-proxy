@@ -1,4 +1,4 @@
-/* ── August Proxy UI v2 — stylesheet entry (audit P2#17) ─────────────── */
+/* ── August Harness UI v2 — stylesheet entry (audit P2#17) ─────────────── */
 /* This file used to be ~2,800 lines of hand-maintained CSS. It is now only
  * the import list below; the rules live in src/styles/. The import ORDER is
  * the cascade order, so it is deliberate and should not be alphabetised:

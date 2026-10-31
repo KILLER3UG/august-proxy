@@ -1,4 +1,4 @@
-"""Centralized logging configuration for August Proxy.
+"""Centralized logging configuration for August Harness.
 
 Provides structured JSON logging with per-module level overrides and
 request correlation IDs. Called once at startup from main.py lifespan.

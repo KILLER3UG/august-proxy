@@ -1,4 +1,4 @@
-# install.ps1 — August Proxy desktop backend setup (Windows)
+# install.ps1 — August Harness desktop backend setup (Windows)
 #
 # One-shot setup: create backend-py/.venv with Python >= 3.12 and install
 # the backend as an editable package. Run once after cloning, before

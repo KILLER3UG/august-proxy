@@ -1,6 +1,6 @@
 # Configuration Reference
 
-August Proxy is configured through files in `data/` plus environment variables.
+August Harness is configured through files in `data/` plus environment variables.
 This document is the operator reference for current options.
 
 ---
@@ -881,7 +881,7 @@ and architecture.
 ### Scope & discovery
 
 Workspace-relative: read from the session’s `workspacePath`. If unset, falls
-back to the August Proxy project root. No parent-directory walk-up in the
+back to the August Harness project root. No parent-directory walk-up in the
 current version.
 
 ### How it is used

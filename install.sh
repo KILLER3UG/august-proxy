@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install.sh — August Proxy desktop backend setup (macOS / Linux)
+# install.sh — August Harness desktop backend setup (macOS / Linux)
 #
 # One-shot setup: create backend-py/.venv with Python >= 3.12 and install
 # the backend as an editable package. Run once after cloning, before

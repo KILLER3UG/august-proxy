@@ -1,6 +1,6 @@
 """
 AUG.md directive service — discover, load, write, and generate the
-project-level AUG.md file (the August Proxy analogue of Claude Code's
+project-level AUG.md file (the August Harness analogue of Claude Code's
 CLAUDE.md).
 
 AUG.md is a plain-markdown file stored at the workspace root. Its body is
@@ -357,7 +357,7 @@ def write(
     lines = ['---']
     fm = frontmatter or {}
     if not fm.get('description') and workspacePath:
-        fm['description'] = 'Project directives for August Proxy (auto-generated).'
+        fm['description'] = 'Project directives for August Harness (auto-generated).'
     for key, val in fm.items():
         if val:
             lines.append(f'{key}: {val}')
@@ -468,7 +468,7 @@ def _renderAnalysis(analysis: dict[str, object]) -> str:
 
 _SYSTEM_PROMPT_CREATE = (
     'You are generating an AUG.md file for a software project. AUG.md is the '
-    'project instruction file for the August Proxy AI agent (the equivalent of '
+    'project instruction file for the August Harness AI agent (the equivalent of '
     "Claude Code's CLAUDE.md). It is plain markdown and should be concise "
     "(target under 120 lines). It teaches the agent the project's build "
     'commands, test commands, code conventions, and architecture so future '
@@ -481,7 +481,7 @@ _SYSTEM_PROMPT_CREATE = (
 
 _SYSTEM_PROMPT_REFINE = (
     'You are refining an existing AUG.md file for a software project. AUG.md is '
-    'the project instruction file for the August Proxy AI agent. Given the '
+    'the project instruction file for the August Harness AI agent. Given the '
     'current AUG.md and fresh workspace signals, produce an improved, complete '
     'AUG.md body (no YAML frontmatter). Keep what is still accurate, fix stale '
     'details, and add genuinely useful conventions the agent can act on. Target '

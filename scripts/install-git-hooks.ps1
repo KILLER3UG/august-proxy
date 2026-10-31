@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Install a Device Guard–safe Git pre-commit hook for August Proxy.
+  Install a Device Guard–safe Git pre-commit hook for August Harness.
 
 .DESCRIPTION
   Stock `pre-commit install` hard-codes backend-py/.venv/Scripts/python.exe.

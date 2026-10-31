@@ -131,7 +131,7 @@ export function SessionListNav({
     <div ref={rootRef} className="august-sidebar-nav shrink-0">
       <div className="sidebar-head">
         <div className="brand-copy">
-          <span className="brand-name">August</span>
+          <span className="brand-name">August Harness</span>
         </div>
         <Button variant="bare"
           type="button"

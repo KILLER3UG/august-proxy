@@ -209,7 +209,7 @@ export function ConversationStage({
         >
           A
         </span>
-        <span className="text-[0.8125rem] font-semibold text-foreground">August</span>
+        <span className="text-[0.8125rem] font-semibold text-foreground">August Harness</span>
         <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2 py-0.5 text-[0.65625rem] text-muted-foreground">
           <span className={cn('size-1.5 rounded-full', pillState === 'ok' ? 'bg-success' : 'bg-primary')} />
           {pillText}

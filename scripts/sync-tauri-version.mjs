@@ -10,7 +10,7 @@
 // so `npm version <bump>` and the formal release flow cannot drift apart.
 //
 // Note: UpdateSection.tsx renders the version dynamically from the Tauri
-// updater state (`August Proxy v{currentVersion}`), so no source string needs
+// updater state (`August Harness v{currentVersion}`), so no source string needs
 // patching here.
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';

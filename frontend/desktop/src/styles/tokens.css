@@ -6,7 +6,7 @@
  * Moved verbatim out of src/styles.css (audit P2#17): every rule below is a
  * byte-identical slice of that file, in the same order it had there. */
 
-/* ── August Proxy UI v2 — design tokens (Phase 1.3) ───────────────── */
+/* ── August Harness UI v2 — design tokens (Phase 1.3) ───────────────── */
 /* Inherits Tailwind v3 utilities + base from tailwind.generated.css.  */
 /* This file is imported by main.tsx so Vite picks it up.              */
 

@@ -1,7 +1,7 @@
 [project]
 name = "augustharness"
 version = "0.1.0"
-description = "August Proxy — AI model proxy and workbench"
+description = "August Harness — AI model proxy and workbench"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",

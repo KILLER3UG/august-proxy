@@ -1,7 +1,7 @@
 """
 Gateway authentication — protect external proxy endpoints behind a Bearer key.
 
-The August Proxy exposes two surfaces:
+The August Harness exposes two surfaces:
 
   1. ``/api/*``         — management API used by the local SPA (no auth).
   2. ``/v1/*``          — OpenAI/Anthropic-compatible proxy endpoint intended

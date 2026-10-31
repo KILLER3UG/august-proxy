@@ -77,7 +77,7 @@ export function CrashCard({ error }: { error: Error | null }) {
           </details>
         )}
         <div className="mt-5 flex items-center justify-center gap-2">
-          <Button onClick={() => void location.reload()}>Reload August</Button>
+          <Button onClick={() => void location.reload()}>Reload August Harness</Button>
           <Button variant="outline" onClick={() => void copy()} aria-live="polite">
             {copied ? <Check className="mr-1.5 size-4" /> : <Clipboard className="mr-1.5 size-4" />}
             {copied ? 'Copied' : 'Copy error'}

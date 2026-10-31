@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# August Proxy — hardened pre-commit entrypoint (Windows + Device Guard safe).
+# August Harness — hardened pre-commit entrypoint (Windows + Device Guard safe).
 #
 # Install (from repo root, PowerShell):
 #   .\scripts\install-git-hooks.ps1

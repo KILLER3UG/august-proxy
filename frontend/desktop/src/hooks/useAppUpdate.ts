@@ -38,7 +38,7 @@ const cancelledVersions = new Set<string>();
  *  user immediately closes should not cost ~200 MB of bandwidth. */
 const AUTO_DOWNLOAD_DELAY_MS = 60_000;
 
-/** Windows desktop builds ship an NSIS `August_<version>_x64-setup.exe`. */
+/** Windows desktop builds ship an NSIS `AugustHarness_<version>_x64-setup.exe`. */
 function isWindowsDesktop(): boolean {
   return typeof navigator !== 'undefined' && /windows/i.test(navigator.userAgent);
 }

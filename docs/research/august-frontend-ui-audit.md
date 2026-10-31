@@ -1,4 +1,4 @@
-# August Proxy — Frontend UI Audit (React/TS desktop surface)
+# August Harness — Frontend UI Audit (React/TS desktop surface)
 
 **Date:** 2026-09-24 · **Scope:** `frontend/desktop/src/` (React 18 + Tauri 2 + Zustand + TanStack Query/ Virtual + framer-motion). ~97k LOC across 503 non-test source files.
 **Method:** read-only static audit. No test suite, no dev server, no browser driving (per instruction). Every claim is anchored to `file:line` in the current tree. Prior audits were re-verified line by line, not assumed.

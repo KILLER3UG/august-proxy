@@ -1,4 +1,4 @@
-# Agent notes (August Proxy)
+# Agent notes (August Harness)
 
 August is a **local AI gateway and agentic workbench**. The product is the
 **Tauri desktop app** (`frontend/desktop/` + bundled `backend-py/`); `web-dist/`

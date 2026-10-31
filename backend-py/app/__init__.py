@@ -1,1 +1,1 @@
-"""August Proxy — Python backend."""
+"""August Harness — Python backend."""

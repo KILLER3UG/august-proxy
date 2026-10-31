@@ -16,7 +16,7 @@ the dropdown refreshes, and records every change to the config audit log.
     a concrete provider + model at request time), use
     ``app.services.aliasMappingService.resolve_alias()`` instead.
 
-    An alias in August Proxy is a **proxy mapping** — it lets the proxy
+    An alias in August Harness is a **proxy mapping** — it lets the proxy
     display one model name (the alias) while routing to a completely
     different provider + model combination upstream. See
     ``app.models.aliases`` for the conceptual model.

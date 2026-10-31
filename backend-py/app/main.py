@@ -93,7 +93,7 @@ import sys  # noqa: E402
 
 if sys.version_info < (3, 12):
     raise RuntimeError(
-        f'August Proxy requires Python 3.12 or newer (running {sys.version.split()[0]}). '
+        f'August Harness requires Python 3.12 or newer (running {sys.version.split()[0]}). '
         'Please upgrade your Python interpreter.'
     )
 
@@ -469,7 +469,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title='August Proxy',
+    title='August Harness',
     version=backend_version(),
     lifespan=lifespan,
     # /docs + /openapi.json enumerate the full API surface to any local

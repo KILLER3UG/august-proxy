@@ -1,6 +1,6 @@
 # API Reference
 
-August Proxy exposes two API families from a single port (default `8085`):
+August Harness exposes two API families from a single port (default `8085`):
 
 - **`/v1/*`** — the AI proxy surface (OpenAI- and Anthropic-compatible), used by
   external clients like Claude Code, Codex, Cline, and Continue.dev.

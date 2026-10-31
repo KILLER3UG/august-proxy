@@ -1,4 +1,4 @@
-# August Proxy
+# August Harness
 
 August is a **local AI gateway and agentic workbench**. The user-facing product
 is the **Tauri desktop app** ([`frontend/desktop/`](frontend/desktop) + bundled

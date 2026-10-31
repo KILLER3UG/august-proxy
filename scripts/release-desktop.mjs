@@ -320,7 +320,7 @@ async function syncPackageVersions(nextVersion) {
 
 function exactNsisArtifact(nextVersion) {
     const dir = join(tauriBundleDir, 'nsis');
-    const expected = `August_${nextVersion}_x64-setup.exe`;
+    const expected = `AugustHarness_${nextVersion}_x64-setup.exe`;
     if (!existsSync(dir)) throw new Error(`Tauri NSIS bundle directory is missing: ${dir}`);
     const matches = readdirSync(dir).filter((name) => name === expected);
     if (matches.length !== 1) {
@@ -334,7 +334,7 @@ function exactNsisArtifact(nextVersion) {
 
 function exactMsiArtifact(nextVersion) {
     const dir = join(tauriBundleDir, 'msi');
-    const expected = `August_${nextVersion}_x64_en-US.msi`;
+    const expected = `AugustHarness_${nextVersion}_x64_en-US.msi`;
     if (!existsSync(dir)) throw new Error(`Tauri MSI bundle directory is missing: ${dir}`);
     const matches = readdirSync(dir).filter((name) => name === expected);
     if (matches.length !== 1) {

@@ -1,6 +1,6 @@
 # Setup Guide
 
-This guide takes you from a clean checkout to a running August Proxy with a
+This guide takes you from a clean checkout to a running August Harness with a
 client connected.
 
 ---

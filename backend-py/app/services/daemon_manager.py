@@ -545,7 +545,7 @@ class DaemonManager:
             if client is None:
                 return f'[daemon: no client for provider of {model!r}]'
             system = (
-                'You are a short-lived background daemon for August Proxy. '
+                'You are a short-lived background daemon for August Harness. '
                 'Answer concisely. Do not invent tool results.'
             )
             response = await client.generate(prompt, system=system)

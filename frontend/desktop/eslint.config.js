@@ -1,4 +1,4 @@
-// ESLint 9 flat config for the August Proxy desktop frontend.
+// ESLint 9 flat config for the August Harness desktop frontend.
 // Enforces:
 //   - no-explicit-any: warn (start), will escalate to error after Phase 2
 //   - consistent-type-assertions: 'as' style

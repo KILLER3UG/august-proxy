@@ -495,7 +495,7 @@ is stale.
 ### Updating on Windows (silent, in place)
 
 Desktop updates on Windows by downloading the full GitHub-release NSIS setup
-(`August_<version>_x64-setup.exe`) and running it **silently and in place** —
+(`AugustHarness_<version>_x64-setup.exe`) and running it **silently and in place** —
 there is no uninstall wizard and no install wizard, and you do not reinstall
 anything by hand. The app restarts itself afterwards.
 

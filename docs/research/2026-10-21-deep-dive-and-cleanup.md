@@ -1,4 +1,4 @@
-# August Proxy — Deep-Dive & Cleanup Review
+# August Harness — Deep-Dive & Cleanup Review
 
 **Subject:** `C:\Dev\augustHarness` (August Harness)
 **Revision reviewed:** `34fcf7240158dd3d0ef47318dd793fc6cd4161b1` ("fix(router): an unknown URL rendered a blank app, and the tree warned about it"), branch `master`

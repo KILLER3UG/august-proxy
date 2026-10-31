@@ -1,6 +1,6 @@
 // backend.rs — Rust-side backend supervisor
 //
-// Owns the August Proxy backend process. On Tauri startup we:
+// Owns the August Harness backend process. On Tauri startup we:
 //   1) Poll http://127.0.0.1:8085/api/health — identity-checked: a 2xx alone
 //      is not enough, the body must carry August's status/python fields
 //   2) If down (or the runtime stamp differs from the bundled stamp), locate
@@ -3163,7 +3163,7 @@ fn validateReleaseVersion(version: &str) -> Result<(), String> {
 
 fn expectedReleaseFilename(version: &str) -> Result<String, String> {
     validateReleaseVersion(version)?;
-    Ok(format!("August_{version}_x64-setup.exe"))
+    Ok(format!("AugustHarness_{version}_x64-setup.exe"))
 }
 
 fn expectedReleaseUrl(version: &str, filename: &str) -> String {
@@ -3382,7 +3382,7 @@ fn updateDownloadDir(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 /// True only for the exact file `download_release_installer` would have written:
-/// directly inside the updates dir, named `August_<valid version>_x64-setup.exe`.
+/// directly inside the updates dir, named `AugustHarness_<valid version>_x64-setup.exe`.
 /// This is what makes a disk-sourced signature safe to trust — an arbitrary
 /// path can never satisfy it.
 fn isExpectedInstallerPath(dir: &Path, installer: &Path) -> bool {
@@ -3395,7 +3395,7 @@ fn isExpectedInstallerPath(dir: &Path, installer: &Path) -> bool {
     let Some(name) = installer.file_name().and_then(|n| n.to_str()) else {
         return false;
     };
-    let Some(rest) = name.strip_prefix("August_") else {
+    let Some(rest) = name.strip_prefix("AugustHarness_") else {
         return false;
     };
     let Some(version) = rest.strip_suffix("_x64-setup.exe") else {

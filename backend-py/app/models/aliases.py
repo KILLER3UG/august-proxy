@@ -3,7 +3,7 @@ Model alias types — Pydantic models for the alias proxy-mapping system.
 
 What is an alias?
 =================
-An **alias** in August Proxy is a *proxy mapping*: it lets the proxy expose
+An **alias** in August Harness is a *proxy mapping*: it lets the proxy expose
 a specified model name in ``/v1/models`` (and accept it in requests) while
 routing to a completely different provider + model combination upstream.
 
